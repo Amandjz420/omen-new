@@ -1,5 +1,9 @@
 # Full OMEN database baseline for the Django monorepo
 
+**Lead workflow audit:** [LEAD_FLOW_MIGRATION_AUDIT.md](LEAD_FLOW_MIGRATION_AUDIT.md) maps the legacy business flows to Django and records execution results and missing operations. [LEAD_FLOW_INVENTORY.md](LEAD_FLOW_INVENTORY.md) inventories all 50 LEAD controllers, 410 active method mappings and 53 LEAD source tables.
+
+**Migration guide:** [MIGRATION_METHOD.md](MIGRATION_METHOD.md) documents the end-to-end source-to-target method, current 61-table import scope, reconciliation controls, validation gates, and the process for adding remaining tables.
+
 **Clean target update:** [CLEAN_TARGET_STATUS.md](CLEAN_TARGET_STATUS.md) describes the new managed schema and attendance exclusion. [BUSINESS_ENTITIES.md](BUSINESS_ENTITIES.md) lists entity purposes and coverage of all 202 highlighted tables. This page documents the unchanged, full restored source baseline.
 
 Verified locally on 16 September 2026. This is the full SQL-dump baseline, replacing the marketing-export-only approach as the basis of the whole-system migration.

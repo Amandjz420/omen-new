@@ -31,7 +31,7 @@ One Django backend, one React frontend, one coherent production schema managed b
 | identity | Login, roles and access scopes | User, Role/Group, Permission, UserScope, legacy identity map |
 | organization | Organizational and geographic structure | Department, Location, jurisdiction/reference entities, reporting structures |
 | reference | Shared external master data | Bank, BankBranch and reviewed classification lists |
-| crm | Commissioning offices and relationships | ClientOffice, ClientType, Contact, ContactDesignation, RelationshipOwner |
+| crm | Commissioning offices and relationships | ClientOffice, ClientType, Contact, CqntactDesignation, RelationshipOwner |
 | leads | Request capture and case tracking | Lead, RequestedService, Borrower, Case, FollowUp, Assignment |
 | services | Service catalogue | ServiceType, ServiceSubtype |
 | workorders | Work instructions and commercial agreement | WorkOrder, WorkOrderRevision, FeeRule |
