@@ -1,0 +1,485 @@
+{
+  "dry_run": false,
+  "tables": {
+    "uam_user.bank": {
+      "source_rows": 199,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 199,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.bank_branch": {
+      "source_rows": 143702,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 143702,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.employee": {
+      "source_rows": 51,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 51,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.client_type": {
+      "source_rows": 7,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 7,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.client_designation": {
+      "source_rows": 26,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 26,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.service_type": {
+      "source_rows": 15,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 15,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.service_sub_type": {
+      "source_rows": 50,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 50,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.client": {
+      "source_rows": 1394,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 1394,
+      "quarantined": 0,
+      "rows_with_issues": 1
+    },
+    "lead_mngt.orderer_reg": {
+      "source_rows": 2049,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 2048,
+      "quarantined": 1,
+      "rows_with_issues": 1
+    },
+    "lead_mngt.lead": {
+      "source_rows": 10969,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 10968,
+      "quarantined": 1,
+      "rows_with_issues": 3
+    },
+    "lead_mngt.lead_services": {
+      "source_rows": 11798,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 11796,
+      "quarantined": 2,
+      "rows_with_issues": 22
+    },
+    "lead_mngt.lead_borrower": {
+      "source_rows": 12756,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 12751,
+      "quarantined": 5,
+      "rows_with_issues": 5
+    },
+    "lead_mngt.client_customer": {
+      "source_rows": 12877,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 12875,
+      "quarantined": 2,
+      "rows_with_issues": 21
+    },
+    "lead_mngt.upload": {
+      "source_rows": 150636,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 150636,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.lead_order": {
+      "source_rows": 12285,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 12285,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.valuation": {
+      "source_rows": 12651,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 12650,
+      "quarantined": 1,
+      "rows_with_issues": 8
+    },
+    "lead_mngt.invoice": {
+      "source_rows": 11927,
+      "inserted": 0,
+      "updated": 11926,
+      "unchanged": 0,
+      "quarantined": 1,
+      "rows_with_issues": 1
+    },
+    "lead_mngt.cash_receipt": {
+      "source_rows": 11207,
+      "inserted": 0,
+      "updated": 11207,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.amount_received": {
+      "source_rows": 1519,
+      "inserted": 0,
+      "updated": 1519,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.employee_salary_main_backup": {
+      "source_rows": 38,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 38,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.employee_salary_backup": {
+      "source_rows": 312,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 309,
+      "quarantined": 3,
+      "rows_with_issues": 3
+    },
+    "uam_user.employee_salary_summary": {
+      "source_rows": 597,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 597,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.state": {
+      "source_rows": 13,
+      "inserted": 13,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.district": {
+      "source_rows": 79,
+      "inserted": 79,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 1
+    },
+    "uam_user.region": {
+      "source_rows": 1,
+      "inserted": 1,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.circle": {
+      "source_rows": 11,
+      "inserted": 11,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.block": {
+      "source_rows": 585,
+      "inserted": 585,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 9
+    },
+    "uam_user.panchayat": {
+      "source_rows": 8210,
+      "inserted": 8210,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.village": {
+      "source_rows": 23793,
+      "inserted": 23793,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.city": {
+      "source_rows": 2,
+      "inserted": 2,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.location": {
+      "source_rows": 0,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.sublocation": {
+      "source_rows": 0,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.official_location": {
+      "source_rows": 12,
+      "inserted": 12,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.ifsc": {
+      "source_rows": 360,
+      "inserted": 360,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 45
+    },
+    "lead_mngt.division": {
+      "source_rows": 9,
+      "inserted": 9,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.sub_division": {
+      "source_rows": 12,
+      "inserted": 12,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.follow_up": {
+      "source_rows": 2021,
+      "inserted": 2021,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.employee_target": {
+      "source_rows": 36,
+      "inserted": 36,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.employee_tagging": {
+      "source_rows": 3,
+      "inserted": 3,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 3
+    },
+    "lead_mngt.party": {
+      "source_rows": 0,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.detail_category": {
+      "source_rows": 73,
+      "inserted": 73,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.question": {
+      "source_rows": 2161,
+      "inserted": 2161,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 27
+    },
+    "lead_mngt.question_options": {
+      "source_rows": 5382,
+      "inserted": 5382,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.valuation_verification": {
+      "source_rows": 12080,
+      "inserted": 12079,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 1,
+      "rows_with_issues": 12
+    },
+    "lead_mngt.revert_back": {
+      "source_rows": 3343,
+      "inserted": 3343,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.valuation_photo": {
+      "source_rows": 58711,
+      "inserted": 58705,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 6,
+      "rows_with_issues": 6
+    },
+    "lead_mngt.billing_head": {
+      "source_rows": 6,
+      "inserted": 6,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.valuation_billing": {
+      "source_rows": 72852,
+      "inserted": 72846,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 6,
+      "rows_with_issues": 6
+    },
+    "lead_mngt.offline_invoice": {
+      "source_rows": 1396,
+      "inserted": 1396,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 11
+    },
+    "lead_mngt.offline_amount_received": {
+      "source_rows": 991,
+      "inserted": 991,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 11
+    },
+    "lead_mngt.invoice_follow_up": {
+      "source_rows": 13,
+      "inserted": 13,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.account_detail": {
+      "source_rows": 4,
+      "inserted": 4,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.scrutiny_document": {
+      "source_rows": 153,
+      "inserted": 153,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 6
+    },
+    "uam_user.upload_sys": {
+      "source_rows": 429,
+      "inserted": 429,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.lead_upload": {
+      "source_rows": 0,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.usage_documents": {
+      "source_rows": 0,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.lead_order_history": {
+      "source_rows": 1,
+      "inserted": 1,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_mngt.wo_fees_calculation": {
+      "source_rows": 0,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.division": {
+      "source_rows": 0,
+      "inserted": 0,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "uam_user.upload": {
+      "source_rows": 50,
+      "inserted": 50,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    }
+  }
+}

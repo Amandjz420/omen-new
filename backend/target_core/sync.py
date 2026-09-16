@@ -35,12 +35,71 @@ SPECS = [
  ('lead_mngt','upload','upload_id',m.Document,{'storage_key':'doc_path','original_name':'doc_name','media_type':'doc_type_name','size_bytes':'doc_size'},{}),
  ('lead_mngt','lead_order','lead_order_id',m.WorkOrder,{'number':'lead_order_no','legacy_status':'status'}, {'lead':('lead','lead_id',False),'borrower':('lead_borrower','lead_borrower_id',False),'document':('upload','upload_id',True)}),
  ('lead_mngt','valuation','valuation_id',m.Valuation,{'valuation_date':'valuation_date','legacy_status':'valuation_status','report_number':'report_no'}, {'case':('client_customer','client_customer_id',False),'work_order':('lead_order','lead_order_id',True),'assessor':('employee','valuation_done_by',True)}),
- ('lead_mngt','invoice','invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','due_date':'due_date','billed_amount':'total_invoice_amount','legacy_paid_amount':'total_pay_amount','legacy_remaining_amount':'total_remaining_amount','legacy_status':'payment_status'}, {'valuation':('valuation','valuation_id',False)}),
- ('lead_mngt','cash_receipt','cash_receipt_id',m.Receipt,{'number':'cash_receipt_no','received_date':'date','amount':'ammount','legacy_status':'payment_status'},{}),
- ('lead_mngt','amount_received','amount_received_id',m.Receipt,{'received_date':'payment_date','amount':'amount_received','legacy_status':'verify_status'},{}),
+ ('lead_mngt','invoice','invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','due_date':'due_date','billed_amount':'total_invoice_amount','legacy_paid_amount':'total_pay_amount','legacy_remaining_amount':'total_remaining_amount','legacy_status':'payment_status'}, {'valuation':('valuation','valuation_id',False),'bank':('bank','bank_id',True),'document':('upload','upload_id',True)}),
+ # Legacy receipts do carry a settlement reference: cash_receipt names the invoice
+ # directly, amount_received names the valuation. Both are recorded so billing
+ # reconciliation has a starting point; neither is a posted allocation.
+ ('lead_mngt','cash_receipt','cash_receipt_id',m.Receipt,{'number':'cash_receipt_no','received_date':'date','amount':'ammount','legacy_status':'payment_status','payer_name':'payee_details_name','mode':'mode','remark':'remark'}, {'invoice':('invoice','invoice_id',True),'office':('client','client_id',True),'borrower':('lead_borrower','lead_borrower_id',True),'document':('upload','upload_id',True)}),
+ ('lead_mngt','amount_received','amount_received_id',m.Receipt,{'number':'invoice_no','received_date':'payment_date','amount':'amount_received','legacy_status':'verify_status'}, {'valuation':('valuation','valuation_id',True)}),
  ('uam_user','employee_salary_main_backup','employee_salary_main_id',m.SalaryBaseline,{'legacy_status':'status'}, {'employee':('employee','emp_id',False)}),
  ('uam_user','employee_salary_backup','employee_salary_id',m.SalaryBaselineComponent,{'pay_code':'pay_code','amount':'amount','from_period':'from_year_month','to_period':'to_year_month','mode':'pay_mode'}, {'baseline':('employee_salary_main_backup','employee_salary_main_id',False)}),
  ('uam_user','employee_salary_summary','employee_salary_summary_id',m.SalaryResult,{'period':'year_months','gross_earning':'gross_earning','gross_deduction':'gross_deduction','net_salary':'net_salary','paid_days':'present_days','legacy_payment_status':'transaction_status'}, {'employee':('employee','employee_id',False)}),
+
+ # --- Organization: administrative geography -------------------------------
+ # Legacy stores these parent keys as varchar, so every link is optional and an
+ # unresolved reference is reported rather than discarding the row.
+ ('uam_user','state','state_id',m.State,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','legacy_status':'status'},{}),
+ ('uam_user','district','district_id',m.District,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','legacy_status':'status'}, {'state':('state','state_id',True)}),
+ ('uam_user','region','region_id',m.Region,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'},{}),
+ ('uam_user','circle','circle_id',m.Circle,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'}, {'region':('region','region_id',True)}),
+ ('uam_user','block','block_id',m.Block,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','area_type':'area_type','legacy_status':'status'}, {'district':('district','district_id',True),'region':('region','region_id',True),'circle':('circle','circle_id',True)}),
+ ('uam_user','panchayat','panchayat_id',m.Panchayat,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'}, {'block':('block','block_id',True)}),
+ ('uam_user','village','village_id',m.Village,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','pincode':'pincode','area_type':'area_type','legacy_status':'status','legacy_panchayat_code':'panchayat_id'},{}),
+ ('uam_user','city','city_id',m.City,{'name':'name','name_hindi':'name_hindi','code':'code','legacy_status':'status'},{}),
+ ('uam_user','location','location_id',m.Location,{'name':'name','name_hindi':'name_hindi','code':'code','legacy_status':'status'}, {'city':('city','city_id',True)}),
+ ('uam_user','sublocation','sublocation_id',m.SubLocation,{'name':'name','name_hindi':'name_hindi','code':'code','legacy_status':'status'}, {'location':('location','location_id',True)}),
+ ('uam_user','official_location','official_location_id',m.OfficialLocation,{'name':'name','name_hindi':'name_hindi','kind':'type','code':'code','legacy_status':'status'}, {'city':('city','city_id',True)}),
+ ('lead_mngt','ifsc','ifsc',m.IfscArea,{'ifsc':'ifsc'}, {'state':('state','state_id',True),'district':('district','district_id',True),'block':('block','block_id',True)}),
+
+ # --- Lead operations: territory, follow-up, targets, assignment -----------
+ ('lead_mngt','division','division_id',m.LeadDivision,{'name':'name','legacy_status':'status','legacy_deleted':'delete_status'},{}),
+ ('lead_mngt','sub_division','sub_division_id',m.LeadSubdivision,{'name':'name','legacy_status':'status','legacy_deleted':'delete_status'}, {'division':('division','division_id',True)}),
+ ('lead_mngt','follow_up','follow_up_id',m.FollowUp,{'call_status':'call_status_id','logged_date_text':'date','logged_time_text':'time','remark':'remark','legacy_update_date':'update_date'}, {'lead':('lead','lead_id',False)}),
+ ('lead_mngt','employee_target','target_id',m.EmployeeTarget,{'financial_year':'fin_year','period_start':'fy_start_date','period_end':'fy_end_date','target_cases':'target_cases','target_amount':'target_amount','legacy_status':'status'}, {'employee':('employee','emp_id',False)}),
+ ('lead_mngt','employee_tagging','emp_tagging_id',m.EmployeeAssignmentRule,{'usage_of_report_code':'usage_of_report','asset_value':'asset_value'}, {'employee':('employee','emp_id',True),'client_type':('client_type','client_type_id',True),'service':('service_type','service_type_id',True),'subtype':('service_sub_type','service_sub_type_id',True)}),
+ ('lead_mngt','party','party_id',m.LeadParty,{'borrower_name':'name_of_borrower','contact_person_name':'contact_person_name','contact_number':'contact_no'}, {'lead':('lead','lead_id',True)}),
+
+ # --- Valuations: the report form ------------------------------------------
+ ('lead_mngt','detail_category','detail_category_id',m.QuestionCategory,{'name':'detail_category_name','legacy_status':'status','legacy_deleted':'delete_status'},{}),
+ ('lead_mngt','question','question_id',m.Question,{'text':'question','answer_type':'answer_type','question_type':'question_type','is_document':'is_document','is_mandatory':'is_mandatory','display_order':'is_order','legacy_status':'status','legacy_deleted':'delete_status'}, {'service':('service_type','service_type',True),'subtype':('service_sub_type','service_sub_type',True),'category':('detail_category','detail_category',True)}),
+ ('lead_mngt','question_options','option_id',m.QuestionOption,{'value':'value','value_type':'value_type','legacy_deleted':'delete_status'}, {'question':('question','question_id',False)}),
+ ('lead_mngt','valuation_verification','verification_id',m.ValuationVerification,{'legal_done_by_name':'legal_verification_done_name','legal_date':'legal_verification_date','legal_status':'legal_verification_status','legal_remark':'legal_verification_remark','technical_done_by_name':'tech_verification_done_name','technical_date':'tech_verification_date','technical_status':'tech_verification_status','technical_remark':'tech_verification_remark','social_done_by_name':'social_verification_done_name','social_date':'social_verification_date','social_status':'social_verification_status','social_remark':'social_verification_remark','general_done_by_name':'general_verification_done_name','general_date':'general_verification_date','general_status':'general_verification_status','general_remark':'general_verification_remark','final_done_by_name':'final_verification_done_name','final_status':'final_verification_status'}, {'valuation':('valuation','valuation_id',False)}),
+ ('lead_mngt','revert_back','revert_id',m.Reversion,{'remark':'revert_remark','reverted_on':'revert_date','reverted_by_name':'revert_by_name'}, {'valuation':('valuation','valuation_id',False)}),
+ ('lead_mngt','valuation_photo','id',m.ValuationAttachment,{'name':'name','attachment_type':'photo_type'}, {'valuation':('valuation','valuation_id',False),'document':('upload','upload_id',True)}),
+
+ # --- Billing ---------------------------------------------------------------
+ ('lead_mngt','billing_head','billing_head_id',m.ChargeType,{'name':'billing_head_name','charge_kind':'type','legacy_status':'status','legacy_deleted':'delete_status'},{}),
+ ('lead_mngt','valuation_billing','billing_id',m.ValuationCharge,{'amount':'amount','cgst':'cgst','sgst':'sgst','igst':'igst','total_amount':'total_amount'}, {'valuation':('valuation','valuation_id',False),'charge_type':('billing_head','billing_head_id',True)}),
+ ('lead_mngt','offline_invoice','offline_invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','billed_amount':'total_amount','legacy_status':'payment_status'},{}),
+ ('lead_mngt','offline_amount_received','offline_amount_received_id',m.Receipt,{'number':'invoice_no','received_date':'payment_date','amount':'amount_received','legacy_status':'payment_status','remark':'remark'}, {'invoice':('offline_invoice','offline_invoice_id',True)}),
+ ('lead_mngt','invoice_follow_up','invoice_follow_up_id',m.InvoiceFollowUp,{'call_status':'call_status_id','logged_date_text':'date','logged_time_text':'time','remark':'remark','legacy_update_date':'update_date'}, {'invoice':('invoice','invoice_id',True)}),
+ ('lead_mngt','account_detail','account_detail_id',m.IssuerAccount,{'name':'name','branch_code':'branch_code','account_number':'account_no','ifsc_code':'ifsc_code','branch_address':'branch_address','gst_number':'gst_no'}, {'bank':('bank','bank_id',True)}),
+
+ # --- Documents -------------------------------------------------------------
+ ('lead_mngt','scrutiny_document','scrutiny_document_id',m.ScrutinyRequirement,{'name':'name','usage_of_report_code':'usage_of_reports_id','legacy_status':'status','legacy_deleted':'delete_status'}, {'service':('service_type','service_type_id',True),'subtype':('service_sub_type','service_sub_type_id',True),'client_type':('client_type','client_type_id',True)}),
+ ('uam_user','upload_sys','upload_id',m.UploadConfiguration,{'document_number':'doc_no','document_type':'doc_type','storage_key':'doc_path','size_text':'doc_size','original_name':'doc_name','public_path':'public_path','uploaded_by_name':'upload_by_name'},{}),
+ ('lead_mngt','lead_upload','lead_upload_id',m.LeadAttachment,{'attachment_type':'type','remark':'remark','proposal_amount':'proposal_amount','legacy_status':'status'}, {'lead':('lead','lead_id',True),'document':('upload','upload_id',True)}),
+ ('lead_mngt','usage_documents','usage_documents_id',m.DocumentUsage,{'usage_of_report_code':'usage_of_reports_id','remarks':'remarks'}, {'lead':('lead','lead_id',True),'document':('upload','doc_upload_id',True)}),
+
+ # --- Work orders -----------------------------------------------------------
+ ('lead_mngt','lead_order_history','lead_order_id',m.WorkOrderRevision,{'number':'lead_order_no','legacy_status':'status'}, {'lead':('lead','lead_id',True),'document':('upload','upload_id',True)}),
+ ('lead_mngt','wo_fees_calculation','wo_fees_calculation_id',m.FeeRule,{'fmv_category':'fmv_category','fmv_range_min':'fmv_range_min','fmv_range_max':'fmv_range_max','per_lac_amount':'per_lac_amount','additional_charge':'additional_charge','min_fee':'min_fees','max_fee':'max_fees','legacy_deleted':'delete_status'}, {'bank':('bank','bank_id',True)}),
+
+ # --- Sequenced last: these two table names collide with lead_mngt tables ----
+ # `maps` is keyed by bare table name, so uam_user.division and uam_user.upload
+ # must run after every spec that resolves against lead_mngt.division/upload.
+ ('uam_user','division','division_id',m.AdministrativeDivision,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'}, {'circle':('circle','circle_id',True)}),
+ ('uam_user','upload','upload_id',m.Document,{'storage_key':'doc_path','original_name':'doc_name','media_type':'doc_type','size_bytes':'doc_size'},{}),
 ]
 ALLOWED = {(s,t) for s,t,*_ in SPECS} | {('uam_user','state'),('uam_user','district')}
 
@@ -164,6 +223,13 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                         for field,(parent,column,optional) in links.items():
                             source_id=row[column]
                             linked=maps[parent].get(str(source_id))
+                            if linked is None and source_id is not None:
+                                # Legacy stores some parent keys as zero-padded varchar
+                                # ('010101' for block 10101). MySQL compares these
+                                # numerically; a string lookup does not.
+                                text=str(source_id).strip()
+                                if text.isdigit():
+                                    linked=maps[parent].get(str(int(text)))
                             values[field+'_id']=linked.id if linked else None
                             if linked is None and not optional:
                                 raise ValueError(f'Missing or quarantined required parent: {column}')
@@ -176,7 +242,7 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                                 raise ValueError('Office bank disagrees with directory branch bank')
                         if model is m.Lead: values['date_basis']='lead_entry_proxy'
                         if model is m.Document: values['storage_provider']='legacy_lead_storage'
-                        if model is m.Invoice: values['origin']='legacy_invoice'
+                        if model is m.Invoice: values['origin']='legacy_'+table
                         if model is m.Receipt: values['origin']='legacy_'+table
                         if model is m.SalaryBaseline: values['source_variant']=table
                         if model in (m.RequestedService,m.Case):
@@ -231,7 +297,7 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                 m.MigrationIssue.objects.bulk_create(issues,batch_size=400)
                 maps[table]=current
                 assert sum(counts[k] for k in ('inserted','updated','unchanged','quarantined'))==counts['source_rows']
-                report[table]=counts
+                report[f'{schema}.{table}']=counts
                 progress(f'{table}: {counts}')
             batch.snapshot_checksum=digest.hexdigest(); batch.summary=report
             batch.status='completed_with_issues' if any(r['rows_with_issues'] for r in report.values()) else 'completed'

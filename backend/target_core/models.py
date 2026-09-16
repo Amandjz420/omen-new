@@ -186,6 +186,8 @@ class Invoice(Entity):
     legacy_paid_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
     legacy_remaining_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
     legacy_status = models.CharField(max_length=40, blank=True)
+    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
 
 
 class InvoiceLine(Entity):
@@ -203,6 +205,18 @@ class Receipt(Entity):
     currency = models.CharField(max_length=3, blank=True)
     verified = models.BooleanField(default=False)
     legacy_status = models.CharField(max_length=40, blank=True)
+    # Legacy receipts do carry a settlement reference: cash_receipt names an
+    # invoice directly, amount_received names the valuation. Both are recorded
+    # so billing reconciliation has something to work from. Neither is a
+    # posted allocation; ReceiptAllocation remains the ledger.
+    invoice = models.ForeignKey(Invoice, null=True, on_delete=models.PROTECT, related_name='receipts')
+    valuation = models.ForeignKey('Valuation', null=True, on_delete=models.PROTECT)
+    office = models.ForeignKey(ClientOffice, null=True, on_delete=models.PROTECT)
+    borrower = models.ForeignKey(Borrower, null=True, on_delete=models.PROTECT)
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    payer_name = models.CharField(max_length=300, blank=True)
+    mode = models.CharField(max_length=40, blank=True)
+    remark = models.TextField(blank=True)
 
 
 class ReceiptAllocation(Entity):
@@ -271,3 +285,359 @@ class LeadNote(Entity):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     body = models.TextField(max_length=4000)
     prototype_note_id = models.BigIntegerField(null=True, unique=True)
+
+
+# ============================================================================
+# Organization: the legacy administrative geography hierarchy.
+# state > district > block > panchayat > village, with the parallel
+# region > circle and city > location > sublocation ladders. Parents are
+# nullable because legacy keys are stored as varchar and do not all resolve.
+# ============================================================================
+
+class State(NamedEntity):
+    name_hindi = models.CharField(max_length=250, blank=True)
+    census_code = models.CharField(max_length=10, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class District(NamedEntity):
+    state = models.ForeignKey(State, null=True, on_delete=models.PROTECT)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    census_code = models.CharField(max_length=10, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class Region(NamedEntity):
+    name_hindi = models.CharField(max_length=250, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class Circle(NamedEntity):
+    region = models.ForeignKey(Region, null=True, on_delete=models.PROTECT)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class Block(NamedEntity):
+    district = models.ForeignKey(District, null=True, on_delete=models.PROTECT)
+    region = models.ForeignKey(Region, null=True, on_delete=models.PROTECT)
+    circle = models.ForeignKey(Circle, null=True, on_delete=models.PROTECT)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    census_code = models.CharField(max_length=10, blank=True)
+    area_type = models.CharField(max_length=10, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class Panchayat(NamedEntity):
+    block = models.ForeignKey(Block, null=True, on_delete=models.PROTECT)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class Village(NamedEntity):
+    # uam_user.village.PANCHAYAT_ID is a 4-character local code ('0117'), not a
+    # key into panchayat.panchayat_id (an 8-digit composite). No row joins, so
+    # the raw code is preserved and the relationship is left unasserted.
+    panchayat = models.ForeignKey(Panchayat, null=True, on_delete=models.PROTECT)
+    legacy_panchayat_code = models.CharField(max_length=10, blank=True, db_index=True)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    census_code = models.CharField(max_length=10, blank=True)
+    pincode = models.CharField(max_length=10, blank=True)
+    area_type = models.CharField(max_length=10, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class City(NamedEntity):
+    name_hindi = models.CharField(max_length=250, blank=True)
+    code = models.CharField(max_length=20, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class Location(NamedEntity):
+    city = models.ForeignKey(City, null=True, on_delete=models.PROTECT)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    code = models.CharField(max_length=20, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class SubLocation(NamedEntity):
+    location = models.ForeignKey(Location, null=True, on_delete=models.PROTECT)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    code = models.CharField(max_length=20, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class AdministrativeDivision(NamedEntity):
+    """uam_user.division. Distinct from the lead-management division master."""
+    circle = models.ForeignKey(Circle, null=True, on_delete=models.PROTECT)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class OfficialLocation(NamedEntity):
+    city = models.ForeignKey(City, null=True, on_delete=models.PROTECT)
+    kind = models.CharField(max_length=20, blank=True)
+    code = models.CharField(max_length=10, blank=True)
+    name_hindi = models.CharField(max_length=250, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class IfscArea(Entity):
+    """lead_mngt.ifsc has no primary key; the IFSC string is its natural key."""
+    ifsc = models.CharField(max_length=45, db_index=True)
+    state = models.ForeignKey(State, null=True, on_delete=models.PROTECT)
+    district = models.ForeignKey(District, null=True, on_delete=models.PROTECT)
+    block = models.ForeignKey(Block, null=True, on_delete=models.PROTECT)
+
+
+# ============================================================================
+# Lead operations: territory masters, follow-up calls, targets and assignment.
+# Legacy follow-up stores its date and time as free text; the raw strings are
+# preserved rather than guessed into typed columns.
+# ============================================================================
+
+class LeadDivision(NamedEntity):
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class LeadSubdivision(NamedEntity):
+    division = models.ForeignKey(LeadDivision, null=True, on_delete=models.PROTECT)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class FollowUp(Entity):
+    lead = models.ForeignKey(Lead, on_delete=models.PROTECT, related_name='follow_ups')
+    call_status = models.CharField(max_length=50, blank=True)
+    logged_date_text = models.CharField(max_length=50, blank=True)
+    logged_time_text = models.CharField(max_length=20, blank=True)
+    remark = models.TextField(blank=True)
+    legacy_update_date = models.CharField(max_length=45, blank=True)
+
+
+class EmployeeTarget(Entity):
+    employee = models.ForeignKey(Employee, on_delete=models.PROTECT)
+    financial_year = models.CharField(max_length=20, blank=True)
+    period_start = models.DateField(null=True)
+    period_end = models.DateField(null=True)
+    target_cases = models.PositiveIntegerField(null=True)
+    target_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class EmployeeAssignmentRule(Entity):
+    employee = models.ForeignKey(Employee, null=True, on_delete=models.PROTECT)
+    client_type = models.ForeignKey(ClientType, null=True, on_delete=models.PROTECT)
+    service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
+    subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
+    usage_of_report_code = models.CharField(max_length=40, blank=True)
+    asset_value = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+
+
+class LeadParty(Entity):
+    lead = models.ForeignKey(Lead, null=True, on_delete=models.PROTECT)
+    borrower_name = models.CharField(max_length=300, blank=True)
+    contact_person_name = models.CharField(max_length=300, blank=True)
+    contact_number = models.CharField(max_length=80, blank=True)
+
+
+# ============================================================================
+# Documents: attachments and upload configuration. Metadata only; the files
+# themselves are not retrieved by this importer.
+# ============================================================================
+
+class ValuationAttachment(Entity):
+    valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='attachments')
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    name = models.CharField(max_length=500, blank=True)
+    attachment_type = models.CharField(max_length=40, blank=True)
+
+
+class ScrutinyRequirement(NamedEntity):
+    service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
+    subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
+    client_type = models.ForeignKey(ClientType, null=True, on_delete=models.PROTECT)
+    usage_of_report_code = models.CharField(max_length=40, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class UploadConfiguration(Entity):
+    """uam_user.upload_sys: system upload definitions, not business documents."""
+    document_number = models.CharField(max_length=250, blank=True)
+    document_type = models.CharField(max_length=150, blank=True)
+    storage_key = models.TextField(blank=True)
+    public_path = models.TextField(blank=True)
+    original_name = models.CharField(max_length=300, blank=True)
+    size_text = models.CharField(max_length=20, blank=True)
+    uploaded_by_name = models.CharField(max_length=150, blank=True)
+
+
+class LeadAttachment(Entity):
+    lead = models.ForeignKey(Lead, null=True, on_delete=models.PROTECT)
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    attachment_type = models.CharField(max_length=40, blank=True)
+    remark = models.TextField(blank=True)
+    proposal_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class DocumentUsage(Entity):
+    lead = models.ForeignKey(Lead, null=True, on_delete=models.PROTECT)
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    usage_of_report_code = models.CharField(max_length=40, blank=True)
+    remarks = models.TextField(blank=True)
+
+
+# ============================================================================
+# Billing: charge heads, per-valuation charge lines, follow-up and the
+# issuing account. Offline invoices and receipts import into Invoice/Receipt
+# and stay distinguishable through their origin field.
+# ============================================================================
+
+class ChargeType(NamedEntity):
+    charge_kind = models.CharField(max_length=40, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class ValuationCharge(Entity):
+    valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='charges')
+    charge_type = models.ForeignKey(ChargeType, null=True, on_delete=models.PROTECT)
+    amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    cgst = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    sgst = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    igst = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    total_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    # Totals are preserved as recorded; they are not recomputed from components.
+
+
+class InvoiceFollowUp(Entity):
+    invoice = models.ForeignKey(Invoice, null=True, on_delete=models.PROTECT, related_name='follow_ups')
+    call_status = models.CharField(max_length=50, blank=True)
+    logged_date_text = models.CharField(max_length=50, blank=True)
+    logged_time_text = models.CharField(max_length=20, blank=True)
+    remark = models.TextField(blank=True)
+    legacy_update_date = models.CharField(max_length=45, blank=True)
+
+
+class IssuerAccount(NamedEntity):
+    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
+    branch_code = models.CharField(max_length=40, blank=True)
+    account_number = models.CharField(max_length=40, blank=True)
+    ifsc_code = models.CharField(max_length=100, blank=True)
+    branch_address = models.TextField(blank=True)
+    gst_number = models.CharField(max_length=100, blank=True)
+
+
+# ============================================================================
+# Valuations: the report form itself.
+#
+# The legacy form is entity-attribute-value and is preserved in that shape
+# rather than pivoted, because the question set varies by service and changes
+# over time. Question defines the attribute, QuestionOption its permitted
+# values, and ValuationAnswer one stored cell.
+#
+# answer_type governs how a question renders and therefore how its answers are
+# grouped (confirmed against the legacy JSP renderers):
+#   1, 2  option list; one answer row per option
+#   3     free text; a single answer row
+#   4, 6  repeating grid; answer_group is the row index, options are columns
+#   5     attribute/value table whose numeric values are totalled
+# answer_group is therefore significant and is never collapsed.
+#
+# No uniqueness is asserted over (valuation, question, answer_group, option):
+# the legacy data contains rows that repeat even that combination.
+# ============================================================================
+
+class QuestionCategory(NamedEntity):
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class Question(Entity):
+    service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
+    subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
+    category = models.ForeignKey(QuestionCategory, null=True, on_delete=models.PROTECT)
+    text = models.TextField(blank=True)
+    answer_type = models.PositiveSmallIntegerField(null=True)
+    question_type = models.PositiveSmallIntegerField(null=True)
+    is_document = models.BooleanField(default=False)
+    is_mandatory = models.BooleanField(default=False)
+    display_order = models.DecimalField(max_digits=8, decimal_places=2, null=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class QuestionOption(Entity):
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name='options')
+    value = models.TextField(blank=True)
+    value_type = models.CharField(max_length=200, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class ValuationAnswer(Entity):
+    valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='answers')
+    question = models.ForeignKey(Question, on_delete=models.PROTECT)
+    option = models.ForeignKey(QuestionOption, null=True, on_delete=models.PROTECT)
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    answer_group = models.PositiveIntegerField(default=0, db_index=True)
+    value = models.TextField(blank=True)
+    class Meta:
+        indexes = [models.Index(fields=['valuation', 'question', 'answer_group'])]
+
+
+class ValuationVerification(Entity):
+    """Five parallel review tracks kept flat, exactly as the source records them.
+    Normalizing into one row per track is a later change requiring review."""
+    valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='verifications')
+    legal_done_by_name = models.TextField(blank=True)
+    legal_date = models.DateField(null=True)
+    legal_status = models.CharField(max_length=40, blank=True)
+    legal_remark = models.TextField(blank=True)
+    technical_done_by_name = models.CharField(max_length=250, blank=True)
+    technical_date = models.DateField(null=True)
+    technical_status = models.CharField(max_length=40, blank=True)
+    technical_remark = models.TextField(blank=True)
+    social_done_by_name = models.CharField(max_length=250, blank=True)
+    social_date = models.DateField(null=True)
+    social_status = models.CharField(max_length=40, blank=True)
+    social_remark = models.TextField(blank=True)
+    general_done_by_name = models.CharField(max_length=300, blank=True)
+    general_date = models.DateField(null=True)
+    general_status = models.CharField(max_length=40, blank=True)
+    general_remark = models.TextField(blank=True)
+    final_done_by_name = models.CharField(max_length=200, blank=True)
+    final_status = models.CharField(max_length=100, blank=True)
+
+
+class Reversion(Entity):
+    """A valuation sent back for correction."""
+    valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='reversions')
+    remark = models.CharField(max_length=300, blank=True)
+    reverted_on = models.DateField(null=True)
+    reverted_by_name = models.CharField(max_length=200, blank=True)
+
+
+# ============================================================================
+# Work orders: revisions and the fee rule table.
+# ============================================================================
+
+class WorkOrderRevision(Entity):
+    lead = models.ForeignKey(Lead, null=True, on_delete=models.PROTECT)
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    number = models.CharField(max_length=100, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class FeeRule(Entity):
+    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
+    fmv_category = models.CharField(max_length=40, blank=True)
+    fmv_range_min = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    fmv_range_max = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    per_lac_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    additional_charge = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    min_fee = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    max_fee = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
