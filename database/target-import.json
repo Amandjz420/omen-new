@@ -1,0 +1,181 @@
+{
+  "dry_run": false,
+  "tables": {
+    "bank": {
+      "source_rows": 199,
+      "inserted": 199,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "bank_branch": {
+      "source_rows": 143702,
+      "inserted": 143702,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "employee": {
+      "source_rows": 51,
+      "inserted": 51,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "client_type": {
+      "source_rows": 7,
+      "inserted": 7,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "client_designation": {
+      "source_rows": 26,
+      "inserted": 26,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "service_type": {
+      "source_rows": 15,
+      "inserted": 15,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "service_sub_type": {
+      "source_rows": 50,
+      "inserted": 50,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "client": {
+      "source_rows": 1394,
+      "inserted": 1394,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 1
+    },
+    "orderer_reg": {
+      "source_rows": 2049,
+      "inserted": 2048,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 1,
+      "rows_with_issues": 1
+    },
+    "lead": {
+      "source_rows": 10969,
+      "inserted": 10968,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 1,
+      "rows_with_issues": 3
+    },
+    "lead_services": {
+      "source_rows": 11798,
+      "inserted": 11795,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 3,
+      "rows_with_issues": 22
+    },
+    "lead_borrower": {
+      "source_rows": 12756,
+      "inserted": 12751,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 5,
+      "rows_with_issues": 5
+    },
+    "client_customer": {
+      "source_rows": 12877,
+      "inserted": 12862,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 15,
+      "rows_with_issues": 21
+    },
+    "upload": {
+      "source_rows": 150636,
+      "inserted": 150636,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "lead_order": {
+      "source_rows": 12285,
+      "inserted": 12285,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "valuation": {
+      "source_rows": 12651,
+      "inserted": 12637,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 14,
+      "rows_with_issues": 21
+    },
+    "invoice": {
+      "source_rows": 11927,
+      "inserted": 11926,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 1,
+      "rows_with_issues": 1
+    },
+    "cash_receipt": {
+      "source_rows": 11207,
+      "inserted": 11207,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "amount_received": {
+      "source_rows": 1519,
+      "inserted": 1519,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "employee_salary_main_backup": {
+      "source_rows": 38,
+      "inserted": 38,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    },
+    "employee_salary_backup": {
+      "source_rows": 312,
+      "inserted": 309,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 3,
+      "rows_with_issues": 3
+    },
+    "employee_salary_summary": {
+      "source_rows": 597,
+      "inserted": 597,
+      "updated": 0,
+      "unchanged": 0,
+      "quarantined": 0,
+      "rows_with_issues": 0
+    }
+  }
+}

@@ -123,12 +123,23 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                 progress(f'Reading {schema}.{table}')
                 rows=source.rows(schema,table)
                 identities={r.key:r for r in m.SourceIdentity.objects.filter(environment='main',schema=schema,table=table)}
-                existing={r.id:r for r in model.objects.filter(id__in=[r.target_id for r in identities.values()])}
+                # Chunked: one bind parameter per identity exceeds the SQLite host-variable
+                # limit on any repeat run of a large table (e.g. 143,702 bank branches).
+                target_ids=[r.target_id for r in identities.values()]
+                existing={}
+                for _i in range(0,len(target_ids),500):
+                    existing.update({r.id:r for r in model.objects.filter(id__in=target_ids[_i:_i+500])})
                 stages={r.key:r for r in m.SourceRow.objects.filter(schema=schema,table=table)}
                 counts={'source_rows':len(rows),'inserted':0,'updated':0,'unchanged':0,'quarantined':0,'rows_with_issues':0}
                 creates,updates,identity_creates,stage_creates,stage_updates,issues=[],[],[],[],[],[]
                 current={}
                 seen=set()
+                # Legacy service_sub_type duplicates the same subtype name under each service.
+                # Index by (normalized name, service) so a row whose subtype FK points at an
+                # equivalently named subtype filed under another service can be resolved.
+                subtype_by_name={}
+                if model in (m.RequestedService,m.Case):
+                    subtype_by_name={(o.name.strip().lower(),o.service_id):o for o in maps['service_sub_type'].values()}
                 # Sort by canonical source ID for a deterministic fingerprint independent of SQL row order.
                 rows.sort(key=lambda r:source_key(r[keycol]))
                 for row in rows:
@@ -171,7 +182,15 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                         if model in (m.RequestedService,m.Case):
                             subtype=maps['service_sub_type'].get(str(row['service_sub_type_id']))
                             if subtype and subtype.service_id!=values['service_id']:
-                                raise ValueError('Subtype belongs to a different service')
+                                # Subtype is an optional classification. A mismatch is a legacy
+                                # referential defect, not grounds for discarding the business row.
+                                sibling=subtype_by_name.get((subtype.name.strip().lower(),values['service_id']))
+                                if sibling is not None:
+                                    values['subtype_id']=sibling.id
+                                    warnings.append(f"Subtype {row['service_sub_type_id']} is filed under a different service; remapped by exact name to the subtype of the declared service")
+                                else:
+                                    values['subtype_id']=None
+                                    warnings.append(f"Subtype {row['service_sub_type_id']} is filed under a different service with no equivalent under the declared service; subtype cleared")
                         if model in (m.Case,m.WorkOrder):
                             borrower=maps['lead_borrower'][str(row['lead_borrower_id'])]
                             if borrower.lead_id!=values['lead_id']: raise ValueError('Borrower belongs to a different lead')
