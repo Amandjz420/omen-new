@@ -100,3 +100,64 @@ After the review gate, continue the remaining business migration in dependency o
 - `database/mapping-catalog.json`, `verification.json`, `object-verification.json`
 
 Do not distribute the SQL dump, credentials, salary/contact payloads or SQLite databases with a general-purpose handoff summary. Give implementation agents access only through the authorized project environment.
+
+---
+
+# Addendum — 17 September 2026
+
+## The valuation form (EAV)
+
+The legacy valuation report is entity-attribute-value and is **preserved in that
+shape rather than pivoted**, because the question set varies by service and
+changes over time; pivoting would freeze the current form and lose history.
+
+| Legacy table | Rows | Target | Role |
+|---|---|---|---|
+| `detail_category` | 73 | `QuestionCategory` | form sections |
+| `question` | 2,161 | `Question` | the attribute, scoped by service + subtype + category |
+| `question_options` | 5,382 | `QuestionOption` | permitted values |
+| `valuation_answer` | 1,947,362 | `ValuationAnswer` | one stored cell |
+| `valuation_verification` | 12,080 | `ValuationVerification` | five review tracks, kept flat |
+| `revert_back` | 3,343 | `Reversion` | sent back for correction |
+
+`question.answer_type` governs grouping. Semantics were read from the legacy
+renderers `report_question.jsp` and `valuation_full_view.jsp`:
+
+- **1, 2** — option list; one answer row per option
+- **3** — free text; a single answer row
+- **4, 6** — repeating grid; `answer_group` is the row index, options are columns
+- **5** — attribute/value table whose numeric values are totalled
+
+Consequences for the model: `answer_group` is significant and is never
+collapsed; and **no uniqueness is asserted** over
+`(valuation, question, answer_group, option)` because 281,335 combinations
+repeat in the source and 30 repeat even including the option.
+
+Known unresolved links: 11,567 answers reference an option id absent from
+`question_options`. Payloads are retained. Profiling these by `answer_type` to
+determine which are interpretable remains open work.
+
+## Review corrections applied
+
+1. Later relationship checks reuse the objects resolved by the FK resolver.
+   Previously they re-indexed the parent maps with the raw string, bypassing
+   zero-pad normalization; the bracket forms raised an uncaught `KeyError` that
+   would roll back an entire import.
+2. An answer whose option belongs to another question keeps its value and
+   clears only the unusable link (2 rows).
+3. `storage_provider` follows the source system rather than being hardcoded.
+4. Subtype remapping is by **normalized** name (trimmed, case-insensitive) and
+   refuses to guess when more than one candidate matches.
+5. `BooleanField` conversion handles null rather than failing NOT NULL.
+6. The API surfaces importer issues on offices, leads and cases; the overview
+   distinguishes source, accepted, flagged and quarantined counts.
+
+## Still open
+
+- Pipeline tests exist (19), but there is no browser login/CSRF/session test.
+- Prototype account and note adoption is **not applicable**: the prototype
+  database holds 0 `auth_user` and 0 `core_leadnote` rows. Verified empty.
+- Parent maps are still keyed by bare table name and rely on ordering the two
+  `uam_user` collisions last. Namespace them before extending mappings.
+- Document bytes, legacy MIS parity, identity/permissions, messaging and
+  attendance remain unmigrated.

@@ -59,25 +59,42 @@ def page(request, qs, serialize):
         return JsonResponse({'error': 'page must be an integer'}, status=400)
     count = qs.count()
     rows=list(qs[(number - 1)*30:number*30])
-    references=source_references(rows+[r.office for r in rows if isinstance(r,Lead) and r.office])
+    references=source_references(rows+[r.office for r in rows if isinstance(r,Lead) and r.office])  # offices resolve alongside their leads
     return JsonResponse({'count': count, 'page': number, 'page_size': 30,
                          'results': [serialize(r,references) for r in rows]})
 
 
 def source_references(objects):
-    return {r.target_id:json.loads(r.key)[0][1] for r in SourceIdentity.objects.filter(environment='main',target_id__in=[o.id for o in objects])}
+    """Map each target id to its legacy source id and the importer's issues for
+    that row, so a corrected or cleared classification is visible rather than
+    presented as if it were clean source data."""
+    ids=[o.id for o in objects if o is not None]
+    identities=list(SourceIdentity.objects.filter(environment='main',target_id__in=ids))
+    by_table={}
+    for r in identities:
+        by_table.setdefault((r.schema,r.table),[]).append(r.key)
+    problems={}
+    for (schema,table),keys in by_table.items():
+        for row in SourceRow.objects.filter(schema=schema,table=table,key__in=keys):
+            problems[(schema,table,row.key)]=row.problems or []
+    return {r.target_id:{'source_id':json.loads(r.key)[0][1],
+                         'issues':problems.get((r.schema,r.table,r.key),[])} for r in identities}
 
 
 def office_json(obj,references):
-    return {'id': obj.id, 'source_id': references.get(obj.id), 'name': obj.name, 'branch': obj.branch_name,
+    reference=references.get(obj.id) or {}
+    return {'id': obj.id, 'source_id': reference.get('source_id'), 'name': obj.name, 'branch': obj.branch_name,
             'bank': obj.bank.name if obj.bank else None, 'state': obj.state,
-            'district': obj.district, 'issues': []}
+            'district': obj.district, 'issues': reference.get('issues', [])}
 
 
 def lead_json(obj,references):
-    return {'id': obj.id, 'source_id': references.get(obj.id), 'number': obj.number, 'status': obj.legacy_status,
+    reference=references.get(obj.id) or {}
+    return {'id': obj.id, 'source_id': reference.get('source_id'), 'number': obj.number, 'status': obj.legacy_status,
             'status_label': {'1': 'New lead', '2': 'In process', '3': 'Cancelled', '4': 'Closed (legacy)'}.get(obj.legacy_status, 'Unknown'),
-            'received_date': obj.received_date, 'office': office_json(obj.office,references), 'issues': []}
+            'received_date': obj.received_date,
+            'office': office_json(obj.office,references) if obj.office else None,
+            'issues': reference.get('issues', [])}
 
 
 @require_GET
@@ -118,13 +135,11 @@ def lead_detail(request, pk):
     cases=list(obj.case_set.select_related('service','subtype').order_by('id'))
     references=source_references([obj,obj.office,*cases])
     result = lead_json(obj,references)
-    source=SourceIdentity.objects.filter(target_model=Lead._meta.label,target_id=obj.id).first()
-    if source:
-        stage=SourceRow.objects.filter(schema=source.schema,table=source.table,key=source.key).first()
-        result['issues']=stage.problems if stage else []
     result['contact'] = {'name': obj.contact.name, 'phone': obj.contact.phone} if obj.contact else None
-    result['cases'] = [{'id':c.id,'source_id':references.get(c.id),'service':c.service.name,
-                       'subtype':c.subtype.name if c.subtype else None,'district':c.asset_district,'issues':[]} for c in cases]
+    # A case whose subtype was remapped or cleared carries the importer's note here.
+    result['cases'] = [{'id':c.id,'source_id':(references.get(c.id) or {}).get('source_id'),'service':c.service.name,
+                       'subtype':c.subtype.name if c.subtype else None,'district':c.asset_district,
+                       'issues':(references.get(c.id) or {}).get('issues',[])} for c in cases]
     result['notes'] = list(obj.notes.order_by('-created_at').values('id', 'body', 'created_at', 'author__username'))
     return JsonResponse(result, status=201 if request.method == 'POST' else 200)
 
@@ -147,5 +162,7 @@ def summary(request):
     return JsonResponse({'offices': Office.objects.count(), 'leads': Lead.objects.count(), 'contacts': Contact.objects.count(),
                          'cases': qs.count(), 'unlinked_cases': qs.filter(lead__isnull=True).count(),
                          'services': services, 'quarantined_source_rows':SourceRow.objects.filter(outcome='quarantined').count(),
+                         'source_rows': SourceRow.objects.count(),
+                         'rows_with_issues': SourceRow.objects.exclude(problems=[]).exclude(outcome='quarantined').count(),
                          'policy': 'Validated imported cases; all source statuses retained. Unresolved rows are quarantined. Dates use the lead-entry proxy.',
                          'latest_import': {'created_at': latest.created_at, 'summary': latest.summary} if latest else None})

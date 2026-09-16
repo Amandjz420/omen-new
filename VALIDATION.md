@@ -1,16 +1,51 @@
-# First migration milestone — validation
+# Validation evidence
 
-Verified locally on 16 September 2026.
+Last updated 17 September 2026, after the review corrections.
 
-- Django system checks passed; initial schema migration applied to a separate SQLite database.
-- Six automated tests passed: repeat imports/corrections/omitted-row retention and note preservation; dry-run rollback; duplicate rejection; orphan retention; financial-year date boundaries; session/CSRF/access and note validation.
-- React production build passed with Vite 7.3.6. npm reported no known vulnerabilities at install time.
-- Imported: 199 banks, 1,394 client offices, 2,049 contacts, 10,969 leads, 12,877 cases.
-- Other exported business sheets were stored in source staging. Their operational models and workflows are not yet migrated.
-- Repeating the full real-data import in dry-run mode proposed zero inserts and zero updates across all 16 business sheets.
-- Browser checks passed: staff sign-in, overview counts, search narrowed to one lead, linked case visible, note saved through the React → Django API → database path, sign-out. Browser console had no errors during this check.
-- The temporary QA account and its test note were removed after testing. No personal login was created for the user; use Create Login.command or manage.py createsuperuser.
+## Scope imported
 
-The first-slice importer reports four rows with missing/unmatched modeled references: one contact, two leads and one case. This narrower check does not supersede the 1,842 review items in the broader Excel analysis. Further domain validation remains necessary.
+Nine business modules: crm, services, workorders, reference, leads, documents,
+billing, valuations, organization. 61 source tables from `lead_mngt` and
+`uam_user`. Attendance, identity, messaging, reports, leave, audit, all UAT
+schemas and `uam_user.logtable` are deliberately out of scope.
 
-Not tested or completed: PostgreSQL, deployment, complete operational workflow parity, external integrations, all-role permission parity, full legacy MIS calculations, XLSX upload UI, incremental sync, financial reconciliation, and mobile browser layout. See README for the remaining milestones and supported refresh process.
+| Measure | Value |
+|---|---|
+| Source tables | 61 |
+| Source rows read | 2,537,219 |
+| Accepted into target | 2,537,011 (99.992%) |
+| Quarantined | 208 |
+| Imported with issues | 11,950 |
+| SourceRow payloads retained | 2,537,219 (every row, including rejects) |
+
+## Checks performed
+
+- **Full 61-table repeat import proposes 0 inserts and 0 updates**
+  (`database/target-repeat-final.json`). This is the idempotency proof for the
+  complete streaming pipeline, run after the corrections.
+- 19 tests pass under both `config.settings` and `config.target`.
+  `makemigrations --check` reports no drift. Frontend production build passes.
+- Import reconciles against live MySQL. Every quarantine was traced to a
+  dangling legacy foreign key; for the original 16, twelve were directly
+  dangling and four cascaded from lead 435 whose `client_id` 1183 is absent.
+- Storage classification follows the source system: 150,636 documents
+  `legacy_lead_s3`, 50 `legacy_uam_local`, per `DEPLOYMENT_INVENTORY.md`.
+- No answer references an option belonging to another question (was 2).
+- No subtype remapping was ambiguous (0 rows), so every one of the 13
+  remappings had exactly one candidate under the declared service.
+
+## What these numbers do not establish
+
+- Acceptance is not semantic correctness. 11,950 rows carry issues.
+- Document **metadata** is migrated; no file bytes were copied or verified.
+- Valuation answers are preserved in EAV form. Report rendering parity against
+  the legacy JSP output has not been demonstrated.
+- No browser session, login, CSRF or end-to-end UI test has been run.
+- No production access, and no legacy MIS calculation has been reimplemented
+  or compared.
+
+## Operational note
+
+No personal login is created by the importer. Use `Create Login.command` or
+`manage.py createsuperuser`. Any temporary QA account should be removed after
+testing.

@@ -15,6 +15,9 @@ from django.db import connections, transaction
 from . import models as m
 
 VERSION = 'mysql-target-v1'
+# Rows read per page. Bounds peak memory on large tables such as the 1.95M-row
+# valuation answer set, which cannot be held in memory in one piece.
+CHUNK_SIZE = 100000
 NS = uuid.UUID('9bd83976-1597-4f34-99cf-6ea542f97ebc')
 
 # schema, table, ID, target, scalar target->source, FK target->(parent table, source column, optional)
@@ -73,6 +76,11 @@ SPECS = [
  ('lead_mngt','detail_category','detail_category_id',m.QuestionCategory,{'name':'detail_category_name','legacy_status':'status','legacy_deleted':'delete_status'},{}),
  ('lead_mngt','question','question_id',m.Question,{'text':'question','answer_type':'answer_type','question_type':'question_type','is_document':'is_document','is_mandatory':'is_mandatory','display_order':'is_order','legacy_status':'status','legacy_deleted':'delete_status'}, {'service':('service_type','service_type',True),'subtype':('service_sub_type','service_sub_type',True),'category':('detail_category','detail_category',True)}),
  ('lead_mngt','question_options','option_id',m.QuestionOption,{'value':'value','value_type':'value_type','legacy_deleted':'delete_status'}, {'question':('question','question_id',False)}),
+ # The valuation form itself: 1.95M answer cells, read in pages. answer_group is
+ # the repeating-row index for grid questions and is never collapsed. No uniqueness
+ # is asserted over (valuation, question, answer_group, option): the legacy data
+ # repeats even that combination.
+ ('lead_mngt','valuation_answer','answer_id',m.ValuationAnswer,{'answer_group':'answer_group','value':'value'}, {'valuation':('valuation','valuation_id',False),'question':('question','question_id',False),'option':('question_options','option_id',True),'document':('upload','upload_id',True)}),
  ('lead_mngt','valuation_verification','verification_id',m.ValuationVerification,{'legal_done_by_name':'legal_verification_done_name','legal_date':'legal_verification_date','legal_status':'legal_verification_status','legal_remark':'legal_verification_remark','technical_done_by_name':'tech_verification_done_name','technical_date':'tech_verification_date','technical_status':'tech_verification_status','technical_remark':'tech_verification_remark','social_done_by_name':'social_verification_done_name','social_date':'social_verification_date','social_status':'social_verification_status','social_remark':'social_verification_remark','general_done_by_name':'general_verification_done_name','general_date':'general_verification_date','general_status':'general_verification_status','general_remark':'general_verification_remark','final_done_by_name':'final_verification_done_name','final_status':'final_verification_status'}, {'valuation':('valuation','valuation_id',False)}),
  ('lead_mngt','revert_back','revert_id',m.Reversion,{'remark':'revert_remark','reverted_on':'revert_date','reverted_by_name':'revert_by_name'}, {'valuation':('valuation','valuation_id',False)}),
  ('lead_mngt','valuation_photo','id',m.ValuationAttachment,{'name':'name','attachment_type':'photo_type'}, {'valuation':('valuation','valuation_id',False),'document':('upload','upload_id',True)}),
@@ -102,10 +110,23 @@ SPECS = [
  ('uam_user','upload','upload_id',m.Document,{'storage_key':'doc_path','original_name':'doc_name','media_type':'doc_type','size_bytes':'doc_size'},{}),
 ]
 ALLOWED = {(s,t) for s,t,*_ in SPECS} | {('uam_user','state'),('uam_user','district')}
+# Tables that a later spec resolves a foreign key against. Everything else can be
+# discarded once imported instead of being held for the rest of the run.
+PARENT_TABLES = {link[0] for spec in SPECS for link in spec[5].values()}
 
 
 def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',',':'), default=str)
+
+
+def fetch_map(queryset, field, values, keyfunc, size=500):
+    """Chunked `__in` lookup. SQLite binds one host parameter per value, so a
+    single large `__in` fails outright on a table of any size."""
+    found={}
+    for start in range(0,len(values),size):
+        for record in queryset.filter(**{field+'__in':values[start:start+size]}):
+            found[keyfunc(record)]=record
+    return found
 
 
 def source_key(value):
@@ -139,10 +160,42 @@ class MySQLSource:
             columns=[c[0].lower() for c in cursor.description]
             return [dict(zip(columns,row)) for row in cursor.fetchall()]
 
+    def chunks(self, schema, table, keycol, size=CHUNK_SIZE):
+        """Read in primary-key order, one page at a time.
+
+        Keyset pagination rather than OFFSET: the snapshot is stable, so paging
+        on the key is both correct and cheap. Reading in key order also makes the
+        batch fingerprint independent of storage order, which the previous
+        in-memory sort provided.
+        """
+        if (schema,table) not in ALLOWED:
+            raise ValueError('Table outside import contract')
+        last=None
+        while True:
+            with self.connection.cursor() as cursor:
+                if last is None:
+                    cursor.execute(f'SELECT * FROM `{schema}`.`{table}` ORDER BY `{keycol}` LIMIT {int(size)}')
+                else:
+                    cursor.execute(f'SELECT * FROM `{schema}`.`{table}` WHERE `{keycol}`>%s ORDER BY `{keycol}` LIMIT {int(size)}',[last])
+                columns=[c[0].lower() for c in cursor.description]
+                page=[dict(zip(columns,row)) for row in cursor.fetchall()]
+            if not page:
+                return
+            yield page
+            if len(page)<size:
+                return
+            last=page[-1][keycol]
+
 
 def convert(field, value, warnings, source_column):
     if isinstance(field, (m.models.CharField,m.models.TextField)):
         return '' if value is None else str(value)
+    if isinstance(field,m.models.BooleanField):
+        # These columns are NOT NULL in the target. A null or unparseable source
+        # flag must fall back to False, not abort the run on a NOT NULL violation.
+        if value in (None,''): return False
+        if isinstance(value,str): return value.strip().lower() not in ('0','false','n','no')
+        return bool(value)
     if value in (None,''):
         return None
     if isinstance(field,m.models.DateField):
@@ -180,122 +233,139 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
             geo={name:{str(r[name+'_id']):r['name'] or '' for r in source.rows('uam_user',name)} for name in ('state','district')}
             for schema,table,keycol,model,scalars,links in SPECS:
                 progress(f'Reading {schema}.{table}')
-                rows=source.rows(schema,table)
-                identities={r.key:r for r in m.SourceIdentity.objects.filter(environment='main',schema=schema,table=table)}
-                # Chunked: one bind parameter per identity exceeds the SQLite host-variable
-                # limit on any repeat run of a large table (e.g. 143,702 bank branches).
-                target_ids=[r.target_id for r in identities.values()]
-                existing={}
-                for _i in range(0,len(target_ids),500):
-                    existing.update({r.id:r for r in model.objects.filter(id__in=target_ids[_i:_i+500])})
-                stages={r.key:r for r in m.SourceRow.objects.filter(schema=schema,table=table)}
-                counts={'source_rows':len(rows),'inserted':0,'updated':0,'unchanged':0,'quarantined':0,'rows_with_issues':0}
-                creates,updates,identity_creates,stage_creates,stage_updates,issues=[],[],[],[],[],[]
+                counts={'source_rows':0,'inserted':0,'updated':0,'unchanged':0,'quarantined':0,'rows_with_issues':0}
                 current={}
                 seen=set()
+                # Only tables a later spec resolves against are kept in memory.
+                retain=table in PARENT_TABLES
                 # Legacy service_sub_type duplicates the same subtype name under each service.
                 # Index by (normalized name, service) so a row whose subtype FK points at an
                 # equivalently named subtype filed under another service can be resolved.
                 subtype_by_name={}
                 if model in (m.RequestedService,m.Case):
-                    subtype_by_name={(o.name.strip().lower(),o.service_id):o for o in maps['service_sub_type'].values()}
-                # Sort by canonical source ID for a deterministic fingerprint independent of SQL row order.
-                rows.sort(key=lambda r:source_key(r[keycol]))
-                for row in rows:
-                    required={keycol,*scalars.values(),*(link[1] for link in links.values())}
-                    if required-set(row):
-                        raise ValueError(f'Source contract missing columns in {schema}.{table}: {sorted(required-set(row))}')
-                    key=source_key(row[keycol])
-                    if key in seen: raise ValueError(f'Duplicate source key in {schema}.{table}; no arbitrary match selected')
-                    seen.add(key)
-                    payload=json.loads(canonical(row)); fingerprint=hashlib.sha256(canonical(payload).encode()).hexdigest()
-                    digest.update(canonical([schema,table,key,fingerprint]).encode())
-                    warnings=[]; values={}; problem=None
-                    ident=identities.get(key)
-                    obj=existing.get(ident.target_id) if ident else None
-                    if ident and obj is None: raise ValueError('Source identity refers to a missing target; repair before import')
-                    try:
-                        for field,column in scalars.items():
-                            f=model._meta.get_field(field)
-                            value=convert(f,row[column],warnings,column)
-                            f.run_validators(value)
-                            values[field]=value
-                        for field,(parent,column,optional) in links.items():
-                            source_id=row[column]
-                            linked=maps[parent].get(str(source_id))
-                            if linked is None and source_id is not None:
-                                # Legacy stores some parent keys as zero-padded varchar
-                                # ('010101' for block 10101). MySQL compares these
-                                # numerically; a string lookup does not.
-                                text=str(source_id).strip()
-                                if text.isdigit():
-                                    linked=maps[parent].get(str(int(text)))
-                            values[field+'_id']=linked.id if linked else None
-                            if linked is None and not optional:
-                                raise ValueError(f'Missing or quarantined required parent: {column}')
-                            if linked is None and source_id not in (None,'',0,'0'):
-                                warnings.append(f'Unmatched optional parent: {column}')
-                        if model is m.ClientOffice:
-                            values.update(state=geo['state'].get(str(row['state_id']),''),district=geo['district'].get(str(row['district_id']),''))
-                            directory=maps['bank_branch'].get(str(row['bank_branch_id']))
-                            if directory and values['bank_id'] and directory.bank_id!=values['bank_id']:
-                                raise ValueError('Office bank disagrees with directory branch bank')
-                        if model is m.Lead: values['date_basis']='lead_entry_proxy'
-                        if model is m.Document: values['storage_provider']='legacy_lead_storage'
-                        if model is m.Invoice: values['origin']='legacy_'+table
-                        if model is m.Receipt: values['origin']='legacy_'+table
-                        if model is m.SalaryBaseline: values['source_variant']=table
-                        if model in (m.RequestedService,m.Case):
-                            subtype=maps['service_sub_type'].get(str(row['service_sub_type_id']))
-                            if subtype and subtype.service_id!=values['service_id']:
-                                # Subtype is an optional classification. A mismatch is a legacy
-                                # referential defect, not grounds for discarding the business row.
-                                sibling=subtype_by_name.get((subtype.name.strip().lower(),values['service_id']))
-                                if sibling is not None:
-                                    values['subtype_id']=sibling.id
-                                    warnings.append(f"Subtype {row['service_sub_type_id']} is filed under a different service; remapped by exact name to the subtype of the declared service")
-                                else:
-                                    values['subtype_id']=None
-                                    warnings.append(f"Subtype {row['service_sub_type_id']} is filed under a different service with no equivalent under the declared service; subtype cleared")
-                        if model in (m.Case,m.WorkOrder):
-                            borrower=maps['lead_borrower'][str(row['lead_borrower_id'])]
-                            if borrower.lead_id!=values['lead_id']: raise ValueError('Borrower belongs to a different lead')
-                        if model is m.Valuation and values['work_order_id']:
-                            order=maps['lead_order'][str(row['lead_order_id'])]; case=maps['client_customer'][str(row['client_customer_id'])]
-                            if order.lead_id!=case.lead_id or order.borrower_id!=case.borrower_id:
-                                raise ValueError('Valuation case and order refer to different lead/borrower')
-                        if obj is None:
-                            obj=model(id=uuid.uuid5(NS,f'{schema}.{table}:{key}'),**values)
-                            creates.append(obj); counts['inserted']+=1
-                            identity_creates.append(m.SourceIdentity(batch=batch,environment='main',schema=schema,table=table,key=key,target_model=model._meta.label,target_id=obj.id))
-                        elif any(getattr(obj,k)!=v for k,v in values.items()):
-                            for k,v in values.items(): setattr(obj,k,v)
-                            obj.updated_at=datetime.now().astimezone(); updates.append(obj); counts['updated']+=1
-                        else: counts['unchanged']+=1
-                        current[str(row[keycol])]=obj
-                    except (ValueError,InvalidOperation,ValidationError) as exc:
-                        problem=str(exc) if not isinstance(exc,ValidationError) else 'Value violates target field limits'
-                        warnings.append(problem); counts['quarantined']+=1
-                    if warnings:
-                        counts['rows_with_issues']+=1
-                        issues.append(m.MigrationIssue(batch=batch,source_identity={'schema':schema,'table':table,'key':key},reason='; '.join(warnings)))
-                    outcome='quarantined' if problem else 'imported'
-                    prior=stages.get(key)
-                    values_stage=dict(payload=payload,payload_hash=fingerprint,batch=batch,outcome=outcome,problems=warnings)
-                    if prior is None: stage_creates.append(m.SourceRow(schema=schema,table=table,key=key,**values_stage))
-                    elif prior.payload_hash!=fingerprint or prior.outcome!=outcome or prior.problems!=warnings:
-                        for k,v in values_stage.items():setattr(prior,k,v)
-                        stage_updates.append(prior)
-                model.objects.bulk_create(creates,batch_size=400)
-                # Only import-owned fields are updated: local office owner and note rows are untouched.
-                update_fields=[*scalars,*links]
-                extra={m.ClientOffice:['state','district'],m.Lead:['date_basis'],m.Document:['storage_provider'],m.Invoice:['origin'],m.Receipt:['origin'],m.SalaryBaseline:['source_variant']}.get(model,[])
-                model.objects.bulk_update(updates,update_fields+extra+['updated_at'],batch_size=300)
-                m.SourceIdentity.objects.bulk_create(identity_creates,batch_size=400)
-                m.SourceRow.objects.bulk_create(stage_creates,batch_size=300)
-                m.SourceRow.objects.bulk_update(stage_updates,['payload','payload_hash','batch','outcome','problems'],batch_size=250)
-                m.MigrationIssue.objects.bulk_create(issues,batch_size=400)
-                maps[table]=current
+                    for o in maps['service_sub_type'].values():
+                        subtype_by_name.setdefault((o.name.strip().lower(),o.service_id),[]).append(o)
+                for rows in source.chunks(schema,table,keycol):
+                    counts['source_rows']+=len(rows)
+                    # Prefetch only what this page needs; a whole-table prefetch does not
+                    # survive a repeat run of a multi-million-row table.
+                    page_keys=[source_key(r[keycol]) for r in rows]
+                    identities=fetch_map(m.SourceIdentity.objects.filter(environment='main',schema=schema,table=table),'key',page_keys,lambda r:r.key)
+                    existing=fetch_map(model.objects.all(),'id',[r.target_id for r in identities.values()],lambda r:r.id)
+                    stages=fetch_map(m.SourceRow.objects.filter(schema=schema,table=table),'key',page_keys,lambda r:r.key)
+                    creates,updates,identity_creates,stage_creates,stage_updates,issues=[],[],[],[],[],[]
+                    for row in rows:
+                        required={keycol,*scalars.values(),*(link[1] for link in links.values())}
+                        if required-set(row):
+                            raise ValueError(f'Source contract missing columns in {schema}.{table}: {sorted(required-set(row))}')
+                        key=source_key(row[keycol])
+                        if key in seen: raise ValueError(f'Duplicate source key in {schema}.{table}; no arbitrary match selected')
+                        seen.add(key)
+                        payload=json.loads(canonical(row)); fingerprint=hashlib.sha256(canonical(payload).encode()).hexdigest()
+                        digest.update(canonical([schema,table,key,fingerprint]).encode())
+                        warnings=[]; values={}; problem=None; resolved={}
+                        ident=identities.get(key)
+                        obj=existing.get(ident.target_id) if ident else None
+                        if ident and obj is None: raise ValueError('Source identity refers to a missing target; repair before import')
+                        try:
+                            for field,column in scalars.items():
+                                f=model._meta.get_field(field)
+                                value=convert(f,row[column],warnings,column)
+                                f.run_validators(value)
+                                values[field]=value
+                            for field,(parent,column,optional) in links.items():
+                                source_id=row[column]
+                                linked=maps[parent].get(str(source_id))
+                                if linked is None and source_id is not None:
+                                    # Legacy stores some parent keys as zero-padded varchar
+                                    # ('010101' for block 10101). MySQL compares these
+                                    # numerically; a string lookup does not.
+                                    text=str(source_id).strip()
+                                    if text.isdigit():
+                                        linked=maps[parent].get(str(int(text)))
+                                resolved[field]=linked
+                                values[field+'_id']=linked.id if linked else None
+                                if linked is None and not optional:
+                                    raise ValueError(f'Missing or quarantined required parent: {column}')
+                                if linked is None and source_id not in (None,'',0,'0'):
+                                    warnings.append(f'Unmatched optional parent: {column}')
+                            if model is m.ClientOffice:
+                                values.update(state=geo['state'].get(str(row['state_id']),''),district=geo['district'].get(str(row['district_id']),''))
+                                directory=resolved.get('directory_branch')
+                                if directory and values['bank_id'] and directory.bank_id!=values['bank_id']:
+                                    raise ValueError('Office bank disagrees with directory branch bank')
+                            if model is m.Lead: values['date_basis']='lead_entry_proxy'
+                            # DEPLOYMENT_INVENTORY: the lead application stores uploads in S3,
+                            # UAM/HRMS on a local server path. Neither set of bytes is migrated.
+                            if model is m.Document:
+                                values['storage_provider']='legacy_lead_s3' if schema=='lead_mngt' else 'legacy_uam_local'
+                            if model is m.Invoice: values['origin']='legacy_'+table
+                            if model is m.Receipt: values['origin']='legacy_'+table
+                            if model is m.SalaryBaseline: values['source_variant']=table
+                            if model in (m.RequestedService,m.Case):
+                                subtype=resolved.get('subtype')
+                                if subtype and subtype.service_id!=values['service_id']:
+                                    # Subtype is an optional classification. A mismatch is a legacy
+                                    # referential defect, not grounds for discarding the business row.
+                                    # Matching names are evidence, not proof of equivalence, so an
+                                    # ambiguous match is never resolved by picking one arbitrarily.
+                                    siblings=subtype_by_name.get((subtype.name.strip().lower(),values['service_id']),[])
+                                    if len(siblings)==1:
+                                        values['subtype_id']=siblings[0].id
+                                        warnings.append(f"Subtype {row['service_sub_type_id']} is filed under a different service; remapped by normalized name (trimmed, case-insensitive) to the one matching subtype of the declared service")
+                                    elif len(siblings)>1:
+                                        values['subtype_id']=None
+                                        warnings.append(f"Subtype {row['service_sub_type_id']} is filed under a different service and its name matches {len(siblings)} subtypes of the declared service; ambiguous, subtype cleared")
+                                    else:
+                                        values['subtype_id']=None
+                                        warnings.append(f"Subtype {row['service_sub_type_id']} is filed under a different service with no equivalent under the declared service; subtype cleared")
+                            if model is m.ValuationAnswer:
+                                option=resolved.get('option')
+                                if option is not None and option.question_id!=values['question_id']:
+                                    # The option is a column of a different question and cannot label
+                                    # this cell. Keep the answer and its raw value; drop only the
+                                    # unusable link. SourceRow still holds the original option id.
+                                    values['option_id']=None
+                                    warnings.append(f"Option {row['option_id']} belongs to a different question; option link cleared")
+                            if model in (m.Case,m.WorkOrder):
+                                borrower=resolved['borrower']
+                                if borrower.lead_id!=values['lead_id']: raise ValueError('Borrower belongs to a different lead')
+                            if model is m.Valuation and values['work_order_id']:
+                                order=resolved['work_order']; case=resolved['case']
+                                if order.lead_id!=case.lead_id or order.borrower_id!=case.borrower_id:
+                                    raise ValueError('Valuation case and order refer to different lead/borrower')
+                            if obj is None:
+                                obj=model(id=uuid.uuid5(NS,f'{schema}.{table}:{key}'),**values)
+                                creates.append(obj); counts['inserted']+=1
+                                identity_creates.append(m.SourceIdentity(batch=batch,environment='main',schema=schema,table=table,key=key,target_model=model._meta.label,target_id=obj.id))
+                            elif any(getattr(obj,k)!=v for k,v in values.items()):
+                                for k,v in values.items(): setattr(obj,k,v)
+                                obj.updated_at=datetime.now().astimezone(); updates.append(obj); counts['updated']+=1
+                            else: counts['unchanged']+=1
+                            if retain: current[str(row[keycol])]=obj
+                        except (ValueError,InvalidOperation,ValidationError) as exc:
+                            problem=str(exc) if not isinstance(exc,ValidationError) else 'Value violates target field limits'
+                            warnings.append(problem); counts['quarantined']+=1
+                        if warnings:
+                            counts['rows_with_issues']+=1
+                            issues.append(m.MigrationIssue(batch=batch,source_identity={'schema':schema,'table':table,'key':key},reason='; '.join(warnings)))
+                        outcome='quarantined' if problem else 'imported'
+                        prior=stages.get(key)
+                        values_stage=dict(payload=payload,payload_hash=fingerprint,batch=batch,outcome=outcome,problems=warnings)
+                        if prior is None: stage_creates.append(m.SourceRow(schema=schema,table=table,key=key,**values_stage))
+                        elif prior.payload_hash!=fingerprint or prior.outcome!=outcome or prior.problems!=warnings:
+                            for k,v in values_stage.items():setattr(prior,k,v)
+                            stage_updates.append(prior)
+                    model.objects.bulk_create(creates,batch_size=400)
+                    # Only import-owned fields are updated: local office owner and note rows are untouched.
+                    update_fields=[*scalars,*links]
+                    extra={m.ClientOffice:['state','district'],m.Lead:['date_basis'],m.Document:['storage_provider'],m.Invoice:['origin'],m.Receipt:['origin'],m.SalaryBaseline:['source_variant']}.get(model,[])
+                    model.objects.bulk_update(updates,update_fields+extra+['updated_at'],batch_size=300)
+                    m.SourceIdentity.objects.bulk_create(identity_creates,batch_size=400)
+                    m.SourceRow.objects.bulk_create(stage_creates,batch_size=300)
+                    m.SourceRow.objects.bulk_update(stage_updates,['payload','payload_hash','batch','outcome','problems'],batch_size=250)
+                    m.MigrationIssue.objects.bulk_create(issues,batch_size=400)
+                maps[table]=current if retain else {}
                 assert sum(counts[k] for k in ('inserted','updated','unchanged','quarantined'))==counts['source_rows']
                 report[f'{schema}.{table}']=counts
                 progress(f'{table}: {counts}')
