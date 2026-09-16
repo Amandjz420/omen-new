@@ -431,6 +431,7 @@ class EmployeeAssignmentRule(Entity):
     client_type = models.ForeignKey(ClientType, null=True, on_delete=models.PROTECT)
     service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
     subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
+    report_usage = models.ForeignKey('ReportUsage', null=True, on_delete=models.PROTECT)
     usage_of_report_code = models.CharField(max_length=40, blank=True)
     asset_value = models.DecimalField(max_digits=24, decimal_places=6, null=True)
 
@@ -458,6 +459,7 @@ class ScrutinyRequirement(NamedEntity):
     service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
     subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
     client_type = models.ForeignKey(ClientType, null=True, on_delete=models.PROTECT)
+    report_usage = models.ForeignKey('ReportUsage', null=True, on_delete=models.PROTECT)
     usage_of_report_code = models.CharField(max_length=40, blank=True)
     legacy_status = models.CharField(max_length=40, blank=True)
     legacy_deleted = models.CharField(max_length=40, blank=True)
@@ -486,6 +488,7 @@ class LeadAttachment(Entity):
 class DocumentUsage(Entity):
     lead = models.ForeignKey(Lead, null=True, on_delete=models.PROTECT)
     document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    report_usage = models.ForeignKey('ReportUsage', null=True, on_delete=models.PROTECT)
     usage_of_report_code = models.CharField(max_length=40, blank=True)
     remarks = models.TextField(blank=True)
 
@@ -641,3 +644,42 @@ class FeeRule(Entity):
     min_fee = models.DecimalField(max_digits=24, decimal_places=6, null=True)
     max_fee = models.DecimalField(max_digits=24, decimal_places=6, null=True)
     legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class ReportUsage(NamedEntity):
+    """lead_mngt.usage_of_reports: why a valuation report was commissioned
+    ("To give fresh loan"), scoped by service and subtype. Several tables store
+    this id as a bare code; those codes are meaningless without this lookup."""
+    service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
+    subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class BankReport(Entity):
+    """lead_mngt.valuation_bank_report: the assessed values a valuation produces.
+
+    This is valuation substance, not report formatting, despite the source
+    catalogue filing it under reports. Amount words and the certificate text are
+    retained as recorded; no amount is recomputed or derived from another.
+    """
+    valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='bank_reports')
+    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
+    branch = models.ForeignKey(BankBranch, null=True, on_delete=models.PROTECT)
+    document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    report_number = models.CharField(max_length=45, blank=True)
+    report_date = models.DateField(null=True)
+    our_reference = models.CharField(max_length=50, blank=True)
+    your_reference = models.CharField(max_length=150, blank=True)
+    omen_id = models.CharField(max_length=50, blank=True)
+    unique_reference = models.CharField(max_length=50, blank=True)
+    market_fair_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    realisable_value_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    book_value_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    distress_value_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    market_fair_amount_word = models.CharField(max_length=400, blank=True)
+    realisable_value_amount_word = models.CharField(max_length=400, blank=True)
+    book_value_amount_word = models.CharField(max_length=400, blank=True)
+    distress_value_amount_word = models.CharField(max_length=400, blank=True)
+    bank_certificate = models.TextField(blank=True)
+    legacy_liable_fa = models.CharField(max_length=40, blank=True)

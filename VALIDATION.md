@@ -5,25 +5,26 @@ Last updated 17 September 2026, after the review corrections.
 ## Scope imported
 
 Nine business modules: crm, services, workorders, reference, leads, documents,
-billing, valuations, organization. 61 source tables from `lead_mngt` and
-`uam_user`. Attendance, identity, messaging, reports, leave, audit, all UAT
+billing, valuations, organization. 63 source tables from `lead_mngt` and
+`uam_user`, including the two dependencies reclassified into valuations
+(`valuation_bank_report`, `usage_of_reports`). Attendance, identity, messaging, reports, leave, audit, all UAT
 schemas and `uam_user.logtable` are deliberately out of scope.
 
 | Measure | Value |
 |---|---|
-| Source tables | 61 |
-| Source rows read | 2,537,219 |
-| Accepted into target | 2,537,011 (99.992%) |
-| Quarantined | 208 |
-| Imported with issues | 11,950 |
-| SourceRow payloads retained | 2,537,219 (every row, including rejects) |
+| Source tables | 63 |
+| Source rows read | 2,549,234 |
+| Accepted into target | 2,549,025 (99.992%) |
+| Quarantined | 209 |
+| Imported with issues | 11,959 |
+| SourceRow payloads retained | 2,549,234 (every row, including rejects) |
 
 ## Checks performed
 
-- **Full 61-table repeat import proposes 0 inserts and 0 updates**
-  (`database/target-repeat-final.json`). This is the idempotency proof for the
+- **Full 63-table repeat import proposes 0 inserts and 0 updates**
+  (`database/target-repeat-deps.json`). This is the idempotency proof for the
   complete streaming pipeline, run after the corrections.
-- 19 tests pass under both `config.settings` and `config.target`.
+- 29 tests pass under both `config.settings` and `config.target`.
   `makemigrations --check` reports no drift. Frontend production build passes.
 - Import reconciles against live MySQL. Every quarantine was traced to a
   dangling legacy foreign key; for the original 16, twelve were directly
