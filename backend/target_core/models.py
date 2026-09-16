@@ -75,6 +75,11 @@ class Employee(NamedEntity):
     employee_code = models.CharField(max_length=100, blank=True, db_index=True)
     legacy_status = models.CharField(max_length=40, blank=True)
     # HR identity only. Login provisioning is a separate reviewed process.
+    # The account this employee signs in with, if any. An employee may have no
+    # login and still hold historical assignments; an account may exist with no
+    # employee. Set only by provisioning, never by the data importer.
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                on_delete=models.PROTECT, related_name='employee_profile')
 
 
 class ClientOffice(NamedEntity):
@@ -683,3 +688,81 @@ class BankReport(Entity):
     distress_value_amount_word = models.CharField(max_length=400, blank=True)
     bank_certificate = models.TextField(blank=True)
     legacy_liable_fa = models.CharField(max_length=40, blank=True)
+
+
+# ============================================================================
+# Identity.
+#
+# The legacy UAM is a shared sign-on server for PRAYAS, PAYROLL and LEAD, so its
+# records are frozen here as evidence rather than treated as the new system's
+# account store. Django's User remains the authentication identity; these models
+# hold what the legacy system knew and how it was translated.
+#
+# Geographic scope (region, circle, division, subdivision) is recorded exactly as
+# found but is NOT an access restriction: by decision, no user is limited by
+# region or circle. The values are kept so the choice can be revisited without
+# re-deriving them.
+# ============================================================================
+
+class LegacyProject(NamedEntity):
+    """uam_user.project: the applications sharing the legacy sign-on server."""
+    legacy_status = models.CharField(max_length=40, blank=True)
+
+
+class RoleDefinition(NamedEntity):
+    """uam_user.usertype. A legacy job title, preserved for audit. Mapping these
+    onto the new business roles is a separate reviewed decision."""
+    project = models.ForeignKey(LegacyProject, null=True, on_delete=models.PROTECT)
+    code = models.CharField(max_length=20, blank=True)
+    name_hindi = models.CharField(max_length=500, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class LegacyAccount(NamedEntity):
+    """uam_user.userdetail. Credentials are deliberately not imported: the legacy
+    representation is not a Django-compatible hash and sits beside an
+    old_password column suggesting reversible storage."""
+    login_id = models.CharField(max_length=50, blank=True, db_index=True)
+    email = models.CharField(max_length=100, blank=True)
+    mobile = models.CharField(max_length=12, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    # The legacy application treats userdetail.user_id and employee.emp_id as the
+    # same number. That holds for 49 of 51 accounts, and on all 49 the names agree
+    # as well, so the link is recorded where it resolves and left unset otherwise.
+    employee = models.ForeignKey(Employee, null=True, on_delete=models.PROTECT, related_name='legacy_accounts')
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                on_delete=models.PROTECT, related_name='legacy_account')
+    # Set when two legacy accounts are the same person. The duplicate keeps its
+    # own record and its role grants, but provisions no second Django account.
+    merged_into = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT,
+                                    related_name='merged_accounts')
+    merge_reason = models.CharField(max_length=300, blank=True)
+    must_change_password = models.BooleanField(default=True)
+    provisioned_at = models.DateTimeField(null=True, blank=True)
+
+
+class RoleAssignment(Entity):
+    """uam_user.userdetail_per: which role a legacy account held, in which project."""
+    account = models.ForeignKey(LegacyAccount, on_delete=models.PROTECT, related_name='role_assignments')
+    role = models.ForeignKey(RoleDefinition, null=True, on_delete=models.PROTECT)
+    project = models.ForeignKey(LegacyProject, null=True, on_delete=models.PROTECT)
+    legacy_role_code = models.CharField(max_length=10, blank=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+    remark = models.CharField(max_length=250, blank=True)
+    # Recorded, never enforced. See the module note above.
+    scope_region = models.CharField(max_length=10, blank=True)
+    scope_circle = models.CharField(max_length=10, blank=True)
+    scope_division = models.CharField(max_length=10, blank=True)
+    scope_subdivision = models.CharField(max_length=10, blank=True)
+
+
+class LoginEvent(Entity):
+    """uam_user.login_history. Historical evidence only; never a live session."""
+    account = models.ForeignKey(LegacyAccount, null=True, on_delete=models.PROTECT, related_name='login_events')
+    login_date = models.DateField(null=True)
+    logout_date = models.DateField(null=True)
+    ip_address = models.CharField(max_length=100, blank=True)
+    mac_address = models.CharField(max_length=100, blank=True)
+    login_action = models.CharField(max_length=200, blank=True)

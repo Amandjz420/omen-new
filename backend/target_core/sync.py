@@ -108,6 +108,14 @@ SPECS = [
  ('lead_mngt','lead_order_history','lead_order_id',m.WorkOrderRevision,{'number':'lead_order_no','legacy_status':'status'}, {'lead':('lead','lead_id',True),'document':('upload','upload_id',True)}),
  ('lead_mngt','wo_fees_calculation','wo_fees_calculation_id',m.FeeRule,{'fmv_category':'fmv_category','fmv_range_min':'fmv_range_min','fmv_range_max':'fmv_range_max','per_lac_amount':'per_lac_amount','additional_charge':'additional_charge','min_fee':'min_fees','max_fee':'max_fees','legacy_deleted':'delete_status'}, {'bank':('bank','bank_id',True)}),
 
+ # --- Identity: frozen legacy evidence -------------------------------------
+ # Credentials are never imported. Scope columns are recorded, not enforced.
+ ('uam_user','project','project_id',m.LegacyProject,{'name':'name','legacy_status':'status'},{}),
+ ('uam_user','usertype','utype_id',m.RoleDefinition,{'name':'name','name_hindi':'name_hindi','code':'code','legacy_status':'status','legacy_deleted':'delete_status'}, {'project':('project','project_id',True)}),
+ ('uam_user','userdetail','user_id',m.LegacyAccount,{'name':'name','login_id':'login_id','email':'email_id','mobile':'mobile_no','legacy_status':'status'}, {'employee':('employee','user_id',True)}),
+ ('uam_user','userdetail_per','user_per_id',m.RoleAssignment,{'legacy_role_code':'usertype_id','legacy_status':'status','legacy_deleted':'delete_status','remark':'remark','scope_region':'region_id','scope_circle':'circle_id','scope_division':'division_id','scope_subdivision':'subdivision_id'}, {'account':('userdetail','user_id',False),'role':('usertype','usertype_id',True),'project':('project','project_id',True)}),
+ ('uam_user','login_history','history_id',m.LoginEvent,{'login_date':'login_date','logout_date':'logout_date','ip_address':'ip_address','mac_address':'mac_address','login_action':'login_action'}, {'account':('userdetail','user_id',True)}),
+
  # --- Sequenced last: these two table names collide with lead_mngt tables ----
  # `maps` is keyed by bare table name, so uam_user.division and uam_user.upload
  # must run after every spec that resolves against lead_mngt.division/upload.

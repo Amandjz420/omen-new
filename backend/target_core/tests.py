@@ -51,8 +51,8 @@ class TargetSchemaTests(TestCase):
 # ---------------------------------------------------------------------------
 
 from contextlib import contextmanager
-from .models import (Case, Document, Lead, LeadNote, Question, QuestionOption, ServiceSubtype,
-                     SourceRow, ValuationAnswer)
+from .models import (Case, ClientOffice, Document, Employee, Lead, LeadNote, Question,
+                     QuestionOption, ServiceSubtype, SourceRow, ValuationAnswer)
 from .sync import SPECS, synchronize
 
 SPEC_BY = {(s, t): (k, model, scalars, links) for s, t, k, model, scalars, links in SPECS}
@@ -225,3 +225,70 @@ class ImporterPipelineTests(TestCase):
         self.run_import(dataset(), dry_run=True)
         self.assertEqual(Case.objects.count(), 0)
         self.assertEqual(SourceRow.objects.count(), 0)
+
+
+# ---------------------------------------------------------------------------
+# Account provisioning. Separate from the importer: the importer records what
+# the legacy system held, provisioning decides who may sign in.
+# ---------------------------------------------------------------------------
+
+from django.core.management import call_command
+from .models import LegacyAccount, LegacyProject, RoleAssignment, RoleDefinition
+
+
+class ProvisioningTests(TestCase):
+    def setUp(self):
+        self.lead = LegacyProject.objects.create(name='LEAD')
+        self.other = LegacyProject.objects.create(name='PAYROLL')
+        self.role = RoleDefinition.objects.create(name='Field Assessors', project=self.lead)
+
+    def account(self, login, name, employee=True, project=None, status='1'):
+        emp = Employee.objects.create(name=name) if employee else None
+        acc = LegacyAccount.objects.create(name=name, login_id=login, employee=emp, legacy_status=status)
+        if project is not None:
+            RoleAssignment.objects.create(account=acc, role=self.role, project=project,
+                                          legacy_status='1', legacy_deleted='0')
+        return acc
+
+    def test_provisions_only_accounts_with_lead_access(self):
+        self.account('9000000001', 'Assessor', project=self.lead)
+        self.account('9000000002', 'Payroll Clerk', project=self.other)
+        self.account('9000000003', 'No Access')
+        call_command('provision_accounts', verbosity=0)
+        self.assertEqual(list(User.objects.values_list('username', flat=True)), ['9000000001'])
+
+    def test_provisioning_is_idempotent(self):
+        self.account('9000000001', 'Assessor', project=self.lead)
+        call_command('provision_accounts', verbosity=0)
+        call_command('provision_accounts', verbosity=0)
+        self.assertEqual(User.objects.count(), 1)
+        self.assertEqual(Employee.objects.filter(user__isnull=False).count(), 1)
+
+    def test_initial_password_is_the_login_id_and_must_be_changed(self):
+        account = self.account('9000000001', 'Assessor', project=self.lead)
+        call_command('provision_accounts', verbosity=0)
+        account.refresh_from_db()
+        self.assertTrue(account.user.check_password('9000000001'))
+        self.assertTrue(account.must_change_password)
+        self.assertIsNotNone(account.provisioned_at)
+
+    def test_no_account_is_ever_given_superuser(self):
+        self.account('9000000001', 'Administrator', project=self.lead)
+        call_command('provision_accounts', verbosity=0)
+        self.assertEqual(User.objects.filter(is_superuser=True).count(), 0)
+
+    def test_employee_without_a_login_keeps_its_assignments(self):
+        orphan = Employee.objects.create(name='Retired Assessor')
+        office = ClientOffice.objects.create(name='Office')
+        lead = Lead.objects.create(office=office, date_basis='lead_entry_proxy', assigned_employee=orphan)
+        call_command('provision_accounts', verbosity=0)
+        orphan.refresh_from_db()
+        self.assertIsNone(orphan.user_id)
+        self.assertEqual(lead.assigned_employee, orphan)
+
+    def test_password_validators_remain_enforced_for_chosen_passwords(self):
+        """set_password bypasses validators by design; validate_password must not."""
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            validate_password('9000000001')
