@@ -31,6 +31,13 @@ LEAD_PROJECT = 'LEAD'
 # Reviewed identity merges, keyed by login id. Confirmed with the data owner.
 MERGES = {'9907360751': ('9826056729', 'Confirmed same person; duplicate legacy account, grants carried to the canonical account')}
 
+# Shared generic logins. These are administered deliberately by
+# setup_admin_accounts, never issued a login-id password and never demoted by the
+# automatic access withdrawal below, because their whole purpose is to hold
+# access. They are not personal accounts and should not be treated as staff
+# identities in any later permission policy.
+SHARED_LOGINS = {'superadmin', 'admin'}
+
 # Approved adoptions of a pre-existing Django username by a legacy account.
 # Empty by design: an unreviewed username collision is a conflict, never a match.
 ADOPTIONS = {}
@@ -139,7 +146,12 @@ class Command(BaseCommand):
                             email=account.email or '', is_active=active,
                             # No business access. See the module docstring.
                             is_staff=False, is_superuser=False)
-                user.set_password(account.login_id)
+                if account.login_id in SHARED_LOGINS:
+                    # A shared login must never be reachable with a guessable
+                    # password. It stays unusable until setup_admin_accounts runs.
+                    user.set_unusable_password()
+                else:
+                    user.set_password(account.login_id)
                 user.save()
             else:
                 user = existing
@@ -152,7 +164,7 @@ class Command(BaseCommand):
                 # Accounts provisioned before this policy carried the admin-site
                 # flag, which the preview API treats as business access. Withdraw
                 # it until a real permission policy exists.
-                if user.is_staff or user.is_superuser:
+                if (user.is_staff or user.is_superuser) and account.login_id not in SHARED_LOGINS:
                     notes['access_withdrawn'] += 1
                     user.is_staff = user.is_superuser = False
                     changed += ['is_staff', 'is_superuser']

@@ -65,7 +65,15 @@ grants and 74,164 login events are retained as evidence.
 
 ## Operational note
 
-Initial passwords are the account's own login id and must be changed at first
-sign-in. Accounts 1 and 2 are shared generic logins (`superadmin`, `admin`);
-under that rule their initial passwords are trivially guessable and they should
-be carved out before the system is reachable beyond a local machine.
+Personal accounts are issued their own login id as an initial password and must
+change it at first sign-in.
+
+The shared generic logins `superadmin` and `admin` are carved out of that rule,
+because their usernames are published in the legacy application. `manage.py
+setup_admin_accounts` issues each a generated 24-character password, writes it
+once to `database/.local/admin-credentials.txt` (mode 600, gitignored) and still
+requires a change at first sign-in. Passwords are never printed or committed.
+`superadmin` holds `is_superuser`; `admin` holds staff access only. Provisioning
+never issues these two a login-id password and never withdraws their access.
+
+Read that file, sign in, change both passwords, then delete it.

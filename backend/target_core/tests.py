@@ -496,3 +496,53 @@ class MergeProvisioningTests(ProvisioningHarness, TestCase):
             self.assertEqual(User.objects.count(), 0)
         finally:
             command.MERGES.clear(); command.MERGES.update(original)
+
+
+class SharedAdminAccountTests(ProvisioningHarness, TestCase):
+    """The shared generic logins are administered deliberately, never by the
+    username-as-password rule that applies to personal accounts."""
+
+    def test_setup_issues_a_password_that_is_not_the_username(self):
+        LegacyAccount.objects.create(name='Super Administrator', login_id='superadmin', legacy_status='1')
+        LegacyAccount.objects.create(name='Administrator', login_id='admin', legacy_status='1')
+        run('setup_admin_accounts', verbosity=0)
+        for name in ('superadmin', 'admin'):
+            user = User.objects.get(username=name)
+            self.assertTrue(user.has_usable_password())
+            self.assertFalse(user.check_password(name))
+            self.assertTrue(user.is_staff)
+        self.assertTrue(User.objects.get(username='superadmin').is_superuser)
+        self.assertFalse(User.objects.get(username='admin').is_superuser)
+
+    def test_shared_accounts_must_still_change_password_at_first_sign_in(self):
+        LegacyAccount.objects.create(name='Super Administrator', login_id='superadmin', legacy_status='1')
+        run('setup_admin_accounts', verbosity=0)
+        self.assertTrue(LegacyAccount.objects.get(login_id='superadmin').must_change_password)
+
+    def test_setup_does_not_rotate_an_already_safe_password(self):
+        LegacyAccount.objects.create(name='Super Administrator', login_id='superadmin', legacy_status='1')
+        run('setup_admin_accounts', verbosity=0)
+        before = User.objects.get(username='superadmin').password
+        run('setup_admin_accounts', verbosity=0)
+        self.assertEqual(User.objects.get(username='superadmin').password, before)
+
+    def test_provisioning_never_issues_a_guessable_password_to_a_shared_login(self):
+        employee = Employee.objects.create(name='Super Administrator')
+        account = LegacyAccount.objects.create(name='Super Administrator', login_id='superadmin',
+                                               employee=employee, legacy_status='1')
+        RoleAssignment.objects.create(account=account, role=self.role, project=self.lead,
+                                      legacy_status='1', legacy_deleted='0')
+        run('provision_accounts', verbosity=0)
+        self.assertFalse(User.objects.get(username='superadmin').has_usable_password())
+
+    def test_provisioning_does_not_withdraw_shared_login_access(self):
+        employee = Employee.objects.create(name='Super Administrator')
+        account = LegacyAccount.objects.create(name='Super Administrator', login_id='superadmin',
+                                               employee=employee, legacy_status='1')
+        RoleAssignment.objects.create(account=account, role=self.role, project=self.lead,
+                                      legacy_status='1', legacy_deleted='0')
+        run('setup_admin_accounts', verbosity=0)
+        run('provision_accounts', verbosity=0)
+        user = User.objects.get(username='superadmin')
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
