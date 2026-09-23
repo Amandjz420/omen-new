@@ -161,3 +161,28 @@ determine which are interpretable remains open work.
   `uam_user` collisions last. Namespace them before extending mappings.
 - Document bytes, legacy MIS parity, identity/permissions, messaging and
   attendance remain unmigrated.
+
+---
+
+# Addendum 2 — 17 September 2026: identity review findings closed
+
+All eight findings of `REVIEW_CLAUDE_IDENTITY_2026-09-17.md` are addressed.
+
+| | Finding | Correction |
+|---|---|---|
+| R1 | Initial-password change never enforced | Server-side onboarding gate plus `POST /api/password/`; existing sessions cannot bypass it |
+| R2 | Every account got unrestricted preview access | Provisioning no longer grants `is_staff`; the 23 existing accounts were demoted |
+| R3 | Credentials copied into staging | Excluded at the source reader and again at payload construction; 74,215 payloads remediated |
+| R4 | Revocation left Django access active | Eligibility reconciled every run; disabled accounts and withdrawn grants deactivate the user |
+| R5 | Unverified username adoption, split identity | Unreviewed collisions refused; the whole User/Account/Employee binding is validated before any write |
+| R6 | Grants with missing or foreign roles qualified | Role must exist, be enabled, be undeleted and belong to the grant's own project |
+| R7 | Merge provisioning depended on sort order | The merge graph resolves first, with cycle and missing-target detection; dry run and real run share one computation |
+| R8 | Login timestamps truncated to dates | `DateTimeField` with an explicit converter branch, timezone-aware in Asia/Kolkata; 74,164 events backfilled |
+
+Scope decision recorded: PRAYAS and PAYROLL are out of scope. The legacy UAM
+continues to serve them unchanged, so the dual-identity concern raised earlier
+no longer applies to this migration.
+
+Still outstanding before lead workflows: a business permission policy (R2 leaves
+accounts deliberately without access), and a decision on the two shared generic
+logins.

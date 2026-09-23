@@ -761,8 +761,11 @@ class RoleAssignment(Entity):
 class LoginEvent(Entity):
     """uam_user.login_history. Historical evidence only; never a live session."""
     account = models.ForeignKey(LegacyAccount, null=True, on_delete=models.PROTECT, related_name='login_events')
-    login_date = models.DateField(null=True)
-    logout_date = models.DateField(null=True)
+    # Source columns are datetimes. Every retained login timestamp and almost
+    # every logout timestamp has a non-midnight time, so dates cannot represent
+    # session ordering or duration.
+    login_at = models.DateTimeField(null=True, db_index=True)
+    logout_at = models.DateTimeField(null=True)
     ip_address = models.CharField(max_length=100, blank=True)
     mac_address = models.CharField(max_length=100, blank=True)
     login_action = models.CharField(max_length=200, blank=True)

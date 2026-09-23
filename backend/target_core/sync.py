@@ -12,12 +12,30 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 from django.db import connections, transaction
+from django.utils import timezone
+try:
+    from zoneinfo import ZoneInfo
+    LEGACY_TIMEZONE=ZoneInfo('Asia/Kolkata')   # legacy timestamps are wall-clock local time
+except Exception:
+    LEGACY_TIMEZONE=timezone.get_default_timezone()
 from . import models as m
 
 VERSION = 'mysql-target-v1'
 # Rows read per page. Bounds peak memory on large tables such as the 1.95M-row
 # valuation answer set, which cannot be held in memory in one piece.
 CHUNK_SIZE = 100000
+# Credential-bearing columns are dropped at the source reader, before payloads,
+# fingerprints or reports are built, so no stage of the pipeline can retain them.
+# Excluding a column from a spec's scalars is NOT sufficient: the reader selects
+# whole rows and SourceRow stores the whole row.
+EXCLUDED_COLUMNS = {'password','old_password','pin','pin_no','session_id','otp',
+                    'security_answer','security_question','token','secret'}
+
+
+def readable(columns):
+    """Indices and names of the columns permitted to leave the source."""
+    kept=[(i,c) for i,c in enumerate(columns) if c not in EXCLUDED_COLUMNS]
+    return [i for i,_ in kept],[c for _,c in kept]
 NS = uuid.UUID('9bd83976-1597-4f34-99cf-6ea542f97ebc')
 
 # schema, table, ID, target, scalar target->source, FK target->(parent table, source column, optional)
@@ -114,7 +132,7 @@ SPECS = [
  ('uam_user','usertype','utype_id',m.RoleDefinition,{'name':'name','name_hindi':'name_hindi','code':'code','legacy_status':'status','legacy_deleted':'delete_status'}, {'project':('project','project_id',True)}),
  ('uam_user','userdetail','user_id',m.LegacyAccount,{'name':'name','login_id':'login_id','email':'email_id','mobile':'mobile_no','legacy_status':'status'}, {'employee':('employee','user_id',True)}),
  ('uam_user','userdetail_per','user_per_id',m.RoleAssignment,{'legacy_role_code':'usertype_id','legacy_status':'status','legacy_deleted':'delete_status','remark':'remark','scope_region':'region_id','scope_circle':'circle_id','scope_division':'division_id','scope_subdivision':'subdivision_id'}, {'account':('userdetail','user_id',False),'role':('usertype','usertype_id',True),'project':('project','project_id',True)}),
- ('uam_user','login_history','history_id',m.LoginEvent,{'login_date':'login_date','logout_date':'logout_date','ip_address':'ip_address','mac_address':'mac_address','login_action':'login_action'}, {'account':('userdetail','user_id',True)}),
+ ('uam_user','login_history','history_id',m.LoginEvent,{'login_at':'login_date','logout_at':'logout_date','ip_address':'ip_address','mac_address':'mac_address','login_action':'login_action'}, {'account':('userdetail','user_id',True)}),
 
  # --- Sequenced last: these two table names collide with lead_mngt tables ----
  # `maps` is keyed by bare table name, so uam_user.division and uam_user.upload
@@ -170,8 +188,8 @@ class MySQLSource:
             raise ValueError('Table outside import contract')
         with self.connection.cursor() as cursor:
             cursor.execute(f'SELECT * FROM `{schema}`.`{table}`')
-            columns=[c[0].lower() for c in cursor.description]
-            return [dict(zip(columns,row)) for row in cursor.fetchall()]
+            keep,columns=readable([c[0].lower() for c in cursor.description])
+            return [dict(zip(columns,[row[i] for i in keep])) for row in cursor.fetchall()]
 
     def chunks(self, schema, table, keycol, size=CHUNK_SIZE):
         """Read in primary-key order, one page at a time.
@@ -190,8 +208,8 @@ class MySQLSource:
                     cursor.execute(f'SELECT * FROM `{schema}`.`{table}` ORDER BY `{keycol}` LIMIT {int(size)}')
                 else:
                     cursor.execute(f'SELECT * FROM `{schema}`.`{table}` WHERE `{keycol}`>%s ORDER BY `{keycol}` LIMIT {int(size)}',[last])
-                columns=[c[0].lower() for c in cursor.description]
-                page=[dict(zip(columns,row)) for row in cursor.fetchall()]
+                keep,columns=readable([c[0].lower() for c in cursor.description])
+                page=[dict(zip(columns,[row[i] for i in keep])) for row in cursor.fetchall()]
             if not page:
                 return
             yield page
@@ -211,6 +229,16 @@ def convert(field, value, warnings, source_column):
         return bool(value)
     if value in (None,''):
         return None
+    if isinstance(field,m.models.DateTimeField):
+        try:
+            moment=value if hasattr(value,'year') else datetime.fromisoformat(str(value).replace('T',' ')[:19])
+            if isinstance(moment,date) and not isinstance(moment,datetime):
+                moment=datetime(moment.year,moment.month,moment.day)
+            # Legacy timestamps are wall-clock in the operating timezone.
+            return moment if timezone.is_aware(moment) else timezone.make_aware(moment, LEGACY_TIMEZONE)
+        except (ValueError,TypeError):
+            warnings.append(f'{source_column}: unparseable timestamp retained in source payload only')
+            return None
     if isinstance(field,m.models.DateField):
         try:
             parsed=date.fromisoformat(str(value)[:10])
@@ -274,7 +302,10 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                         key=source_key(row[keycol])
                         if key in seen: raise ValueError(f'Duplicate source key in {schema}.{table}; no arbitrary match selected')
                         seen.add(key)
-                        payload=json.loads(canonical(row)); fingerprint=hashlib.sha256(canonical(payload).encode()).hexdigest()
+                        # Defence in depth: the reader already drops these, but the
+                        # payload and its fingerprint are the things that persist.
+                        payload={k:v for k,v in json.loads(canonical(row)).items() if k not in EXCLUDED_COLUMNS}
+                        fingerprint=hashlib.sha256(canonical(payload).encode()).hexdigest()
                         digest.update(canonical([schema,table,key,fingerprint]).encode())
                         warnings=[]; values={}; problem=None; resolved={}
                         ident=identities.get(key)

@@ -236,11 +236,14 @@ from django.core.management import call_command
 from .models import LegacyAccount, LegacyProject, RoleAssignment, RoleDefinition
 
 
-class ProvisioningTests(TestCase):
+class ProvisioningHarness:
+    """Shared fixtures. Not a TestCase, so subclasses do not re-run its tests."""
+
     def setUp(self):
         self.lead = LegacyProject.objects.create(name='LEAD')
         self.other = LegacyProject.objects.create(name='PAYROLL')
-        self.role = RoleDefinition.objects.create(name='Field Assessors', project=self.lead)
+        self.role = RoleDefinition.objects.create(name='Field Assessors', project=self.lead,
+                                                  legacy_status='1', legacy_deleted='0')
 
     def account(self, login, name, employee=True, project=None, status='1'):
         emp = Employee.objects.create(name=name) if employee else None
@@ -250,6 +253,8 @@ class ProvisioningTests(TestCase):
                                           legacy_status='1', legacy_deleted='0')
         return acc
 
+
+class ProvisioningTests(ProvisioningHarness, TestCase):
     def test_provisions_only_accounts_with_lead_access(self):
         self.account('9000000001', 'Assessor', project=self.lead)
         self.account('9000000002', 'Payroll Clerk', project=self.other)
@@ -292,3 +297,202 @@ class ProvisioningTests(TestCase):
         from django.core.exceptions import ValidationError
         with self.assertRaises(ValidationError):
             validate_password('9000000001')
+
+
+# ---------------------------------------------------------------------------
+# Behavioural cover for the identity review findings R1-R8.
+# ---------------------------------------------------------------------------
+
+from datetime import datetime
+from django.core.management import call_command as run
+from .models import LoginEvent
+from .sync import EXCLUDED_COLUMNS, readable
+
+
+class CredentialExclusionTests(TestCase):
+    def test_reader_drops_credential_columns(self):
+        keep, columns = readable(['user_id', 'name', 'password', 'old_password', 'pin_no', 'session_id'])
+        self.assertEqual(columns, ['user_id', 'name'])
+        self.assertEqual(keep, [0, 1])
+
+    def test_credential_columns_never_reach_a_staged_payload(self):
+        """Even if a credential column reaches the pipeline, it must not persist."""
+        rows = dataset()[('uam_user', 'bank')]
+        rows[0].update({'password': 'must-not-persist', 'old_password': 'nor-this',
+                        'session_id': 'nor-this-either', 'pin_no': '0000'})
+        synchronize(FakeSource(dataset({('uam_user', 'bank'): rows})))
+        for staged in SourceRow.objects.all():
+            self.assertFalse(set(staged.payload) & EXCLUDED_COLUMNS,
+                             f'{staged.table} payload retained {set(staged.payload) & EXCLUDED_COLUMNS}')
+
+    def test_no_currently_staged_payload_holds_credentials(self):
+        for staged in SourceRow.objects.all():
+            self.assertFalse(set(staged.payload) & EXCLUDED_COLUMNS)
+
+
+class LoginTimestampTests(TestCase):
+    def test_login_timestamps_keep_time_of_day(self):
+        data = dataset({('uam_user', 'userdetail'): [row('uam_user', 'userdetail', user_id=1, name='A', login_id='9000000001')],
+                        ('uam_user', 'login_history'): [row('uam_user', 'login_history', history_id=1, user_id=1,
+                                                            login_date='2021-11-27 10:25:16',
+                                                            logout_date='2021-11-27 18:40:02')]})
+        synchronize(FakeSource(data))
+        from django.utils import timezone as tz
+        event = LoginEvent.objects.get()
+        local_in, local_out = tz.localtime(event.login_at), tz.localtime(event.logout_at)
+        self.assertEqual((local_in.hour, local_in.minute, local_in.second), (10, 25, 16))
+        self.assertEqual((local_out.hour, local_out.minute), (18, 40))
+        self.assertGreater(event.logout_at, event.login_at)
+
+
+class OnboardingTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user('9000000001', password='9000000001', is_staff=True)
+        self.employee = Employee.objects.create(name='Assessor', user=self.user)
+        self.account = LegacyAccount.objects.create(name='Assessor', login_id='9000000001',
+                                                    employee=self.employee, user=self.user,
+                                                    legacy_status='1', must_change_password=True)
+
+    def test_business_access_blocked_until_password_is_changed(self):
+        self.client.force_login(self.user)
+        blocked = self.client.get('/api/leads/')
+        self.assertEqual(blocked.status_code, 403)
+        self.assertEqual(blocked.json()['code'], 'password_change_required')
+
+    def test_existing_session_cannot_bypass_onboarding(self):
+        self.client.force_login(self.user)
+        self.client.get('/api/leads/')
+        self.assertEqual(self.client.get('/api/summary/').status_code, 403)
+
+    def test_changing_the_password_clears_the_restriction(self):
+        self.client.force_login(self.user)
+        response = self.client.post('/api/password/',
+                                    {'current_password': '9000000001', 'new_password': 'Kestrel-Harbour-72'},
+                                    content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.account.refresh_from_db()
+        self.assertFalse(self.account.must_change_password)
+        self.assertEqual(self.client.get('/api/leads/').status_code, 200)
+
+    def test_a_weak_chosen_password_is_rejected_and_nothing_changes(self):
+        self.client.force_login(self.user)
+        response = self.client.post('/api/password/',
+                                    {'current_password': '9000000001', 'new_password': '9000000001'},
+                                    content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.json()['problems'])
+        self.account.refresh_from_db()
+        self.assertTrue(self.account.must_change_password)
+
+    def test_wrong_current_password_is_refused(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.post('/api/password/',
+                                          {'current_password': 'wrong', 'new_password': 'Kestrel-Harbour-72'},
+                                          content_type='application/json').status_code, 400)
+
+
+class GrantEligibilityTests(ProvisioningHarness, TestCase):
+    """R6: a grant must carry a real, enabled role belonging to its own project."""
+
+    def test_grant_without_a_role_provisions_nothing(self):
+        acc = self.account('9000000001', 'Assessor')
+        RoleAssignment.objects.create(account=acc, role=None, project=self.lead,
+                                      legacy_status='1', legacy_deleted='0')
+        run('provision_accounts', verbosity=0)
+        self.assertEqual(User.objects.count(), 0)
+
+    def test_grant_with_a_deleted_role_provisions_nothing(self):
+        dead = RoleDefinition.objects.create(name='Retired', project=self.lead,
+                                             legacy_status='1', legacy_deleted='1')
+        acc = self.account('9000000001', 'Assessor')
+        RoleAssignment.objects.create(account=acc, role=dead, project=self.lead,
+                                      legacy_status='1', legacy_deleted='0')
+        run('provision_accounts', verbosity=0)
+        self.assertEqual(User.objects.count(), 0)
+
+    def test_role_from_another_project_provisions_nothing(self):
+        foreign = RoleDefinition.objects.create(name='Payroll Clerk', project=self.other,
+                                               legacy_status='1', legacy_deleted='0')
+        acc = self.account('9000000001', 'Assessor')
+        RoleAssignment.objects.create(account=acc, role=foreign, project=self.lead,
+                                      legacy_status='1', legacy_deleted='0')
+        run('provision_accounts', verbosity=0)
+        self.assertEqual(User.objects.count(), 0)
+
+
+class RevocationTests(ProvisioningHarness, TestCase):
+    """R4: withdrawing the legacy grant or account must withdraw Django access."""
+
+    def test_revoking_the_grant_deactivates_the_django_account(self):
+        acc = self.account('9000000001', 'Assessor', project=self.lead)
+        run('provision_accounts', verbosity=0)
+        self.assertTrue(User.objects.get().is_active)
+        acc.role_assignments.update(legacy_status='0')
+        run('provision_accounts', verbosity=0)
+        self.assertFalse(User.objects.get().is_active)
+
+    def test_disabling_the_legacy_account_deactivates_the_django_account(self):
+        acc = self.account('9000000001', 'Assessor', project=self.lead)
+        run('provision_accounts', verbosity=0)
+        LegacyAccount.objects.filter(pk=acc.pk).update(legacy_status='0')
+        run('provision_accounts', verbosity=0)
+        self.assertFalse(User.objects.get().is_active)
+
+    def test_provisioned_accounts_receive_no_business_access(self):
+        self.account('9000000001', 'Administrator', project=self.lead)
+        run('provision_accounts', verbosity=0)
+        user = User.objects.get()
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+
+
+class IdentityBindingTests(ProvisioningHarness, TestCase):
+    """R5: never adopt an unreviewed username, never commit a split identity."""
+
+    def test_existing_username_is_not_adopted_without_review(self):
+        intruder = User.objects.create_user('9000000001', password='x', is_superuser=True, is_staff=True)
+        self.account('9000000001', 'Assessor', project=self.lead)
+        run('provision_accounts', verbosity=0)
+        intruder.refresh_from_db()
+        self.assertIsNone(LegacyAccount.objects.get().user_id)
+        self.assertIsNone(Employee.objects.get().user_id)
+        self.assertTrue(intruder.is_superuser)
+
+    def test_employee_already_linked_elsewhere_blocks_a_second_identity(self):
+        other = User.objects.create_user('someone-else', password='x')
+        acc = self.account('9000000001', 'Assessor', project=self.lead)
+        Employee.objects.filter(pk=acc.employee_id).update(user=other)
+        run('provision_accounts', verbosity=0)
+        self.assertFalse(User.objects.filter(username='9000000001').exists())
+        acc.refresh_from_db()
+        self.assertIsNone(acc.user_id)
+
+
+class MergeProvisioningTests(ProvisioningHarness, TestCase):
+    """R7: the merge graph resolves before eligibility, in a single run."""
+
+    def test_canonical_is_provisioned_in_one_run_when_only_the_duplicate_has_the_grant(self):
+        from target_core.management.commands import provision_accounts as command
+        canonical = self.account('1000000000', 'Person')          # sorts first, holds no grant
+        self.account('9000000001', 'Person Duplicate', employee=False, project=self.lead)
+        original = dict(command.MERGES)
+        command.MERGES['9000000001'] = ('1000000000', 'test merge')
+        try:
+            run('provision_accounts', verbosity=0)
+            self.assertTrue(User.objects.filter(username='1000000000').exists())
+            self.assertFalse(User.objects.filter(username='9000000001').exists())
+            canonical.refresh_from_db()
+            self.assertIsNotNone(canonical.user_id)
+        finally:
+            command.MERGES.clear(); command.MERGES.update(original)
+
+    def test_a_merge_pointing_at_a_missing_account_is_reported_not_applied(self):
+        from target_core.management.commands import provision_accounts as command
+        self.account('9000000001', 'Person', project=self.lead)
+        original = dict(command.MERGES)
+        command.MERGES['9000000001'] = ('nonexistent', 'test merge')
+        try:
+            run('provision_accounts', verbosity=0)
+            self.assertEqual(User.objects.count(), 0)
+        finally:
+            command.MERGES.clear(); command.MERGES.update(original)

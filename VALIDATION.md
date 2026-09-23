@@ -1,52 +1,71 @@
 # Validation evidence
 
-Last updated 17 September 2026, after the review corrections.
+Last updated 17 September 2026, after closing the identity review findings R1-R8.
 
 ## Scope imported
 
-Nine business modules: crm, services, workorders, reference, leads, documents,
-billing, valuations, organization. 63 source tables from `lead_mngt` and
-`uam_user`, including the two dependencies reclassified into valuations
-(`valuation_bank_report`, `usage_of_reports`). Attendance, identity, messaging, reports, leave, audit, all UAT
-schemas and `uam_user.logtable` are deliberately out of scope.
+Nine business modules — crm, services, workorders, reference, leads, documents,
+billing, valuations, organization — plus LEAD identity. 68 source tables from
+`lead_mngt` and `uam_user`. PRAYAS and PAYROLL are out of scope by decision:
+they continue to run against the legacy UAM, which this migration does not
+change. Attendance, messaging, reports, leave, HR and all UAT schemas remain
+excluded.
 
 | Measure | Value |
 |---|---|
-| Source tables | 63 |
-| Source rows read | 2,549,234 |
-| Accepted into target | 2,549,025 (99.992%) |
+| Source tables | 68 |
+| Source rows read | 2,623,601 |
+| Accepted into target | 2,623,392 (99.992%) |
 | Quarantined | 209 |
-| Imported with issues | 11,959 |
-| SourceRow payloads retained | 2,549,234 (every row, including rejects) |
+| Imported with issues | 11,966 |
+| SourceRow payloads retained | 2,623,601 (every row, including rejects) |
+
+## Identity
+
+23 Django accounts provisioned from 24 active LEAD grants (two legacy accounts
+are one reviewed person). 51 legacy accounts, 35 role definitions, 114 historical
+grants and 74,164 login events are retained as evidence.
+
+- **No credential value is imported at any stage.** The source reader drops
+  `password`, `old_password`, `pin_no`, `session_id` and related columns before
+  payloads or fingerprints are built, and payload construction filters them
+  again. Staging written before this fix was remediated: 74,215 payloads
+  sanitized, zero credentials remain. The source database and dump were not
+  altered.
+- **Provisioned accounts hold no business access.** `is_staff` is false and
+  `is_superuser` is never set. The admin-site flag is not used as a role system;
+  a business permission policy is still outstanding.
+- **Onboarding is enforced server-side.** An account issued an initial password
+  reaches only password setup and sign-out, for new and existing sessions alike.
+  Chosen passwords are validated in full.
+- **Revocation is reconciled.** Disabling a legacy account or withdrawing its
+  LEAD grant deactivates the Django account on the next run.
+- Region and circle are recorded but are **not** access restrictions, by decision.
 
 ## Checks performed
 
-- **Full 63-table repeat import proposes 0 inserts and 0 updates**
-  (`database/target-repeat-deps.json`). This is the idempotency proof for the
-  complete streaming pipeline, run after the corrections.
-- 29 tests pass under both `config.settings` and `config.target`.
+- **Fresh 68-table repeat import proposes 0 inserts and 0 updates**
+  (`database/target-repeat-68.json`), run after all importer changes.
+- 54 tests pass under both `config.settings` and `config.target`.
   `makemigrations --check` reports no drift. Frontend production build passes.
-- Import reconciles against live MySQL. Every quarantine was traced to a
-  dangling legacy foreign key; for the original 16, twelve were directly
-  dangling and four cascaded from lead 435 whose `client_id` 1183 is absent.
-- Storage classification follows the source system: 150,636 documents
-  `legacy_lead_s3`, 50 `legacy_uam_local`, per `DEPLOYMENT_INVENTORY.md`.
-- No answer references an option belonging to another question (was 2).
-- No subtype remapping was ambiguous (0 rows), so every one of the 13
-  remappings had exactly one candidate under the declared service.
+- Every quarantine traced to a dangling legacy foreign key.
+- 11,896 of 12,650 valuations carry assessed values; 150 of 153 scrutiny
+  requirements resolve to a report usage.
+- Login timestamps retain time of day: 74,164 events, none truncated.
 
 ## What these numbers do not establish
 
-- Acceptance is not semantic correctness. 11,950 rows carry issues.
+- Acceptance is not semantic correctness. 11,966 rows carry issues.
 - Document **metadata** is migrated; no file bytes were copied or verified.
 - Valuation answers are preserved in EAV form. Report rendering parity against
-  the legacy JSP output has not been demonstrated.
-- No browser session, login, CSRF or end-to-end UI test has been run.
-- No production access, and no legacy MIS calculation has been reimplemented
-  or compared.
+  the legacy output has not been demonstrated.
+- No business permission policy exists yet, so no account can do business work.
+- No browser-based user acceptance testing. No PostgreSQL or deployment testing.
+- No operational write API beyond lead notes and password change.
 
 ## Operational note
 
-No personal login is created by the importer. Use `Create Login.command` or
-`manage.py createsuperuser`. Any temporary QA account should be removed after
-testing.
+Initial passwords are the account's own login id and must be changed at first
+sign-in. Accounts 1 and 2 are shared generic logins (`superadmin`, `admin`);
+under that rule their initial passwords are trivially guessable and they should
+be carved out before the system is reachable beyond a local machine.
