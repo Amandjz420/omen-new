@@ -9,3 +9,4 @@ __pycache__/
 *.log
 database/.local/
 *.before-unification
+staticfiles/

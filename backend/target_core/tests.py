@@ -567,3 +567,92 @@ class SharedAdminAccountTests(ProvisioningHarness, TestCase):
         user = User.objects.get(username='superadmin')
         self.assertTrue(user.is_staff)
         self.assertTrue(user.is_superuser)
+
+
+class AdminSiteTests(TestCase):
+    """The admin is a second door onto the same data; the rules must hold there."""
+
+    def setUp(self):
+        self.user = User.objects.create_user('9000000001', password='initial-Pass-2026!', is_staff=True,
+                                             is_superuser=True)
+        self.employee = Employee.objects.create(name='Assessor', user=self.user)
+        self.account = LegacyAccount.objects.create(name='Assessor', login_id='9000000001',
+                                                    employee=self.employee, user=self.user,
+                                                    legacy_status='1', must_change_password=True,
+                                                    issued_password_hash=self.user.password)
+
+    def test_admin_requires_a_signed_in_user(self):
+        self.assertEqual(self.client.get('/admin/').status_code, 302)
+
+    def test_admin_is_blocked_until_the_password_is_changed(self):
+        self.client.force_login(self.user)
+        response = self.client.get('/admin/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('password_change', response['Location'])
+
+    def test_password_setup_page_stays_reachable_during_onboarding(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get('/admin/password_change/').status_code, 200)
+
+    def test_changing_the_password_anywhere_completes_onboarding(self):
+        """The check compares the stored hash, so a change made outside the API counts."""
+        self.client.force_login(self.user)
+        self.user.set_password('Kestrel-Harbour-72')
+        self.user.save()
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get('/admin/').status_code, 200)
+        self.account.refresh_from_db()
+        self.assertFalse(self.account.must_change_password)
+
+    def test_editing_an_imported_record_claims_it_from_the_importer(self):
+        """An admin edit must transfer ownership, or the next import overwrites it."""
+        from django.contrib import admin as django_admin
+        from target_core.models import ImportBatch, LocalRecord, SourceIdentity
+
+        office = ClientOffice.objects.create(name='Imported Office')
+        batch = ImportBatch.objects.create(snapshot_checksum='test', conversion_version='test',
+                                           source_environment='main')
+        SourceIdentity.objects.create(batch=batch, environment='main', schema='lead_mngt', table='client',
+                                      key='[["client_id","1"]]', target_model=ClientOffice._meta.label,
+                                      target_id=office.pk)
+
+        class Form:
+            changed_data = ['name']
+            cleaned_data = {'name': 'Renamed Office'}
+
+        class Request:
+            user = self.user
+
+        office.name = 'Renamed Office'
+        django_admin.site._registry[ClientOffice].save_model(Request(), office, Form(), change=True)
+
+        office.refresh_from_db()
+        self.assertEqual(office.name, 'Renamed Office')
+        self.assertTrue(LocalRecord.objects.filter(target_model=ClientOffice._meta.label,
+                                                   target_id=office.pk).exists())
+
+    def test_editing_a_locally_created_record_does_not_need_a_marker(self):
+        """Records the importer never owned need no ownership transfer."""
+        from django.contrib import admin as django_admin
+        from target_core.models import LocalRecord
+
+        office = ClientOffice.objects.create(name='Local Office')
+
+        class Form:
+            changed_data = ['name']
+            cleaned_data = {'name': 'Local Office Renamed'}
+
+        class Request:
+            user = self.user
+
+        django_admin.site._registry[ClientOffice].save_model(Request(), office, Form(), change=True)
+        self.assertFalse(LocalRecord.objects.filter(target_id=office.pk).exists())
+
+    def test_migration_evidence_cannot_be_edited(self):
+        from django.contrib import admin as django_admin
+        from target_core.models import SourceRow, MigrationIssue, LegacyAccount as LA
+        for model in (SourceRow, MigrationIssue, LA):
+            registered = django_admin.site._registry[model]
+            self.assertFalse(registered.has_change_permission(None))
+            self.assertFalse(registered.has_add_permission(None))
+            self.assertFalse(registered.has_delete_permission(None))

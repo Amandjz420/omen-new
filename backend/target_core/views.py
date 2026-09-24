@@ -13,9 +13,19 @@ from target_core.sync import source_key
 
 
 def onboarding_pending(user):
-    """True while a provisioned account still holds its issued initial password."""
+    """True while a provisioned account still holds its issued initial password.
+
+    Compares the stored password hash rather than trusting the flag alone, so a
+    password changed through the admin site or a shell also completes onboarding.
+    """
     account = getattr(user, 'legacy_account', None)
-    return account is not None and account.must_change_password
+    if account is None or not account.must_change_password:
+        return False
+    if account.issued_password_hash and user.password != account.issued_password_hash:
+        account.must_change_password = False
+        account.save(update_fields=['must_change_password'])
+        return False
+    return True
 
 
 def staff_api(fn):

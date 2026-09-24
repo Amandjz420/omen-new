@@ -15,6 +15,7 @@ import string
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group, Permission
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -64,9 +65,21 @@ class Command(BaseCommand):
                 # Still forced to change at first sign-in: a generated password is
                 # strong but nobody has chosen it.
                 account.must_change_password = True
+                account.issued_password_hash = user.password
                 account.user = user
                 account.provisioned_at = account.provisioned_at or timezone.now()
-                account.save(update_fields=['must_change_password', 'user', 'provisioned_at'])
+                account.save(update_fields=['must_change_password', 'issued_password_hash',
+                                            'user', 'provisioned_at'])
+
+        # `admin` is staff but not a superuser, so without explicit permissions the
+        # admin site would show it nothing. Grant the target_core models through a
+        # group, which keeps the grant visible and revocable.
+        group, _ = Group.objects.get_or_create(name='OMEN administrators')
+        group.permissions.set(Permission.objects.filter(content_type__app_label='target_core'))
+        for username in ACCOUNTS:
+            user = User.objects.filter(username=username).first()
+            if user is not None and not user.is_superuser:
+                user.groups.add(group)
 
         for username in skipped:
             self.stdout.write(f'{username}: already has a usable password; use --rotate to reissue')

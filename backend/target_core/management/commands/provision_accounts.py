@@ -175,8 +175,9 @@ class Command(BaseCommand):
                 continue
             if account.user_id != user.pk:
                 account.user = user
+                account.issued_password_hash = user.password
                 account.provisioned_at = account.provisioned_at or timezone.now()
-                account.save(update_fields=['user', 'provisioned_at'])
+                account.save(update_fields=['user', 'issued_password_hash', 'provisioned_at'])
             if account.employee.user_id != user.pk:
                 account.employee.user = user
                 account.employee.save(update_fields=['user'])

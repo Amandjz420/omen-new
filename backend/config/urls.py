@@ -1,6 +1,8 @@
+from django.contrib import admin
 from django.urls import path
 from target_core import views, intake
 urlpatterns = [
+    path('admin/', admin.site.urls),
     path('api/intake/catalog/', intake.catalog),
     path('api/intake/offices/', intake.offices),
     path('api/intake/offices/<uuid:pk>/', intake.offices),

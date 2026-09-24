@@ -765,6 +765,9 @@ class LegacyAccount(NamedEntity):
                                     related_name='merged_accounts')
     merge_reason = models.CharField(max_length=300, blank=True)
     must_change_password = models.BooleanField(default=True)
+    # The hash of the password this account was issued. Onboarding is complete
+    # once the stored hash differs, whoever changed it and wherever from.
+    issued_password_hash = models.CharField(max_length=128, blank=True, editable=False)
     provisioned_at = models.DateTimeField(null=True, blank=True)
 
 
