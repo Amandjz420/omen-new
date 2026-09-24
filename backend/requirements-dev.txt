@@ -1,0 +1,3 @@
+-r requirements.txt
+# Used by tests to assert the text of generated documents.
+pypdf==5.9.0

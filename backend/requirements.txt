@@ -2,3 +2,4 @@ Django==5.2.17
 asgiref==3.12.1
 sqlparse==0.6.0
 psycopg[binary]==3.2.13
+reportlab==4.2.5

@@ -62,7 +62,7 @@ def row(schema, table, **overrides):
     """Build a source row carrying exactly the columns the spec declares."""
     key, model, scalars, links = SPEC_BY[(schema, table)]
     columns = {key, *scalars.values(), *(link[1] for link in links.values())}
-    if model.__name__ == 'ClientOffice':
+    if model.__name__ in ('ClientOffice', 'Case'):
         columns |= {'state_id', 'district_id'}
     record = {column: None for column in columns}
     record.update(overrides)

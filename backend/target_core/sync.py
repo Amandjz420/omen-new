@@ -49,12 +49,12 @@ SPECS = [
  ('lead_mngt','service_sub_type','service_sub_type_id',m.ServiceSubtype,{'name':'name'}, {'service':('service_type','service_type_id',False)}),
  ('lead_mngt','client','client_id',m.ClientOffice,{'name':'name','branch_name':'branch','address':'address','legacy_working_status':'working'}, {'client_type':('client_type','client_type_id',True),'bank':('bank','bank_id',True),'directory_branch':('bank_branch','bank_branch_id',True)}),
  ('lead_mngt','orderer_reg','orderer_reg_id',m.Contact,{'name':'orderer_name','phone':'mobile_no','alternate_phone':'alt_contact_no'}, {'office':('client','client_id',False),'designation':('client_designation','client_designation_id',True)}),
- ('lead_mngt','lead','lead_id',m.Lead,{'number':'lead_no','received_date':'lead_date','legacy_status':'lead_status','legacy_deleted':'delete_status'}, {'office':('client','client_id',False),'contact':('orderer_reg','orderer_reg_id',True),'assigned_employee':('employee','assigned_to',True)}),
+ ('lead_mngt','lead','lead_id',m.Lead,{'number':'lead_no','received_date':'lead_date','legacy_status':'lead_status','legacy_deleted':'delete_status','enquiry_mode':'mode','party_count':'no_of_parties','case_count':'no_of_cases','legacy_number_old':'lead_no_old'}, {'office':('client','client_id',False),'contact':('orderer_reg','orderer_reg_id',True),'assigned_employee':('employee','assigned_to',True),'received_by':('employee','received_by',True),'client_type':('client_type','client_type_id',True)}),
  ('lead_mngt','lead_services','lead_service_id',m.RequestedService,{'party_count':'no_of_parties','case_count':'no_of_cases'}, {'lead':('lead','lead_id',False),'service':('service_type','service_type_id',False),'subtype':('service_sub_type','service_sub_type_id',True)}),
- ('lead_mngt','lead_borrower','lead_borrower_id',m.Borrower,{'name':'name_of_borrower','agreed_fee':'wo_amount','property_count':'no_of_properties'}, {'lead':('lead','lead_id',False)}),
- ('lead_mngt','client_customer','client_customer_id',m.Case,{'asset_address':'address','legacy_status':'delete_status'}, {'lead':('lead','lead_id',False),'borrower':('lead_borrower','lead_borrower_id',False),'service':('service_type','service_type_id',False),'subtype':('service_sub_type','service_sub_type_id',True)}),
+ ('lead_mngt','lead_borrower','lead_borrower_id',m.Borrower,{'name':'name_of_borrower','agreed_fee':'wo_amount','property_count':'no_of_properties','contact_number':'contact_no','email':'email_id','payer':'paid_by','fee_basis':'payment_by_mode','customer_payment_method':'cc_payment_mode','payer_name':'payment_by','payer_mobile':'payment_by_mobile','pay_by_date':'pay_by_date','gst_number':'cc_gst_no','payment_reference_number':'payment_res_no','payment_reference_name':'payment_res_name','legacy_deleted':'delete_status'}, {'lead':('lead','lead_id',False)}),
+ ('lead_mngt','client_customer','client_customer_id',m.Case,{'asset_address':'address','legacy_status':'delete_status','asset_pin_code':'pin_code','asset_block_code':'block_id','asset_amount':'asset_amount','contact_person_name':'contact_person_name','contact_number':'contact_no','expected_report_date':'expect_date_report','remarks':'remarks','usage_of_report_code':'usage_of_reports_id','scrutiny_document_code':'scrutiny_document_id'}, {'lead':('lead','lead_id',False),'borrower':('lead_borrower','lead_borrower_id',False),'service':('service_type','service_type_id',False),'subtype':('service_sub_type','service_sub_type_id',True)}),
  ('lead_mngt','upload','upload_id',m.Document,{'storage_key':'doc_path','original_name':'doc_name','media_type':'doc_type_name','size_bytes':'doc_size'},{}),
- ('lead_mngt','lead_order','lead_order_id',m.WorkOrder,{'number':'lead_order_no','legacy_status':'status'}, {'lead':('lead','lead_id',False),'borrower':('lead_borrower','lead_borrower_id',False),'document':('upload','upload_id',True)}),
+ ('lead_mngt','lead_order','lead_order_id',m.WorkOrder,{'number':'lead_order_no','legacy_status':'status','legacy_number_old':'lead_order_no_old','legacy_deleted':'delete_status'}, {'lead':('lead','lead_id',False),'borrower':('lead_borrower','lead_borrower_id',False),'document':('upload','upload_id',True)}),
  ('lead_mngt','valuation','valuation_id',m.Valuation,{'valuation_date':'valuation_date','legacy_status':'valuation_status','report_number':'report_no'}, {'case':('client_customer','client_customer_id',False),'work_order':('lead_order','lead_order_id',True),'assessor':('employee','valuation_done_by',True)}),
  ('lead_mngt','invoice','invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','due_date':'due_date','billed_amount':'total_invoice_amount','legacy_paid_amount':'total_pay_amount','legacy_remaining_amount':'total_remaining_amount','legacy_status':'payment_status'}, {'valuation':('valuation','valuation_id',False),'bank':('bank','bank_id',True),'document':('upload','upload_id',True)}),
  # Legacy receipts do carry a settlement reference: cash_receipt names the invoice
@@ -312,6 +312,9 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                     creates,updates,identity_creates,stage_creates,stage_updates,issues=[],[],[],[],[],[]
                     for row in rows:
                         required={keycol,*scalars.values(),*(link[1] for link in links.values())}
+                        # Geography is read straight off the row below, so it belongs to
+                        # the contract too; otherwise a missing column raises KeyError.
+                        if model in (m.ClientOffice,m.Case): required|={'state_id','district_id'}
                         if required-set(row):
                             raise ValueError(f'Source contract missing columns in {schema}.{table}: {sorted(required-set(row))}')
                         key=source_key(row[keycol])
@@ -365,6 +368,9 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                                 directory=resolved.get('directory_branch')
                                 if directory and values['bank_id'] and directory.bank_id!=values['bank_id']:
                                     raise ValueError('Office bank disagrees with directory branch bank')
+                            if model is m.Case:
+                                values.update(asset_state=geo['state'].get(str(row['state_id']),''),
+                                              asset_district=geo['district'].get(str(row['district_id']),''))
                             if model is m.Lead: values['date_basis']='lead_entry_proxy'
                             # DEPLOYMENT_INVENTORY: the lead application stores uploads in S3,
                             # UAM/HRMS on a local server path. Neither set of bytes is migrated.
@@ -430,7 +436,7 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                     model.objects.bulk_create(creates,batch_size=400)
                     # Only import-owned fields are updated: local office owner and note rows are untouched.
                     update_fields=[*scalars,*links]
-                    extra={m.ClientOffice:['state','district'],m.Lead:['date_basis'],m.Document:['storage_provider'],m.Invoice:['origin'],m.Receipt:['origin'],m.SalaryBaseline:['source_variant']}.get(model,[])
+                    extra={m.ClientOffice:['state','district'],m.Case:['asset_state','asset_district'],m.Lead:['date_basis'],m.Document:['storage_provider'],m.Invoice:['origin'],m.Receipt:['origin'],m.SalaryBaseline:['source_variant']}.get(model,[])
                     model.objects.bulk_update(updates,update_fields+extra+['updated_at'],batch_size=300)
                     m.SourceIdentity.objects.bulk_create(identity_creates,batch_size=400)
                     m.SourceRow.objects.bulk_create(stage_creates,batch_size=300)

@@ -38,6 +38,9 @@ TEMPLATES = [{
 }]
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Documents this system generates, such as work orders. Local until object
+# storage is configured; gitignored, never served statically.
+MEDIA_ROOT = Path(os.environ.get('OMEN_MEDIA_ROOT', BASE_DIR.parent / 'storage'))
 WSGI_APPLICATION = 'config.wsgi.application'
 # PostgreSQL is the application database. Credentials come from the environment
 # in deployment, or from database/.local/postgres.json locally (gitignored, mode
