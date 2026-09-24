@@ -31,6 +31,12 @@ from .valuations import KINDS, LIVE, answer_of, number, options_of
 from .words import amount_words
 
 FIRM = ['Omen Assessors', 'F-6, 1st Floor, Sanchi Complex, Opposite Board Office, Shivaji Nagar, Bhopal (M.P.) 462016']
+# The letterhead the legacy report linked to at
+# http://omenassessors.com/resources/UAM/img/header_img.png, which now returns 404
+# on .com and .in alike. The file survives in the legacy source (header_img.png,
+# 590 x 206, identical in the Lead, UAM and Payroll apps) and is bundled here, so
+# reports no longer depend on the website.
+LETTERHEAD = Path(__file__).resolve().parent / 'assets' / 'letterhead.png'
 PHOTO_LABELS = {1: 'Front', 2: 'Inside', 3: 'Right View', 4: 'Left View', 5: 'Location Plan', 6: 'Site Plan', 7: 'Other'}
 
 _base = getSampleStyleSheet()
@@ -188,7 +194,11 @@ def photo_flowables(valuation, full):
 def render(report, template, bank_client):
     valuation, case = report.valuation, report.valuation.case
     office, full = case.lead.office, 176 * mm
-    story = [Paragraph(t(FIRM[0]), TITLE), Paragraph(t(FIRM[1]), SMALL), Spacer(1, 6)]
+    if LETTERHEAD.exists():
+        width = full * 0.8
+        story = [Image(str(LETTERHEAD), width=width, height=width * 206 / 590), Spacer(1, 6)]
+    else:
+        story = [Paragraph(t(FIRM[0]), TITLE), Paragraph(t(FIRM[1]), SMALL), Spacer(1, 6)]
     number = t(valuation.report_number) + (f' — Revision {report.revision}' if report.revision else '')
     refs = [['Our Reference', report.our_reference, 'Report No.', number],
             ['Your Reference', report.your_reference, 'Report Date', report.report_date.strftime('%d-%m-%Y') if report.report_date else ''],
