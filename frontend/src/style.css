@@ -22,3 +22,4 @@
 .photo-grid img,.photo-placeholder{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
 .photo-placeholder{display:flex;align-items:center;justify-content:center;background:#f4f4f4;color:#666;font-size:.85rem}
 .photo-grid figcaption{padding:.4rem .6rem;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.75rem 1rem;margin:.75rem 0}

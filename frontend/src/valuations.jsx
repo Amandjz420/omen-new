@@ -120,11 +120,12 @@ function ValuationForm({api, id, onBack}) {
         <span>{s.name}</span>
         <small>{s.answered}/{s.questions}{s.required ? ` · required ${s.required_answered}/${s.required}` : ''}</small>
       </button>)}
-        {[['__billing', 'Billing'], ['__photos', 'Photos']].map(([k, label]) => <button key={k} className={k === key ? 'active' : ''} onClick={() => choose(k)}><span>{label}</span></button>)}
+        {[['__billing', 'Billing'], ['__photos', 'Photos'], ['__submit', head.status === 'Submit' ? 'Submission' : 'Submit']].map(([k, label]) => <button key={k} className={k === key ? 'active' : ''} onClick={() => choose(k)}><span>{label}</span></button>)}
       </nav>
       <div className="section-body">
         {error && <p role="alert" className="error">{error}</p>}
         {key === '__billing' ? <Billing api={api} id={id}/> : key === '__photos' ? <Photos api={api} id={id}/> :
+        key === '__submit' ? <Submission api={api} id={id} onJump={choose} onDone={setHead}/> :
         !section ? <p>Loading section…</p> : <>
           {section.questions.map(q => <Question key={q.id} q={q} value={draft[q.id]} readOnly={readOnly} onChange={a => edit(q.id, a)}
             files={q.document ? {api, id, dirty, reload: () => api(`valuations/${id}/sections/${key}/`).then(setSection)} : null}/>)}
@@ -298,4 +299,48 @@ function Photos({api, id}) {
     </figure>)}</div>
     {data.photos.length === 0 && <p>No photos yet.</p>}
   </div>;
+}
+
+function Submission({api, id, onJump, onDone}) {
+  const [data, setData] = useState(null);
+  const [form, setForm] = useState({});
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const adopt = d => {setData(d); setForm({...d.values, valuation_date: d.values.valuation_date || ''});};
+  useEffect(() => {api(`valuations/${id}/submission/`).then(adopt).catch(e => setError(e.message));}, [id]);
+  if (!data) return error ? <p role="alert" className="error">{error}</p> : <p>Loading…</p>;
+  const set = (k, v) => setForm(f => ({...f, [k]: v}));
+  const locked = !data.editable;
+  async function submit(e) {
+    e.preventDefault();
+    const note = data.keeps_report_number ? `It keeps report number ${data.report_number}.` : 'A report number will be assigned.';
+    if (!window.confirm(`Submit this valuation for verification? ${note}\n\nIt can no longer be edited unless it is sent back.`)) return;
+    setSaving(true); setError('');
+    try {const result = await api(`valuations/${id}/submission/`, {method: 'POST', body: JSON.stringify(form)}); adopt(result.submission); onDone(result);}
+    catch (e) {setError(e.message);} finally {setSaving(false);}
+  }
+  const select = (k, label, options, required = true) => <label>{label}{required && <span className="required"> *</span>}
+    <select value={form[k] ?? ''} disabled={locked} onChange={e => set(k, e.target.value)} required={required}>
+      <option value="">Choose…</option>{options.map(o => <option key={o.code ?? o.id} value={o.code ?? o.id}>{o.label ?? o.name}</option>)}</select></label>;
+  return <form onSubmit={submit}>
+    <h3>{data.status === 'Submit' ? `Submitted as ${data.report_number}` : 'Submit for verification'}</h3>
+    {error && <p role="alert" className="error">{error}</p>}
+    {!locked && data.missing_required.length > 0 && <div className="notice">
+      <p>Answer these required questions before submitting:</p>
+      <ul>{data.missing_required.map(q => <li key={q.question}><button type="button" className="link" onClick={() => onJump(q.section_key)}>{q.section}</button>: {q.text}</li>)}</ul>
+    </div>}
+    {!locked && data.keeps_report_number && <p className="muted">This valuation was sent back. Resubmitting keeps its report number, {data.report_number}.</p>}
+    <div className="form-grid">
+      <label>Valuation date<input type="date" value={form.valuation_date || ''} disabled={locked} max={new Date().toISOString().slice(0, 10)} onChange={e => set('valuation_date', e.target.value)}/><small className="muted">Defaults to today</small></label>
+      <label>Eligible loan amount<span className="required"> *</span><input inputMode="decimal" value={form.eligible_loan_amount || ''} disabled={locked} required onChange={e => set('eligible_loan_amount', e.target.value)}/></label>
+      <label>Desired loan amount<span className="required"> *</span><input inputMode="decimal" value={form.desired_loan_amount || ''} disabled={locked} required onChange={e => set('desired_loan_amount', e.target.value)}/></label>
+      {select('submitted_to', 'Submit to', data.options.employees)}
+      {select('dispatch_at', 'To be dispatched at', data.options.dispatch_at)}
+      {select('dispatch_by', 'To be dispatched by', data.options.dispatch_by)}
+      {select('report_category', 'Report category', data.options.report_category)}
+    </div>
+    <label>Assessor's comment<textarea rows={3} value={form.assessor_comment || ''} disabled={locked} onChange={e => set('assessor_comment', e.target.value)}/></label>
+    <label>Non-cost factors<textarea rows={2} value={form.non_cost_factor || ''} disabled={locked} onChange={e => set('non_cost_factor', e.target.value)}/></label>
+    {!locked && <p className="actions"><button disabled={saving || data.missing_required.length > 0}>{saving ? 'Submitting…' : 'Submit valuation'}</button></p>}
+  </form>;
 }
