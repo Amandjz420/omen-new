@@ -39,7 +39,43 @@ TEMPLATES = [{
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 WSGI_APPLICATION = 'config.wsgi.application'
-DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': BASE_DIR / 'target.sqlite3'}}
+# PostgreSQL is the application database. Credentials come from the environment
+# in deployment, or from database/.local/postgres.json locally (gitignored, mode
+# 600). DATABASE_ENGINE=sqlite selects the retired SQLite file, kept only for
+# rollback and for the one-time transfer.
+SQLITE_PATH = BASE_DIR / 'target.sqlite3'
+POSTGRES_CONFIG = BASE_DIR.parent / 'database' / '.local' / 'postgres.json'
+
+
+def _postgres():
+    if os.environ.get('DATABASE_ENGINE', '').lower() == 'sqlite':
+        return None
+    if os.environ.get('POSTGRES_PASSWORD'):
+        return {'host': os.environ.get('POSTGRES_HOST', '127.0.0.1'),
+                'port': int(os.environ.get('POSTGRES_PORT', '5433')),
+                'name': os.environ.get('POSTGRES_DB', 'omen'),
+                'user': os.environ.get('POSTGRES_USER', 'omen'),
+                'password': os.environ['POSTGRES_PASSWORD']}
+    if POSTGRES_CONFIG.exists():
+        import json
+        return json.loads(POSTGRES_CONFIG.read_text())
+    if not DEBUG:
+        raise RuntimeError('Set POSTGRES_* environment variables for deployment')
+    return None
+
+
+_pg = _postgres()
+if _pg:
+    DATABASES = {'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': _pg['name'], 'USER': _pg['user'], 'PASSWORD': _pg['password'],
+        'HOST': _pg['host'], 'PORT': str(_pg['port']),
+        # Persistent connections; the importer holds one for long batches.
+        'CONN_MAX_AGE': 60,
+        'OPTIONS': {'connect_timeout': 10},
+    }}
+else:
+    DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': SQLITE_PATH}}
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 USE_TZ = True
 TIME_ZONE = 'Asia/Kolkata'

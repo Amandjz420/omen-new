@@ -31,6 +31,14 @@ LEAD_PROJECT = 'LEAD'
 # Reviewed identity merges, keyed by login id. Confirmed with the data owner.
 MERGES = {'9907360751': ('9826056729', 'Confirmed same person; duplicate legacy account, grants carried to the canonical account')}
 
+# Interim access policy, set by the data owner on 24 September 2026: until
+# business roles are designed, every provisioned LEAD account may use every
+# workflow. This grants the business API only; is_superuser is still never set,
+# so no personal account can administer users or migration data.
+# Set to False when role segregation lands; the next run withdraws the access
+# again through the same reconciliation, so no manual clean-up is needed.
+INTERIM_FULL_ACCESS = True
+
 # Shared generic logins. These are administered deliberately by
 # setup_admin_accounts, never issued a login-id password and never demoted by the
 # automatic access withdrawal below, because their whole purpose is to hold
@@ -77,7 +85,7 @@ class Command(BaseCommand):
         accounts = list(m.LegacyAccount.objects.select_related('employee', 'user').order_by('login_id'))
         by_login = {a.login_id: a for a in accounts}
         conflicts, notes = [], {'merged': 0, 'created': 0, 'linked': 0, 'unchanged': 0,
-                                'not_eligible': 0, 'revoked': 0, 'reactivated': 0, 'access_withdrawn': 0}
+                                'not_eligible': 0, 'revoked': 0, 'reactivated': 0, 'access_withdrawn': 0, 'access_granted': 0}
 
         # --- plan: merge graph first, then eligibility computed from it ---------
         canonical, merged_from = {}, {}
@@ -144,8 +152,9 @@ class Command(BaseCommand):
                     continue
                 user = User(username=account.login_id, first_name=(account.name or '')[:150],
                             email=account.email or '', is_active=active,
-                            # No business access. See the module docstring.
-                            is_staff=False, is_superuser=False)
+                            # Business access per the interim policy; never superuser.
+                            is_staff=INTERIM_FULL_ACCESS and account.login_id not in SHARED_LOGINS,
+                            is_superuser=False)
                 if account.login_id in SHARED_LOGINS:
                     # A shared login must never be reachable with a guessable
                     # password. It stays unusable until setup_admin_accounts runs.
@@ -161,13 +170,17 @@ class Command(BaseCommand):
                     notes['reactivated' if active else 'revoked'] += 1
                     user.is_active = active
                     changed.append('is_active')
-                # Accounts provisioned before this policy carried the admin-site
-                # flag, which the preview API treats as business access. Withdraw
-                # it until a real permission policy exists.
-                if (user.is_staff or user.is_superuser) and account.login_id not in SHARED_LOGINS:
-                    notes['access_withdrawn'] += 1
-                    user.is_staff = user.is_superuser = False
-                    changed += ['is_staff', 'is_superuser']
+                # Business access follows the interim policy. Superuser is never
+                # granted to a personal account under either setting.
+                if account.login_id not in SHARED_LOGINS:
+                    if user.is_superuser:
+                        notes['access_withdrawn'] += 1
+                        user.is_superuser = False
+                        changed.append('is_superuser')
+                    if user.is_staff != INTERIM_FULL_ACCESS:
+                        notes['access_granted' if INTERIM_FULL_ACCESS else 'access_withdrawn'] += 1
+                        user.is_staff = INTERIM_FULL_ACCESS
+                        changed.append('is_staff')
                 if changed and not dry:
                     user.save(update_fields=changed)
 
@@ -183,7 +196,7 @@ class Command(BaseCommand):
                 account.employee.save(update_fields=['user'])
                 notes['linked'] += 1
 
-        for key in ('merged', 'created', 'unchanged', 'linked', 'not_eligible', 'revoked', 'reactivated', 'access_withdrawn'):
+        for key in ('merged', 'created', 'unchanged', 'linked', 'not_eligible', 'revoked', 'reactivated', 'access_withdrawn', 'access_granted'):
             self.stdout.write(f'{key:18s} {notes[key]}')
         for line in conflicts:
             self.stdout.write(self.style.ERROR(f'conflict: {line}'))

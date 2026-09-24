@@ -438,12 +438,31 @@ class RevocationTests(ProvisioningHarness, TestCase):
         run('provision_accounts', verbosity=0)
         self.assertFalse(User.objects.get().is_active)
 
-    def test_provisioned_accounts_receive_no_business_access(self):
+    def test_interim_policy_grants_business_access_but_never_superuser(self):
         self.account('9000000001', 'Administrator', project=self.lead)
         run('provision_accounts', verbosity=0)
         user = User.objects.get()
-        self.assertFalse(user.is_staff)
+        self.assertTrue(user.is_staff)
         self.assertFalse(user.is_superuser)
+
+    def test_turning_the_interim_policy_off_withdraws_access(self):
+        from target_core.management.commands import provision_accounts as command
+        self.account('9000000001', 'Assessor', project=self.lead)
+        run('provision_accounts', verbosity=0)
+        self.assertTrue(User.objects.get().is_staff)
+        command.INTERIM_FULL_ACCESS = False
+        try:
+            run('provision_accounts', verbosity=0)
+            self.assertFalse(User.objects.get().is_staff)
+        finally:
+            command.INTERIM_FULL_ACCESS = True
+
+    def test_a_personal_account_holding_superuser_loses_it(self):
+        self.account('9000000001', 'Assessor', project=self.lead)
+        run('provision_accounts', verbosity=0)
+        User.objects.filter(username='9000000001').update(is_superuser=True)
+        run('provision_accounts', verbosity=0)
+        self.assertFalse(User.objects.get().is_superuser)
 
 
 class IdentityBindingTests(ProvisioningHarness, TestCase):
