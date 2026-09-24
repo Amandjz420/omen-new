@@ -171,7 +171,7 @@ function Documents({q, selected, readOnly, files}) {
   </div>;
 }
 
-function Question({q, value, readOnly, onChange, files}) {
+export function Question({q, value, readOnly, onChange, files}) {
   const title = <legend>{q.text}{q.mandatory && <span className="required"> *</span>}{q.retired && <small className="muted"> (retired question)</small>}</legend>;
   if (!value) return null;
   if (q.kind === 'single' || q.kind === 'multiple') {

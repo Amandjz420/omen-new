@@ -199,6 +199,23 @@ class ValuationFormTests(Form, TestCase):
         self.assertEqual(self.client.get('/api/valuations/?status=not_started').json()['total'], 1)
 
 
+def user_with_role(source_id, employee):
+    """A signed-in-capable user holding one LEAD role, identified by its legacy id."""
+    lead_project = m.LegacyProject.objects.get_or_create(name='LEAD')[0]
+    role = m.RoleDefinition.objects.create(name=f'role {source_id}', project=lead_project,
+                                           legacy_status='1', legacy_deleted='0')
+    batch = m.ImportBatch.objects.create()
+    m.SourceIdentity.objects.create(batch=batch, environment='main', schema='uam_user', table='usertype',
+                                    key=source_key(source_id), target_model='target_core.RoleDefinition',
+                                    target_id=role.pk)
+    user = User.objects.create_user(f'u{source_id}', password='x', is_staff=True)
+    account = m.LegacyAccount.objects.create(name='A', login_id=f'u{source_id}', user=user, employee=employee,
+                                             legacy_status='1', must_change_password=False)
+    m.RoleAssignment.objects.create(account=account, role=role, project=lead_project,
+                                    legacy_status='1', legacy_deleted='0')
+    return user
+
+
 class AssessorScopeTests(Form, TestCase):
     """Field Assessors and LMS Valuators see only leads assigned to them."""
 
@@ -210,19 +227,7 @@ class AssessorScopeTests(Form, TestCase):
         self.theirs = self.lead_with_case(assigned=self.other)
 
     def user_with_role(self, source_id, employee):
-        lead_project = m.LegacyProject.objects.get_or_create(name='LEAD')[0]
-        role = m.RoleDefinition.objects.create(name=f'role {source_id}', project=lead_project,
-                                               legacy_status='1', legacy_deleted='0')
-        batch = m.ImportBatch.objects.create()
-        m.SourceIdentity.objects.create(batch=batch, environment='main', schema='uam_user', table='usertype',
-                                        key=source_key(source_id), target_model='target_core.RoleDefinition',
-                                        target_id=role.pk)
-        user = User.objects.create_user(f'u{source_id}', password='x', is_staff=True)
-        account = m.LegacyAccount.objects.create(name='A', login_id=f'u{source_id}', user=user, employee=employee,
-                                                 legacy_status='1', must_change_password=False)
-        m.RoleAssignment.objects.create(account=account, role=role, project=lead_project,
-                                        legacy_status='1', legacy_deleted='0')
-        return user
+        return user_with_role(source_id, employee)
 
     def test_a_field_assessor_sees_only_their_own_leads(self):
         self.client.force_login(self.user_with_role('157', self.me))

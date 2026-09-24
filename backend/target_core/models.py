@@ -735,6 +735,12 @@ class ValuationVerification(Entity):
     general_remark = models.TextField(blank=True)
     final_done_by_name = models.CharField(max_length=200, blank=True)
     final_status = models.CharField(max_length=100, blank=True)
+    # Who acted, by account. Names are not unique; every legacy id resolves.
+    legal_done_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    technical_done_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    social_done_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    general_done_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    final_done_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
 
 
 class Reversion(Entity):
@@ -743,6 +749,10 @@ class Reversion(Entity):
     remark = models.CharField(max_length=300, blank=True)
     reverted_on = models.DateField(null=True)
     reverted_by_name = models.CharField(max_length=200, blank=True)
+    reverted_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    # Set on reverts made here. The legacy table kept one row per valuation and
+    # overwrote it, so only the latest of several reverts survives in the import.
+    stage = models.CharField(max_length=40, blank=True)
 
 
 # ============================================================================

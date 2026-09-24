@@ -23,3 +23,10 @@
 .photo-placeholder{display:flex;align-items:center;justify-content:center;background:#f4f4f4;color:#666;font-size:.85rem}
 .photo-grid figcaption{padding:.4rem .6rem;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.75rem 1rem;margin:.75rem 0}
+.tabs{display:flex;gap:.25rem;margin-bottom:.75rem;flex-wrap:wrap}
+.tabs button.active{font-weight:600}
+.tabs .count{opacity:.7}
+.track-status{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem;margin:.75rem 0}
+.track-status div{border:1px solid #ddd;border-radius:8px;padding:.5rem .75rem;display:flex;flex-direction:column}
+.track-status div.done{border-color:#12b76a;background:#ecfdf3}
+.panel.inset{margin-top:1rem}
