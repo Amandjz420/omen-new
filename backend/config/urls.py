@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path
-from target_core import views, workorders, valuations, valuation_billing, valuation_files, valuation_submit, verifications, intake
+from target_core import views, workorders, valuations, valuation_billing, valuation_files, valuation_submit, verifications, bank_reports, intake
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/intake/catalog/', intake.catalog),
@@ -25,6 +25,11 @@ urlpatterns = [
     path('api/valuations/<uuid:pk>/photos/<uuid:photo_pk>/file/', valuation_files.photo_file),
     path('api/valuations/<uuid:pk>/documents/', valuation_files.answer_document),
     path('api/valuations/<uuid:pk>/documents/<uuid:document_pk>/file/', valuation_files.document_file),
+    path('api/bank-reports/', bank_reports.queue),
+    path('api/bank-reports/banks/', bank_reports.banks),
+    path('api/bank-reports/branches/', bank_reports.branches),
+    path('api/bank-reports/<uuid:pk>/', bank_reports.report),
+    path('api/bank-reports/<uuid:pk>/document/', bank_reports.document),
     path('api/verifications/', verifications.queue),
     path('api/verifications/<uuid:pk>/', verifications.detail),
     path('api/verifications/<uuid:pk>/revert/', verifications.revert),

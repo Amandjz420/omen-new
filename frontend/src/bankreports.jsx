@@ -1,0 +1,106 @@
+import React, {useEffect, useState} from 'react';
+
+const today = () => new Date().toISOString().slice(0, 10);
+const rupees = v => v === '' || v == null ? '' : Number(v).toLocaleString('en-IN', {maximumFractionDigits: 0});
+
+export function BankReports({api}) {
+  const [open, setOpen] = useState(null);
+  return open ? <ReportForm api={api} id={open} onBack={() => setOpen(null)}/> : <Queue api={api} onOpen={setOpen}/>;
+}
+
+function Queue({api, onOpen}) {
+  const [state, setState] = useState('pending');
+  const [list, setList] = useState(null);
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => api(`bank-reports/?state=${state}&q=${encodeURIComponent(q)}&page=${page}`)
+      .then(r => {setList(r); setError('');}).catch(e => setError(e.message)), 250);
+    return () => clearTimeout(t);
+  }, [state, q, page]);
+  return <section className="panel">
+    <div className="tabs">{[['pending', 'Ready for a report'], ['generated', 'Report generated']].map(([k, l]) =>
+      <button key={k} className={k === state ? 'active' : ''} onClick={() => {setState(k); setPage(1);}}>{l}{list && <span className="count"> {list.counts[k]}</span>}</button>)}</div>
+    <p className="muted">Only valuations with all four verifications appear here.</p>
+    <div className="toolbar"><label className="search">Search<input placeholder="Report, lead or borrower" value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label></div>
+    {error && <p role="alert" className="error">{error}</p>}
+    {!list ? <p>Loading…</p> : <>
+      <div className="table-wrap"><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th></th></tr></thead>
+      <tbody>{list.results.map(r => <tr key={r.id}><td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td>
+        <td>{r.service}</td><td>{r.submitted_on || '—'}</td><td><button className="link" onClick={() => onOpen(r.id)}>{state === 'pending' ? 'Prepare →' : 'Open →'}</button></td></tr>)}</tbody></table></div>
+      {list.total === 0 && <p>Nothing here.</p>}
+      <div className="pagination"><span>{list.total.toLocaleString('en-IN')} · Page {page}</span>
+        <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
+        <button disabled={page * list.page_size >= list.total} onClick={() => setPage(page + 1)}>Next</button></div>
+    </>}
+  </section>;
+}
+
+function ReportForm({api, id, onBack}) {
+  const [data, setData] = useState(null);
+  const [form, setForm] = useState({});
+  const [banks, setBanks] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [branchQuery, setBranchQuery] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const adopt = d => {setData(d); setForm({...d.values, report_date: d.values.report_date || today()});};
+  useEffect(() => {api(`bank-reports/${id}/`).then(adopt).catch(e => setError(e.message));}, [id]);
+  useEffect(() => {if (data?.bank_client) api('bank-reports/banks/').then(r => setBanks(r.banks)).catch(() => {});}, [data?.bank_client]);
+  useEffect(() => {
+    if (!form.bank) {setBranches([]); return;}
+    const t = setTimeout(() => api(`bank-reports/branches/?bank=${form.bank}&q=${encodeURIComponent(branchQuery)}`)
+      .then(r => setBranches(r.branches)).catch(() => {}), 250);
+    return () => clearTimeout(t);
+  }, [form.bank, branchQuery]);
+  if (!data) return <section className="panel">{error ? <p role="alert" className="error">{error}</p> : <p>Loading…</p>}</section>;
+  const set = (k, v) => setForm(f => ({...f, [k]: v}));
+  const blocked = data.blockers.length > 0;
+  async function generate(e) {
+    e.preventDefault(); setSaving(true); setError('');
+    try {adopt(await api(`bank-reports/${id}/`, {method: 'PUT', body: JSON.stringify(form)}));}
+    catch (err) {setError(err.message);} finally {setSaving(false);}
+  }
+  const amount = (k, label, required = true) => <label>{label}{required && <span className="required"> *</span>}
+    <input inputMode="decimal" value={form[k] ?? ''} disabled={blocked} required={required} onChange={e => set(k, e.target.value)}/>
+    {form[k] !== '' && form[k] != null && <small className="muted">Rs. {rupees(form[k])}</small>}</label>;
+  const text = (k, label, required = false) => <label>{label}{required && <span className="required"> *</span>}
+    <input value={form[k] || ''} disabled={blocked} required={required} maxLength={150} onChange={e => set(k, e.target.value)}/></label>;
+  return <section className="panel">
+    <button className="link" onClick={onBack}>← Back to bank reports</button>
+    <h2>Bank report · {data.report_number}{data.report?.revision ? ` · Revision ${data.report.revision}` : ''}</h2>
+    {data.blockers.map(b => <p key={b} className="notice">{b}</p>)}
+    {data.template_error && <p className="error">{data.template_error}</p>}
+    {data.template && <p className="muted">Using the report template with {data.template.lines} lines.</p>}
+    {data.report?.document && <p>{data.report.document.local
+      ? <a href={`/api/bank-reports/${id}/document/`} target="_blank" rel="noopener">View the report (PDF)</a>
+      : <span className="muted">The report is held in legacy storage and has not been retrieved yet.</span>}
+      {data.report.generated_at && <small className="muted"> · generated {new Date(data.report.generated_at).toLocaleString('en-IN')}{data.report.generated_by ? ` by ${data.report.generated_by}` : ''}</small>}</p>}
+    {error && <p role="alert" className="error">{error}</p>}
+    <form onSubmit={generate}>
+      <h3>Assessed values</h3>
+      <div className="form-grid">{amount('market_fair_amount', 'Fair market value')}{amount('realisable_value_amount', 'Realisable value')}
+        {amount('distress_value_amount', 'Distress value')}{amount('book_value_amount', 'Book value', false)}</div>
+      <p className="muted">Values are written out in words on the report automatically.</p>
+      <h3>References</h3>
+      <div className="form-grid">{text('our_reference', 'Our reference', true)}{text('your_reference', "Bank's reference", true)}
+        {text('unique_reference', 'Unique reference')}{text('omen_id', 'OMEN ID')}
+        <label>Report date<input type="date" value={form.report_date || ''} max={today()} disabled={blocked} onChange={e => set('report_date', e.target.value)}/></label></div>
+      {data.bank_client && <><h3>Addressed to</h3>
+        <div className="form-grid">
+          <label>Bank<span className="required"> *</span><select value={form.bank || ''} disabled={blocked} required onChange={e => {set('bank', e.target.value); set('branch', '');}}>
+            <option value="">Choose…</option>{banks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+          <label>Find branch<input value={branchQuery} disabled={blocked || !form.bank} placeholder="Name, IFSC or city" onChange={e => setBranchQuery(e.target.value)}/></label>
+          <label>Branch<span className="required"> *</span><select value={form.branch || ''} disabled={blocked || !form.bank} required onChange={e => set('branch', e.target.value)}>
+            <option value="">{data.branch_name && form.branch ? data.branch_name : 'Choose…'}</option>
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.ifsc ? ` · ${b.ifsc}` : ''}{b.city ? ` · ${b.city}` : ''}</option>)}</select></label>
+        </div>
+        <p className="muted">The report's bank chooses the template, and can differ from the office's bank.</p></>}
+      <label>Certificate<textarea rows={3} value={form.certificate || ''} disabled={blocked} onChange={e => set('certificate', e.target.value)}/></label>
+      {!blocked && <p className="actions"><button disabled={saving || !data.template}>{saving ? 'Generating…' : (data.report ? 'Regenerate report' : 'Generate report')}</button></p>}
+    </form>
+    {data.superseded.length > 0 && <><h3>Earlier versions</h3><ul>{data.superseded.map(s => <li key={s.revision}>
+      Revision {s.revision} · superseded {new Date(s.superseded_at).toLocaleDateString('en-IN')}</li>)}</ul></>}
+  </section>;
+}

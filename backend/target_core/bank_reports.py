@@ -1,0 +1,273 @@
+"""The bank report: the assessed values and the document a bank receives.
+
+Traced to BankReportController /bankReport, /report_question and /savebankReport,
+BankReportService.questionList, findQuestions and bankReportPDF, and
+ValuationBankReportUtil.
+
+Gate. A report may be generated only for a submitted valuation whose four tracks
+are all verified and which has no final approval yet. The legacy queue checked
+none of this, but all 11,898 imported bank reports had all four tracks verified,
+so the gate enforces what was always practised (the data owner's decision).
+
+Template. Chosen by the office's client type, the case's service and subtype, and
+for bank clients (client type 1, Financial Institution) the bank chosen on the
+report. That bank can differ from the office's bank, and does on 523 imported
+reports; matched on the report's bank, every one of the 11,579 bank-client
+reports has a live template. For other clients the legacy query ignored the bank,
+so several templates for one combination would have had their lines merged into
+one report; none does today, and here more than one is refused as ambiguous.
+
+Values. Market/fair, realisable and distress are required and may be zero (2,161
+imported reports state a zero market value); book value is optional, set on only 2
+of 11,897. Words are generated, never typed: the converter reproduces all 47,592
+stored legacy figures in words exactly.
+
+Versions. The legacy system kept one report per valuation, updated it in place and
+deleted it on a final revert, so a report a bank had received could disappear.
+Until final approval the current version is updated in place, as before. A final
+revert (the approval stage) supersedes it instead of deleting it, and the next
+version carries the following revision number, printed beside the report number.
+"""
+import datetime
+import uuid
+from pathlib import Path
+
+from django.conf import settings
+from django.db.models import Q
+from django.http import JsonResponse
+from django.utils import timezone
+
+from . import models as m
+from .bank_report_pdf import render, template_lines
+from .files import file_json, serve
+from .intake import IntakeError, endpoint, find, payload, record, snapshot
+from .sync import source_key
+from .valuation_billing import money
+from .valuations import LIVE, in_scope, scope_cases
+from .verifications import TRACKS, VERIFIED, actor
+from .words import amount_words
+
+BANK_CLIENT_SOURCE_ID = '1'          # client_type 1, "Financial Institution"
+PAGE_SIZE = 25
+
+
+def bank_client_type_id():
+    return (m.SourceIdentity.objects.filter(environment='main', schema='lead_mngt', table='client_type',
+                                            key=source_key(BANK_CLIENT_SOURCE_ID))
+            .values_list('target_id', flat=True).first())
+
+
+def is_bank_client(valuation):
+    office = valuation.case.lead.office
+    return office.client_type_id is not None and office.client_type_id == bank_client_type_id()
+
+
+def current(valuation):
+    return (m.BankReport.objects.filter(valuation=valuation, superseded_at__isnull=True)
+            .select_related('bank', 'branch', 'document').order_by('-revision', '-created_at').first())
+
+
+def blockers(valuation):
+    reasons = []
+    if valuation.legacy_status != 'Submit':
+        reasons.append(f'The valuation is {valuation.legacy_status or "not submitted"}, not submitted')
+    verification = m.ValuationVerification.objects.filter(valuation=valuation).first()
+    missing = [label for t, (_, label) in TRACKS.items()
+               if not verification or getattr(verification, f'{t}_status') != VERIFIED]
+    if missing:
+        reasons.append('Awaiting verification: ' + ', '.join(missing))
+    if verification and verification.final_status == VERIFIED:
+        reasons.append('The report has final approval; a change needs a final revert first')
+    return reasons
+
+
+def resolve_template(valuation, bank):
+    case = valuation.case
+    office = case.lead.office
+    templates = m.ReportTemplate.objects.filter(client_type=office.client_type, service=case.service,
+                                                subtype=case.subtype, legacy_deleted__in=LIVE)
+    if is_bank_client(valuation):
+        if bank is None:
+            raise IntakeError('Choose the bank this report is for')
+        templates = templates.filter(bank=bank)
+    templates = list(templates)
+    if not templates:
+        raise IntakeError('No report template matches this client type, service, subtype'
+                          + (' and bank' if is_bank_client(valuation) else ''), 409)
+    if len(templates) > 1:
+        raise IntakeError('Several report templates match; resolve the duplicate in report setup', 409)
+    return templates[0]
+
+
+def report_json(valuation):
+    report = current(valuation)
+    office = valuation.case.lead.office
+    bank_client = is_bank_client(valuation)
+    template = error = None
+    bank = report.bank if report and report.bank_id else (office.bank if bank_client else None)
+    try:
+        chosen = resolve_template(valuation, bank) if (bank or not bank_client) else None
+        if chosen:
+            template = {'id': chosen.pk, 'lines': template_lines(chosen).count()}
+    except IntakeError as exc:
+        error = exc.message
+    value = lambda f: str(getattr(report, f)) if report and getattr(report, f) is not None else ''
+    return {'valuation': valuation.pk, 'report_number': valuation.report_number,
+            'blockers': blockers(valuation), 'bank_client': bank_client,
+            'template': template, 'template_error': error,
+            'report': None if report is None else {
+                'id': report.pk, 'revision': report.revision, 'document': file_json(report.document),
+                'generated_at': report.generated_at, 'generated_by': report.generated_by_name},
+            'values': {'market_fair_amount': value('market_fair_amount'), 'realisable_value_amount': value('realisable_value_amount'),
+                       'book_value_amount': value('book_value_amount'), 'distress_value_amount': value('distress_value_amount'),
+                       'our_reference': report.our_reference if report else '', 'your_reference': report.your_reference if report else '',
+                       'unique_reference': report.unique_reference if report else '', 'omen_id': report.omen_id if report else '',
+                       'report_date': report.report_date if report else None,
+                       'bank': str(bank.pk) if bank else None,
+                       'branch': str((report.branch_id if report and report.branch_id else office.directory_branch_id) or '') or None,
+                       'certificate': report.bank_certificate if report else ''},
+            'bank_name': bank.name if bank else '',
+            'branch_name': (report.branch.name if report and report.branch_id else
+                            (office.directory_branch.name if office.directory_branch_id else '')),
+            'superseded': [{'revision': r.revision, 'superseded_at': r.superseded_at, 'document': file_json(r.document)}
+                           for r in m.BankReport.objects.filter(valuation=valuation, superseded_at__isnull=False)
+                           .order_by('revision')]}
+
+
+@endpoint(['GET', 'PUT'])
+def report(request, pk):
+    valuation = find(m.Valuation, pk)
+    in_scope(request.user, valuation.case)
+    if request.method == 'PUT':
+        generate(request, valuation)
+        valuation.refresh_from_db()
+    return JsonResponse(report_json(valuation))
+
+
+def generate(request, valuation):
+    valuation = m.Valuation.objects.select_for_update().get(pk=valuation.pk)
+    reasons = blockers(valuation)
+    if reasons:
+        raise IntakeError('; '.join(reasons), 409)
+    data = payload(request, ['market_fair_amount', 'realisable_value_amount', 'book_value_amount',
+                             'distress_value_amount', 'our_reference', 'your_reference', 'unique_reference',
+                             'omen_id', 'report_date', 'bank', 'branch', 'certificate'])
+    amounts = {}
+    for field, label, required in (('market_fair_amount', 'Fair market value', True),
+                                   ('realisable_value_amount', 'Realisable value', True),
+                                   ('distress_value_amount', 'Distress value', True),
+                                   ('book_value_amount', 'Book value', False)):
+        if required and data.get(field) in (None, ''):
+            raise IntakeError(f'Enter the {label.lower()}')
+        amounts[field] = money(data.get(field), label)
+        if amounts[field] < 0:
+            raise IntakeError(f'{label} cannot be negative')
+    for field, label in (('our_reference', 'our reference'), ('your_reference', "the bank's reference")):
+        if not str(data.get(field) or '').strip():
+            raise IntakeError(f'Enter {label}')
+    today = timezone.localdate()
+    try:
+        dated = datetime.date.fromisoformat(data['report_date']) if data.get('report_date') else today
+    except ValueError:
+        raise IntakeError('Enter the report date as YYYY-MM-DD')
+    if dated > today:
+        raise IntakeError('The report date cannot be in the future')
+    if valuation.valuation_date and dated < valuation.valuation_date:
+        raise IntakeError('The report date cannot be before the valuation date')
+
+    bank = branch = None
+    if is_bank_client(valuation):
+        bank = find(m.Bank, data.get('bank')) if data.get('bank') else None
+        if bank is None:
+            raise IntakeError('Choose the bank this report is for')
+        if data.get('branch'):
+            branch = find(m.BankBranch, data['branch'])
+            if branch.bank_id != bank.pk:
+                raise IntakeError('The branch belongs to a different bank')
+        else:
+            raise IntakeError('Choose the bank branch this report is for')
+    template = resolve_template(valuation, bank)
+
+    report = current(valuation)
+    before = snapshot(report) if report else None
+    if report is None:
+        report = m.BankReport(valuation=valuation, revision=m.BankReport.objects.filter(
+            valuation=valuation, superseded_at__isnull=False).count())
+    account, name = actor(request.user)
+    report.report_number = valuation.report_number
+    report.report_date, report.bank, report.branch, report.template = dated, bank, branch, template
+    for field, amount in amounts.items():
+        setattr(report, field, amount)
+        setattr(report, f'{field}_word', amount_words(round(amount)))
+    for field in ('our_reference', 'your_reference', 'unique_reference', 'omen_id'):
+        setattr(report, field, str(data.get(field) or '').strip()[:150])
+    report.bank_certificate = str(data.get('certificate') or '').strip()
+    report.generated_by, report.generated_by_name, report.generated_at = account, name[:200], timezone.now()
+    report.save()
+
+    content = render(report, template, bank is not None)          # raises before any file is written
+    relative = f'bank_reports/{valuation.pk}/rev{report.revision}-{uuid.uuid4().hex}.pdf'
+    report.document = m.Document.objects.create(storage_provider='local', storage_key=relative,
+                                                original_name=f'{valuation.report_number}'
+                                                              f'{"-rev" + str(report.revision) if report.revision else ""}.pdf',
+                                                media_type='application/pdf', size_bytes=len(content))
+    report.save(update_fields=['document'])
+    record(request.user, report, before, action='generate_bank_report')
+    path = Path(settings.MEDIA_ROOT) / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+
+@endpoint(['GET'])
+def document(request, pk):
+    valuation = find(m.Valuation, pk)
+    in_scope(request.user, valuation.case)
+    report = current(valuation)
+    if report is None:
+        raise IntakeError('No bank report has been generated', 404)
+    return serve(report.document)
+
+
+@endpoint(['GET'])
+def queue(request):
+    ready = (m.Valuation.objects.filter(legacy_status='Submit', case__in=scope_cases(request.user, m.Case.objects.all()))
+             .exclude(verifications__final_status=VERIFIED))
+    for track in TRACKS:
+        ready = ready.filter(**{f'verifications__{track}_status': VERIFIED})
+    with_report = m.BankReport.objects.filter(superseded_at__isnull=True).values('valuation')
+    state = request.GET.get('state', 'pending')
+    rows = ready.exclude(pk__in=with_report) if state == 'pending' else ready.filter(pk__in=with_report)
+    text = request.GET.get('q', '').strip()
+    if text:
+        rows = rows.filter(Q(report_number__icontains=text) | Q(case__lead__number__icontains=text)
+                           | Q(case__borrower__name__icontains=text))
+    rows = rows.select_related('case__lead', 'case__borrower', 'case__service').order_by('-valuation_date', '-report_number')
+    total = rows.count()
+    try:
+        page = max(1, int(request.GET.get('page', 1)))
+    except ValueError:
+        page = 1
+    return JsonResponse({'state': state, 'total': total, 'page': page, 'page_size': PAGE_SIZE,
+                         'counts': {'pending': ready.exclude(pk__in=with_report).count(),
+                                    'generated': ready.filter(pk__in=with_report).count()},
+                         'results': [{'id': v.pk, 'report_number': v.report_number, 'lead_number': v.case.lead.number,
+                                      'borrower': v.case.borrower.name if v.case.borrower_id else '',
+                                      'service': v.case.service.name, 'submitted_on': v.valuation_date}
+                                     for v in rows[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]]})
+
+
+@endpoint(['GET'])
+def banks(request):
+    return JsonResponse({'banks': list(m.Bank.objects.order_by('name').values('id', 'name'))})
+
+
+@endpoint(['GET'])
+def branches(request):
+    bank = request.GET.get('bank')
+    if not bank:
+        raise IntakeError('Choose a bank')
+    rows = m.BankBranch.objects.filter(bank_id=bank)
+    text = request.GET.get('q', '').strip()
+    if text:
+        rows = rows.filter(Q(name__icontains=text) | Q(ifsc__icontains=text) | Q(city__icontains=text))
+    return JsonResponse({'branches': list(rows.order_by('name').values('id', 'name', 'ifsc', 'city', 'district')[:50])})

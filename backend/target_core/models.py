@@ -815,6 +815,16 @@ class BankReport(Entity):
     distress_value_amount_word = models.CharField(max_length=400, blank=True)
     bank_certificate = models.TextField(blank=True)
     legacy_liable_fa = models.CharField(max_length=40, blank=True)
+    # Versions. The legacy system kept one report per valuation, updated it in
+    # place and deleted it on a final revert, so a report a bank had received
+    # could vanish. Here a final revert supersedes the current version instead,
+    # and the next one carries the following revision number.
+    revision = models.PositiveIntegerField(default=0)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    template = models.ForeignKey('ReportTemplate', null=True, blank=True, on_delete=models.PROTECT)
+    generated_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    generated_by_name = models.CharField(max_length=200, blank=True)
+    generated_at = models.DateTimeField(null=True, blank=True)
 
 
 # ============================================================================
