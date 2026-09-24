@@ -1,5 +1,7 @@
 # Django and React migration: handoff to Claude / Devin
 
+**Latest checkpoint, 24 September 2026:** [Lead intake implementation](database/LEAD_INTAKE_IMPLEMENTATION.md) supersedes older operational-gap statements below for clients, contacts, lead creation, services, borrowers, cases, assignment and follow-ups. Business roles are explicitly deferred; existing admin/staff access remains required. Migration 0009 is applied locally, 72 tests pass under both settings, and the complete intake path was browser-tested against a disposable database. Work orders and valuation execution are next. The material below is retained as historical handoff evidence.
+
 Status at handoff: 16 September 2026. This document supersedes older progress claims where they conflict. The migration is incomplete. The architecture correction is implemented but its new import and API paths are not yet validated end to end.
 
 ## Objective and boundaries

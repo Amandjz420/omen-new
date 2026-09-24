@@ -115,6 +115,9 @@ class ServiceSubtype(NamedEntity):
 
 
 class Lead(Entity):
+    intake_key = models.UUIDField(null=True, unique=True, editable=False)
+    intake_hash = models.CharField(max_length=64, blank=True, editable=False)
+    local_sequence = models.PositiveBigIntegerField(null=True, unique=True, editable=False)
     number = models.CharField(max_length=100, blank=True, db_index=True)
     office = models.ForeignKey(ClientOffice, on_delete=models.PROTECT)
     contact = models.ForeignKey(Contact, null=True, on_delete=models.PROTECT)
@@ -131,6 +134,29 @@ class RequestedService(Entity):
     subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
     party_count = models.PositiveIntegerField(null=True)
     case_count = models.PositiveIntegerField(null=True)
+
+
+class LeadCounter(models.Model):
+    name = models.CharField(max_length=30, primary_key=True)
+    value = models.PositiveBigIntegerField(default=0)
+
+
+class LocalRecord(Entity):
+    """A reviewed local edit transfers this record's ownership from the importer."""
+    target_model = models.CharField(max_length=100)
+    target_id = models.UUIDField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['target_model', 'target_id'], name='local_record_unique')]
+
+
+class IntakeAudit(Entity):
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    action = models.CharField(max_length=60)
+    target_model = models.CharField(max_length=100)
+    target_id = models.UUIDField()
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
 
 
 class Borrower(NamedEntity):

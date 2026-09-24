@@ -293,6 +293,7 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                     page_keys=[source_key(r[keycol]) for r in rows]
                     identities=fetch_map(m.SourceIdentity.objects.filter(environment='main',schema=schema,table=table),'key',page_keys,lambda r:r.key)
                     existing=fetch_map(model.objects.all(),'id',[r.target_id for r in identities.values()],lambda r:r.id)
+                    locally_owned = set(m.LocalRecord.objects.filter(target_model=model._meta.label).values_list('target_id', flat=True))
                     stages=fetch_map(m.SourceRow.objects.filter(schema=schema,table=table),'key',page_keys,lambda r:r.key)
                     creates,updates,identity_creates,stage_creates,stage_updates,issues=[],[],[],[],[],[]
                     for row in rows:
@@ -311,6 +312,18 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                         ident=identities.get(key)
                         obj=existing.get(ident.target_id) if ident else None
                         if ident and obj is None: raise ValueError('Source identity refers to a missing target; repair before import')
+                        if obj is not None and obj.id in locally_owned:
+                            # Keep current source evidence while preserving the whole
+                            # locally edited record and the relationships it owns.
+                            warnings.append('Locally managed record; source changes retained in staging only')
+                            counts['unchanged'] += 1
+                            counts['rows_with_issues'] += 1
+                            if retain: current[str(row[keycol])] = obj
+                            m.SourceRow.objects.update_or_create(schema=schema, table=table, key=key,
+                                defaults=dict(payload=payload, payload_hash=fingerprint, batch=batch,
+                                              outcome='imported', problems=warnings))
+                            issues.append(m.MigrationIssue(batch=batch, source_identity={'schema':schema,'table':table,'key':key}, reason=warnings[0]))
+                            continue
                         try:
                             for field,column in scalars.items():
                                 f=model._meta.get_field(field)

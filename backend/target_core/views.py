@@ -140,7 +140,7 @@ def lead_json(obj,references):
     reference=references.get(obj.id) or {}
     return {'id': obj.id, 'source_id': reference.get('source_id'), 'number': obj.number, 'status': obj.legacy_status,
             'status_label': {'1': 'New lead', '2': 'In process', '3': 'Cancelled', '4': 'Closed (legacy)'}.get(obj.legacy_status, 'Unknown'),
-            'received_date': obj.received_date,
+            'received_date': obj.received_date, 'date_basis': obj.date_basis,
             'office': office_json(obj.office,references) if obj.office else None,
             'issues': reference.get('issues', [])}
 
@@ -212,5 +212,5 @@ def summary(request):
                          'services': services, 'quarantined_source_rows':SourceRow.objects.filter(outcome='quarantined').count(),
                          'source_rows': SourceRow.objects.count(),
                          'rows_with_issues': SourceRow.objects.exclude(problems=[]).exclude(outcome='quarantined').count(),
-                         'policy': 'Validated imported cases; all source statuses retained. Unresolved rows are quarantined. Dates use the lead-entry proxy.',
+                         'policy': 'Imported and locally created cases. Unresolved source rows are quarantined. Imported dates use the lead-entry proxy; local intake records the received date.',
                          'latest_import': {'created_at': latest.created_at, 'summary': latest.summary} if latest else None})

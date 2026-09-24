@@ -1,105 +1,86 @@
-# OMEN — Django + React monorepo migration
+# OMEN — Django + React migration
 
-**Current target work:** [Clean target status and created entities](database/CLEAN_TARGET_STATUS.md) · [Business purpose and complete 202-table coverage](database/BUSINESS_ENTITIES.md). Historical attendance is excluded; payroll and leave evidence remain in scope. The first 27 managed tables exist in a separate target database, with legacy-data imports still pending.
+The local application now supports **lead intake** alongside imported history. Business roles are deferred at the owner's request; the current application remains restricted to the existing staff/admin accounts.
 
-**Scope correction, 16 September 2026:** The full-system database baseline is now under [database/README.md](database/README.md). It contains all seven supplied schemas: 982 tables and 7,998,004 rows, with Django mappings and reconciliation evidence. The sections below describe the earlier limited SQLite/React prototype only; that prototype is not the whole-system migration and has not yet been connected to the full baseline.
-
-This is the first runnable slice of the migration, in a new directory alongside the original Java applications. It uses Django 5.2, React 19 and Vite. A local SQLite database supports development; PostgreSQL deployment and production operations remain future work.
+See [lead intake implementation and API contract](database/LEAD_INTAKE_IMPLEMENTATION.md) for behavior, migration protection, validation and remaining scope. This is a working local migration phase, not whole-system parity or production cutover.
 
 ## What works
 
-- Staff sign-in with Django sessions and CSRF protection.
-- Searchable, paginated offices and leads; legacy status filters.
-- Lead detail with commissioning office, contact and linked property cases.
-- Follow-up notes stored separately from imported source data.
-- Recorded-case overview by service, and latest import reconciliation.
-- Atomic, repeatable import from the JSON projection used to build the Excel files. Original IDs and raw fields are preserved. Missing relationships are flagged; rows are retained. Dry runs execute the import and roll it back.
+- Session login, CSRF protection and required first-login password change.
+- Office and lead search, imported cases, notes and reconciliation overview.
+- Client office/contact creation and editing.
+- Numbered lead creation, employee assignment and received-date entry.
+- Requested services, borrowers, asset cases, follow-ups and reasoned cancellation.
+- Audit records for intake writes and protection of locally edited records during source refreshes.
+- Direct, one-way read-only MySQL source import into the managed Django target.
 
-## Run on this machine
+Work-order generation, valuation execution/review, report output, finance workflows, dispatch, MIS parity, file retrieval and business roles remain future work. Historical attendance is excluded.
 
-The dependencies and database have been set up locally. Create your own staff account first:
+## Run locally
 
-```sh
-cd "/Users/aman/Desktop/OMEN Source Code/omen-next/backend"
-.venv/bin/python manage.py createsuperuser
-```
-
-Run the backend in one terminal:
+Backend:
 
 ```sh
 cd "/Users/aman/Desktop/OMEN Source Code/omen-next/backend"
+.venv/bin/python manage.py migrate
 .venv/bin/python manage.py runserver 127.0.0.1:8000
 ```
 
-Run the frontend in another terminal:
+Frontend, in another terminal:
 
 ```sh
 cd "/Users/aman/Desktop/OMEN Source Code/omen-next/frontend"
 npm run dev
 ```
 
-Open http://127.0.0.1:5173 and sign in. There is no shared/default password. The earlier Data Atlas on port 4173 is a separate application.
+Open http://127.0.0.1:5173. Sign in with an existing admin account, complete password setup when requested, then choose **New lead / client**. Reopen a saved lead through **Leads**. The Data Atlas at port 4173 is a separate application.
 
-## Set up on another machine
+The shared local accounts were configured deliberately. Their initial credentials are stored privately under `database/.local/`, never in this README. Do not rerun setup with `--rotate` unless you intend to reset their passwords. Imported employee accounts are not granted business access automatically.
 
-Use Python 3.12+ and Node 22.12+ (Node 22.22 was used here). In backend, create `.venv`, install `requirements.txt`, run `manage.py migrate` and `manage.py createsuperuser`. In frontend, run `npm ci`. Then follow the two start commands above.
+For a fresh environment, install `backend/requirements.txt` into a Python virtual environment, run migrations, create a local administrator with `manage.py createsuperuser`, and run `npm ci` in frontend. Python 3.12 and Node 22 were used for this workspace. The new database will be empty until imported.
 
-## Import or refresh the local dataset
+## Database and refresh
+
+`backend/target.sqlite3` is the active local target. Both `config.settings` and `config.target` use the same model set and API. The ordinary application does not need MySQL access.
+
+The source is the locally restored dump, configured privately in `database/.local/connection.json`. No production source access is needed.
 
 From backend:
 
 ```sh
-.venv/bin/python manage.py import_legacy "../../outputs/01a08c3d-marketing-export/work/workbooks.json" --dry-run
-.venv/bin/python manage.py import_legacy "../../outputs/01a08c3d-marketing-export/work/workbooks.json"
+.venv/bin/python manage.py sync_legacy --settings=config.full_database --dry-run --report ../database/new-dry-run.json
+.venv/bin/python manage.py sync_legacy --settings=config.full_database --report ../database/new-import.json
 ```
 
-This command accepts the JSON intermediate containing sheets, columns and rows, not XLSX or arbitrary SQL. It imports the main-schema projection previously generated from the 10 September 2026 dump. For a future dump, extraction must produce the same contract with refreshed source values. The old extraction scripts contain snapshot-specific paths and dates; update/parameterize them before reusing for a new snapshot. An Excel upload UI, extraction automation, and scheduled sync are not implemented yet.
+Review the dry-run report before committing a new import. Preserve production/UAT boundaries. Imported source identities remain stable; unresolved rows are retained in staging. Credentials are excluded from staged identity payloads.
 
-Each typed model has a unique original source ID within its fixed source-table identity. Reimport updates imported fields and foreign keys while preserving new local notes. Missing rows in later input are retained. Other exported sheets are retained in `SourceRecord` staging, unique by sheet and source ID. Staging is not completed domain migration.
+Locally edited offices, contacts and leads are marked as locally managed: later source changes are retained in staging rather than overwriting those target records. New local records and follow-ups survive imports. This is whole-record ownership, not an automatic per-field merge; see the implementation guide before reconciliation or cutover.
 
-The importer validates shape, required source IDs, duplicate IDs and the first-slice foreign keys. It does not yet replicate all checks from the Excel review workbook. Null links retain the unresolved source reference in `raw`. Counters for rows with issues overlap inserted/updated/unchanged; do not sum them as additional records. The entire import is one transaction; it is intended for the present local dataset, not concurrent production synchronization. Successful batch counts/checksum are recorded. Persistent per-row version history, failed-job history and undo of a previously committed import are not implemented; back up the local DB before refreshing important work.
+The old Excel/JSON prototype and its importer are archived. They are not the current migration path.
 
-## Frontend / API / database
-
-React sends `/api/...` requests to Vite, which proxies them to Django on port 8000. Django uses its ORM to read/write SQLite. The browser receives JSON. Session cookies identify users, and a CSRF token protects writes. Source JSON and the SQLite file are outside the frontend public folder.
-
-| Endpoint | Method / input | Output / behavior |
-|---|---|---|
-| `/api/session/` | GET | Username, staff status, CSRF token |
-| `/api/login/` | POST `{username,password}` | Staff session and rotated CSRF token |
-| `/api/logout/` | POST | Ends session |
-| `/api/offices/` | GET `q`, `page` | 30 offices/page, bank/location labels |
-| `/api/leads/` | GET `q`, `page`, `status` | 30 leads/page and commissioning office |
-| `/api/leads/<id>/` | GET | Contact, cases and local notes; ID is target DB ID |
-| `/api/leads/<id>/` | POST `{body}` | Creates a local note of 1–4,000 characters and returns detail |
-| `/api/summary/` | GET optional `year=2026` | Recorded cases/services for April 2026–March 2027; office/lead/contact counts remain all-history |
-
-Business endpoints require staff login. Ordinary accounts receive 403; anonymous users receive 401. All staff can view all imported records in this local preview. Fine-grained roles/territories and production login throttling remain deployment prerequisites.
-
-## Data and workflow boundaries
-
-The normalized slice is Bank → Office → Lead → Case, with Contact → Office and Lead → Contact. Other export fields are retained as JSON. Source ID mappings: bank.bank_id, client.client_id, orderer_reg.orderer_reg_id, lead.lead_id, client_customer.client_customer_id. Bank is from uam_user; the other four are from lead_mngt.
-
-Lead-entry dates are work-received proxies. All statuses/deletion flags are retained. Recorded cases are not accepted assignments. Closed leads do not establish completed valuation or payment. The current overview is not validated legacy MIS parity, and no monetary figures are summed.
-
-Next milestones:
-
-1. Move staged services, official branches, borrower commercial groups and work orders into typed domain models; complete reference validation and review UI.
-2. Port lead creation/editing, assignment and follow-up workflows with documented permissions and accepted status rules.
-3. Port valuation forms, document storage, work-order generation, review/approval and dispatch with workflow tests.
-4. Port invoice and collection rules with reconciliation and repeat-payment protection; verify MIS definitions against the Java reports.
-5. Migrate HRMS/payroll/accounts/integrations independently. Test PostgreSQL, permissions, backups, deployment and cutover reconciliation before replacing the original system.
-
-## Checks
+## Validation
 
 ```sh
 cd backend
-.venv/bin/python manage.py check
 .venv/bin/python manage.py test
+.venv/bin/python manage.py test --settings=config.target
+.venv/bin/python manage.py makemigrations --check --dry-run
 cd ../frontend
 npm run build
 ```
 
-Tests cover repeat imports, corrections, omitted-row retention, note preservation, leading-zero IDs, orphan references, dry-run rollback, duplicate rejection, date boundaries, staff access, CSRF, login and notes.
+At the lead-intake checkpoint, 72 tests pass under both settings; browser verification used synthetic data in a disposable database. The recorded 68-table source repeat covers 2,623,601 rows with zero inserts/updates. This report does not imply that every business workflow has been implemented.
 
-Implementation references: Django https://docs.djangoproject.com/en/5.2/ and Vite https://vite.dev/guide/. Project business-rule evidence: `../reports/project-understanding/03-lead-business-workflows.md`; export contract: `../outputs/01a08c3d-marketing-export/Lovable_Import_and_Relationship_Guide.md`.
+## Documentation
+
+- [Current lead intake implementation](database/LEAD_INTAKE_IMPLEMENTATION.md)
+- [Migration method](database/MIGRATION_METHOD.md)
+- [Legacy lead flow inventory](database/LEAD_FLOW_INVENTORY.md)
+- [Legacy-to-Django flow audit](database/LEAD_FLOW_MIGRATION_AUDIT.md)
+- [User/employee and role design proposal](database/USER_ROLES_AND_EMPLOYEE_DESIGN.md)
+- [Identity review findings](database/REVIEW_CLAUDE_IDENTITY_2026-09-17.md)
+- [Business entities and source disposition](database/BUSINESS_ENTITIES.md)
+- [Validation history](VALIDATION.md)
+- [Handoff history](HANDOFF.md)
+
+Older reports describe their dated checkpoints and must not override the current implementation guide. SQL dumps, SQLite databases, credentials and salary/contact payloads must not be committed or included in general-purpose handoffs.

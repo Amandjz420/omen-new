@@ -1,5 +1,11 @@
 # Validation evidence
 
+## Current checkpoint — 24 September 2026
+
+Lead intake is now implemented behind the existing admin/staff gate; business roles are deferred by the owner. See [the current implementation report](database/LEAD_INTAKE_IMPLEMENTATION.md) for APIs, source rules, limitations and evidence. Migration 0009 is applied locally after a consistent database backup. All 72 tests pass under both settings; frontend build and migration-drift checks pass. A disposable-database browser test covered office/contact creation, lead numbering and assignment, services, borrowers, cases and follow-ups. Existing target lead, case, office, contact and account counts were preserved.
+
+The sections below record the earlier identity-import checkpoint. Its source import totals remain relevant, but its test count and operational scope are historical.
+
 Last updated 17 September 2026, after closing the identity review findings R1-R8.
 
 ## Scope imported

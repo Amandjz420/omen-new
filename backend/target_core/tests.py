@@ -502,6 +502,27 @@ class SharedAdminAccountTests(ProvisioningHarness, TestCase):
     """The shared generic logins are administered deliberately, never by the
     username-as-password rule that applies to personal accounts."""
 
+    def setUp(self):
+        super().setUp()
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        directory = TemporaryDirectory(prefix='omen-admin-test-')
+        self.addCleanup(directory.cleanup)
+        self.secret_dir = Path(directory.name)
+        override = patch('target_core.management.commands.setup_admin_accounts.SECRET_DIR', self.secret_dir)
+        override.start()
+        self.addCleanup(override.stop)
+
+    def test_issued_credentials_match_accounts_and_file_is_private(self):
+        run('setup_admin_accounts', verbosity=0)
+        path = self.secret_dir / 'admin-credentials.txt'
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        for line in path.read_text().splitlines():
+            if '\t' in line:
+                username, password = line.split('\t', 1)
+                self.assertTrue(User.objects.get(username=username).check_password(password))
+
     def test_setup_issues_a_password_that_is_not_the_username(self):
         LegacyAccount.objects.create(name='Super Administrator', login_id='superadmin', legacy_status='1')
         LegacyAccount.objects.create(name='Administrator', login_id='admin', legacy_status='1')
