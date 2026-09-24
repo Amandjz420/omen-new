@@ -798,3 +798,126 @@ class LoginEvent(Entity):
     ip_address = models.CharField(max_length=100, blank=True)
     mac_address = models.CharField(max_length=100, blank=True)
     login_action = models.CharField(max_length=200, blank=True)
+
+
+# ============================================================================
+# Bank report templates.
+#
+# report_setup chooses a template for a (client type, service, subtype, bank)
+# combination; report_question lays questions of the valuation form onto it
+# under bank_report_heading sections, with the surrounding output text. Together
+# they turn stored answers into the report a bank receives. Templates are
+# configuration: a missing lookup is recorded rather than discarding the row,
+# because a lost template line silently changes every report built from it.
+# ============================================================================
+
+class ReportTemplate(Entity):
+    """lead_mngt.report_setup."""
+    client_type = models.ForeignKey(ClientType, null=True, on_delete=models.PROTECT)
+    service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
+    subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
+    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class ReportHeading(NamedEntity):
+    """lead_mngt.bank_report_heading: a section heading within a bank report."""
+    client_type = models.ForeignKey(ClientType, null=True, on_delete=models.PROTECT)
+    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
+    display_order = models.IntegerField(null=True)
+    legacy_status = models.CharField(max_length=40, blank=True)
+    legacy_deleted = models.CharField(max_length=40, blank=True)
+
+
+class ReportTemplateLine(Entity):
+    """lead_mngt.report_question: one question placed onto a template."""
+    template = models.ForeignKey(ReportTemplate, on_delete=models.PROTECT, related_name='lines')
+    question = models.ForeignKey(Question, null=True, on_delete=models.PROTECT)
+    heading = models.ForeignKey(ReportHeading, null=True, on_delete=models.PROTECT)
+    output_label = models.CharField(max_length=1000, blank=True)
+    content_before = models.CharField(max_length=500, blank=True)
+    content_after = models.CharField(max_length=500, blank=True)
+    sequence = models.IntegerField(null=True)
+    indexing = models.CharField(max_length=10, blank=True)
+
+
+# ============================================================================
+# Dispatch: physical and electronic delivery of reports and other documents.
+#
+# The legacy dispatch row holds no foreign key. The reports it carried are listed
+# as comma-separated report numbers in nature_of_docs (the column name notwith-
+# standing), which the legacy controller splits and joins to valuation.report_no.
+# The raw list is preserved verbatim; DispatchItem records each reference and how
+# it resolved. Codes are decoded from the legacy enums named beside each choice.
+# ============================================================================
+
+class Dispatch(Entity):
+    MODES = [(1, 'Courier'), (2, 'Speed Post'), (3, 'By Hand'), (4, 'Pick up from HO'),
+             (5, 'By E-Mail'), (6, 'Normal Post')]                     # ModeOfDispatchEnum
+    STATUSES = [(1, 'Lying at HO'), (2, 'Under Transit'), (3, 'Delivered')]  # DispatchStatusEnum
+    COURIERS = [(1, 'Madhur Courier Services'), (2, 'India Post Services'), (3, 'Other')]  # CourierByEnum
+
+    number = models.CharField(max_length=50, db_index=True)
+    client_name = models.CharField(max_length=100, blank=True)
+    customer_name = models.CharField(max_length=200, blank=True)
+    town = models.CharField(max_length=255, blank=True)
+    document_count = models.IntegerField(null=True)
+    report_references = models.CharField(max_length=500, blank=True)
+    other_documents = models.CharField(max_length=500, blank=True)
+    mode = models.IntegerField(null=True, choices=MODES)
+    status = models.IntegerField(null=True, choices=STATUSES)
+    courier = models.IntegerField(null=True, choices=COURIERS)
+    other_courier = models.CharField(max_length=500, blank=True)
+    consignment_number = models.CharField(max_length=500, blank=True)
+    authorized_person = models.CharField(max_length=500, blank=True)
+    cost = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    outward_date = models.DateField(null=True)
+    filter_date = models.DateField(null=True)
+    delivered_date = models.DateField(null=True)
+    cancelled = models.BooleanField(default=False)
+    cancel_remark = models.TextField(blank=True)
+
+
+class DispatchItem(Entity):
+    """One report reference within a dispatch, with its resolution recorded."""
+    EXACT, NORMALIZED, LEAD_NUMBER, UNRESOLVED = 'exact', 'normalized', 'lead_number', 'unresolved'
+    RESOLUTIONS = [(EXACT, 'Matched a report number exactly'),
+                   (NORMALIZED, 'Matched after correcting spacing, hyphen or prefix'),
+                   (LEAD_NUMBER, 'A lead number entered where a report number belongs'),
+                   (UNRESOLVED, 'No valuation carries this report number')]
+
+    dispatch = models.ForeignKey(Dispatch, on_delete=models.PROTECT, related_name='items')
+    position = models.PositiveIntegerField()
+    reference = models.CharField(max_length=100)
+    valuation = models.ForeignKey('Valuation', null=True, on_delete=models.PROTECT, related_name='dispatch_items')
+    lead = models.ForeignKey(Lead, null=True, on_delete=models.PROTECT)
+    resolution = models.CharField(max_length=20, choices=RESOLUTIONS)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['dispatch', 'position'], name='dispatch_item_position')]
+
+
+# ============================================================================
+# SMS: customer notifications. The dispatch controller sends one on dispatch and
+# one on delivery. The log runs from August 2023 to August 2024 and then stops,
+# so messaging was live for about a year. IS_OTP is null on every row and the
+# bodies are consent and delivery notices, not one-time codes.
+# ============================================================================
+
+class SmsMessage(Entity):
+    """lead_mngt.sms_log. Historical evidence; the new system sends nothing."""
+    reference_client_id = models.CharField(max_length=100, blank=True)
+    record_id = models.IntegerField(null=True)
+    mobile = models.CharField(max_length=100, blank=True)
+    message = models.TextField(blank=True)
+    client_type = models.CharField(max_length=100, blank=True)
+    template_id = models.CharField(max_length=100, blank=True)
+    sender_id = models.CharField(max_length=100, blank=True)
+    response_code = models.CharField(max_length=100, blank=True)
+    response_message = models.TextField(blank=True)
+    delivery_report = models.CharField(max_length=100, blank=True)
+    request_reference = models.CharField(max_length=100, blank=True)
+    gateway_transaction = models.CharField(max_length=100, blank=True)
+    sent_at = models.DateTimeField(null=True, db_index=True)
+    server_ip_address = models.CharField(max_length=100, blank=True)

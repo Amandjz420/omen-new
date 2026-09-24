@@ -675,3 +675,94 @@ class AdminSiteTests(TestCase):
             self.assertFalse(registered.has_change_permission(None))
             self.assertFalse(registered.has_add_permission(None))
             self.assertFalse(registered.has_delete_permission(None))
+
+
+# ---------------------------------------------------------------------------
+# Bank report templates, dispatch and notification history.
+# ---------------------------------------------------------------------------
+
+from .models import Dispatch, DispatchItem, ReportTemplate, ReportTemplateLine, SmsMessage, Valuation
+
+
+class DispatchLinkTests(TestCase):
+    def setUp(self):
+        office = ClientOffice.objects.create(name='Office')
+        self.lead = Lead.objects.create(office=office, date_basis='lead_entry_proxy', number='L-0422223670')
+        from .models import Borrower, ServiceType
+        service = ServiceType.objects.create(name='Valuation')
+        borrower = Borrower.objects.create(lead=self.lead, name='B')
+        case = Case.objects.create(lead=self.lead, borrower=borrower, service=service)
+        self.v1 = Valuation.objects.create(case=case, report_number='R-0522166405')
+        self.v2 = Valuation.objects.create(case=case, report_number='R-0622236817')
+
+    def link(self):
+        run('link_dispatch_items', verbosity=0)
+
+    def test_every_reference_is_recorded_with_its_resolution(self):
+        d = Dispatch.objects.create(number='D-1', report_references=
+            'R-0522166405, R0622236817 ,L-0422223670,R-9999999999')
+        self.link()
+        items = {i.position: i for i in d.items.all()}
+        self.assertEqual(len(items), 4)
+        self.assertEqual((items[0].resolution, items[0].valuation), (DispatchItem.EXACT, self.v1))
+        self.assertEqual((items[1].resolution, items[1].valuation), (DispatchItem.NORMALIZED, self.v2))
+        self.assertEqual((items[2].resolution, items[2].lead), (DispatchItem.LEAD_NUMBER, self.lead))
+        self.assertEqual(items[3].resolution, DispatchItem.UNRESOLVED)
+        self.assertEqual(items[3].reference, 'R-9999999999')
+
+    def test_a_bare_numeric_reference_gains_its_prefix(self):
+        d = Dispatch.objects.create(number='D-2', report_references='0622236817')
+        self.link()
+        self.assertEqual(d.items.get().valuation, self.v2)
+
+    def test_linking_is_idempotent(self):
+        Dispatch.objects.create(number='D-1', report_references='R-0522166405,R-0622236817')
+        self.link(); first = sorted(DispatchItem.objects.values_list('id', flat=True))
+        self.link(); second = sorted(DispatchItem.objects.values_list('id', flat=True))
+        self.assertEqual(first, second)
+
+    def test_a_shrinking_reference_list_removes_surplus_items(self):
+        d = Dispatch.objects.create(number='D-1', report_references='R-0522166405,R-0622236817')
+        self.link()
+        Dispatch.objects.filter(pk=d.pk).update(report_references='R-0522166405')
+        self.link()
+        self.assertEqual(list(d.items.values_list('valuation', flat=True)), [self.v1.pk])
+
+    def test_a_report_dispatched_twice_links_twice(self):
+        Dispatch.objects.create(number='D-1', report_references='R-0522166405')
+        Dispatch.objects.create(number='D-2', report_references='R-0522166405')
+        self.link()
+        self.assertEqual(self.v1.dispatch_items.count(), 2)
+
+    def test_legacy_codes_decode_from_the_legacy_enums(self):
+        d = Dispatch.objects.create(number='D-1', mode=2, status=3, courier=2)
+        self.assertEqual((d.get_mode_display(), d.get_status_display(), d.get_courier_display()),
+                         ('Speed Post', 'Delivered', 'India Post Services'))
+
+
+class TemplateImportTests(TestCase):
+    def test_a_template_with_an_unresolved_subtype_is_kept_not_quarantined(self):
+        data = dataset({
+            ('lead_mngt', 'report_setup'): [row('lead_mngt', 'report_setup', report_setup_id=1,
+                                                client_type_id=1, service_type=1, service_sub_type=999)],
+            ('lead_mngt', 'report_question'): [row('lead_mngt', 'report_question', id=1, setup_id=1,
+                                                   question_output='Area', sequence=None)]})
+        report = synchronize(FakeSource(data))
+        self.assertEqual(report['lead_mngt.report_setup']['quarantined'], 0)
+        template = ReportTemplate.objects.get()
+        self.assertIsNone(template.subtype)
+        self.assertEqual(ReportTemplateLine.objects.get().template, template)
+
+    def test_a_line_without_its_template_is_quarantined(self):
+        data = dataset({('lead_mngt', 'report_question'): [
+            row('lead_mngt', 'report_question', id=1, setup_id=404, question_output='Area')]})
+        report = synchronize(FakeSource(data))
+        self.assertEqual(report['lead_mngt.report_question']['quarantined'], 1)
+
+    def test_sms_timestamps_keep_time_of_day(self):
+        from django.utils import timezone as tz
+        data = dataset({('lead_mngt', 'sms_log'): [row('lead_mngt', 'sms_log', sms_log_id=1,
+                                                       message='Dear customer', send_date='2023-08-05 11:37:25')]})
+        synchronize(FakeSource(data))
+        sent = tz.localtime(SmsMessage.objects.get().sent_at)
+        self.assertEqual((sent.hour, sent.minute, sent.second), (11, 37, 25))

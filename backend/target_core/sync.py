@@ -108,6 +108,20 @@ SPECS = [
  ('lead_mngt','revert_back','revert_id',m.Reversion,{'remark':'revert_remark','reverted_on':'revert_date','reverted_by_name':'revert_by_name'}, {'valuation':('valuation','valuation_id',False)}),
  ('lead_mngt','valuation_photo','id',m.ValuationAttachment,{'name':'name','attachment_type':'photo_type'}, {'valuation':('valuation','valuation_id',False),'document':('upload','upload_id',True)}),
 
+ # --- Bank report templates -------------------------------------------------
+ # Every link is optional: a template line lost over a lookup would silently
+ # change every report built from it. report_setup carries 3 subtype and 1 bank
+ # reference that do not resolve; those rows import with the link unset.
+ ('lead_mngt','report_setup','report_setup_id',m.ReportTemplate,{'legacy_status':'status','legacy_deleted':'delete_status'}, {'client_type':('client_type','client_type_id',True),'service':('service_type','service_type',True),'subtype':('service_sub_type','service_sub_type',True),'bank':('bank','bank_id',True)}),
+ ('lead_mngt','bank_report_heading','bank_report_heading_id',m.ReportHeading,{'name':'bank_report_heading_name','display_order':'is_order','legacy_status':'status','legacy_deleted':'delete_status'}, {'client_type':('client_type','client_type_id',True),'bank':('bank','bank_id',True)}),
+ ('lead_mngt','report_question','id',m.ReportTemplateLine,{'output_label':'question_output','content_before':'content_before','content_after':'content_after','sequence':'question_sequence_id','indexing':'report_indexing'}, {'template':('report_setup','setup_id',False),'question':('question','question_id',True),'heading':('bank_report_heading','bank_report_heading_id',True)}),
+
+ # --- Dispatch and notifications --------------------------------------------
+ # dispatch has no foreign key; its report references are resolved afterwards by
+ # link_dispatch_items. sms_log is the notification history dispatch produced.
+ ('lead_mngt','dispatch','dispatch_id',m.Dispatch,{'number':'dispatch_no','client_name':'client_name','customer_name':'client_customer_name','town':'dispatch_town','document_count':'no_of_doc','report_references':'nature_of_docs','other_documents':'other_docs','mode':'mode_of_dispatch','status':'status','courier':'courier_by','other_courier':'other_courier','consignment_number':'consignment_number','authorized_person':'authorized_person','cost':'cost','outward_date':'outward_date','filter_date':'filter_date','delivered_date':'delivered_date','cancelled':'cancle_status','cancel_remark':'cancle_remark'},{}),
+ ('lead_mngt','sms_log','sms_log_id',m.SmsMessage,{'reference_client_id':'reference_client_id','record_id':'record_id','mobile':'mobile_no','message':'message','client_type':'client_type','template_id':'template_id','sender_id':'senderid','response_code':'responce_code','response_message':'responce_message','delivery_report':'delivery_report','request_reference':'request_ref_id','gateway_transaction':'reftxid','sent_at':'send_date','server_ip_address':'server_ip_address'},{}),
+
  # --- Billing ---------------------------------------------------------------
  ('lead_mngt','billing_head','billing_head_id',m.ChargeType,{'name':'billing_head_name','charge_kind':'type','legacy_status':'status','legacy_deleted':'delete_status'},{}),
  ('lead_mngt','valuation_billing','billing_id',m.ValuationCharge,{'amount':'amount','cgst':'cgst','sgst':'sgst','igst':'igst','total_amount':'total_amount'}, {'valuation':('valuation','valuation_id',False),'charge_type':('billing_head','billing_head_id',True)}),

@@ -19,12 +19,12 @@ excluded.
 
 | Measure | Value |
 |---|---|
-| Source tables | 68 |
-| Source rows read | 2,623,601 |
-| Accepted into target | 2,623,392 (99.992%) |
+| Source tables | 73 |
+| Source rows read | 2,641,787 |
+| Accepted into target | 2,641,578 (99.992%) |
 | Quarantined | 209 |
-| Imported with issues | 11,966 |
-| SourceRow payloads retained | 2,623,601 (every row, including rejects) |
+| Imported with issues | 11,970 |
+| SourceRow payloads retained | 2,641,787 (every row, including rejects) |
 
 ## Identity
 
@@ -50,14 +50,36 @@ grants and 74,164 login events are retained as evidence.
 
 ## Checks performed
 
-- **Fresh 68-table repeat import proposes 0 inserts and 0 updates**
-  (`database/target-repeat-68.json`), run after all importer changes.
-- 54 tests pass under both `config.settings` and `config.target`.
+- **Fresh 73-table repeat import proposes 0 inserts and 0 updates**
+  (`database/target-repeat-73.json`), run against PostgreSQL.
+- 90 tests pass, on PostgreSQL, under both `config.settings` and `config.target`.
   `makemigrations --check` reports no drift. Frontend production build passes.
 - Every quarantine traced to a dangling legacy foreign key.
 - 11,896 of 12,650 valuations carry assessed values; 150 of 153 scrutiny
   requirements resolve to a report usage.
 - Login timestamps retain time of day: 74,164 events, none truncated.
+
+## Bank report templates and dispatch
+
+All 53 `lead_mngt` tables are now accounted for: 48 imported, 5 old backups
+deliberately excluded (`report_question_backup*`, `report_setup_backup*`).
+
+- **Templates** — `report_setup` (209), `bank_report_heading` (478) and
+  `report_question` (4,785) import with every reference resolving except 3
+  subtypes and 1 bank on `report_setup`. Those templates are kept with the link
+  unset, because a lost template line would silently alter every report built
+  from it.
+- **Dispatch** (7,545) carries no foreign key. Its reports are listed as
+  comma-separated report numbers in `nature_of_docs`, which the legacy controller
+  joins to `valuation.report_no`. `link_dispatch_items` reproduces that join:
+  10,752 references, 10,037 (93.35%) linked to a valuation, 17 of them after
+  correcting a missing hyphen, space or `R-` prefix; 5 are lead numbers keyed
+  into the report field; 710 name no valuation and are kept as unresolved.
+  `report_no` is unique, so no reference is ambiguous. The unresolved share is
+  spread evenly across 2021-2026, so it is not an old purge.
+- **SMS** (5,169) is the notification history the dispatch controller produced.
+  It runs from August 2023 to August 2024 and then stops. No row is flagged as a
+  one-time password.
 
 ## What these numbers do not establish
 
