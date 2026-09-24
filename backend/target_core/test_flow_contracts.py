@@ -131,7 +131,8 @@ class FlowContractTests(TestCase):
         self.assertEqual(self.client.post('/api/leads/', {}, content_type='application/json').status_code, 405)
         self.assertEqual(self.client.post('/api/offices/', {}, content_type='application/json').status_code, 405)
         self.assertEqual(self.client.patch(f'/api/leads/{self.lead.id}/', {}, content_type='application/json').status_code, 405)
-        # Work orders are implemented; their behaviour is covered by test_workorders.py.
-        for path in ['/api/valuations/', '/api/invoices/', '/api/receipts/', '/api/reports/', '/api/dispatch/']:
+        # Work orders and the valuation form are implemented; see test_workorders.py
+        # and test_valuations.py.
+        for path in ['/api/invoices/', '/api/receipts/', '/api/reports/', '/api/dispatch/']:
             self.assertEqual(self.client.get(path).status_code, 404)
         self.assertEqual(m.Lead.objects.count(), 1)

@@ -55,7 +55,7 @@ SPECS = [
  ('lead_mngt','client_customer','client_customer_id',m.Case,{'asset_address':'address','legacy_status':'delete_status','asset_pin_code':'pin_code','asset_block_code':'block_id','asset_amount':'asset_amount','contact_person_name':'contact_person_name','contact_number':'contact_no','expected_report_date':'expect_date_report','remarks':'remarks','usage_of_report_code':'usage_of_reports_id','scrutiny_document_code':'scrutiny_document_id'}, {'lead':('lead','lead_id',False),'borrower':('lead_borrower','lead_borrower_id',False),'service':('service_type','service_type_id',False),'subtype':('service_sub_type','service_sub_type_id',True)}),
  ('lead_mngt','upload','upload_id',m.Document,{'storage_key':'doc_path','original_name':'doc_name','media_type':'doc_type_name','size_bytes':'doc_size'},{}),
  ('lead_mngt','lead_order','lead_order_id',m.WorkOrder,{'number':'lead_order_no','legacy_status':'status','legacy_number_old':'lead_order_no_old','legacy_deleted':'delete_status'}, {'lead':('lead','lead_id',False),'borrower':('lead_borrower','lead_borrower_id',False),'document':('upload','upload_id',True)}),
- ('lead_mngt','valuation','valuation_id',m.Valuation,{'valuation_date':'valuation_date','legacy_status':'valuation_status','report_number':'report_no'}, {'case':('client_customer','client_customer_id',False),'work_order':('lead_order','lead_order_id',True),'assessor':('employee','valuation_done_by',True)}),
+ ('lead_mngt','valuation','valuation_id',m.Valuation,{'valuation_date':'valuation_date','legacy_status':'valuation_status','report_number':'report_no','assessor_name':'valuation_done_by_name','eligible_loan_amount':'eligible_loan_amount','desired_loan_amount':'desire_loan_amount','total_billing_amount':'total_billing_amount','advance_collected':'advance_collected','remaining_amount':'remaining_amount','total_after_tax':'total_amount_after_tax','total_after_tax_words':'total_amount_after_tax_in_words','assessor_comment':'assessors_comment','non_cost_factor':'non_cost_factor','report_category':'report_category','dispatch_at_code':'to_be_dispatched_at','dispatch_by_code':'to_be_dispatched_by','status_reason':'reason','status_reason_date':'reason_date'}, {'case':('client_customer','client_customer_id',False),'work_order':('lead_order','lead_order_id',True),'submitted_to':('employee','submit_to',True),'liable_employee':('employee','liable_fa',True),'assessor':('employee','valuation_done_by',True)}),
  ('lead_mngt','invoice','invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','due_date':'due_date','billed_amount':'total_invoice_amount','legacy_paid_amount':'total_pay_amount','legacy_remaining_amount':'total_remaining_amount','legacy_status':'payment_status'}, {'valuation':('valuation','valuation_id',False),'bank':('bank','bank_id',True),'document':('upload','upload_id',True)}),
  # Legacy receipts do carry a settlement reference: cash_receipt names the invoice
  # directly, amount_received names the valuation. Both are recorded so billing
@@ -95,9 +95,9 @@ SPECS = [
  ('lead_mngt','party','party_id',m.LeadParty,{'borrower_name':'name_of_borrower','contact_person_name':'contact_person_name','contact_number':'contact_no'}, {'lead':('lead','lead_id',True)}),
 
  # --- Valuations: the report form ------------------------------------------
- ('lead_mngt','detail_category','detail_category_id',m.QuestionCategory,{'name':'detail_category_name','legacy_status':'status','legacy_deleted':'delete_status'},{}),
- ('lead_mngt','question','question_id',m.Question,{'text':'question','answer_type':'answer_type','question_type':'question_type','is_document':'is_document','is_mandatory':'is_mandatory','display_order':'is_order','legacy_status':'status','legacy_deleted':'delete_status'}, {'service':('service_type','service_type',True),'subtype':('service_sub_type','service_sub_type',True),'category':('detail_category','detail_category',True)}),
- ('lead_mngt','question_options','option_id',m.QuestionOption,{'value':'value','value_type':'value_type','legacy_deleted':'delete_status'}, {'question':('question','question_id',False)}),
+ ('lead_mngt','detail_category','detail_category_id',m.QuestionCategory,{'name':'detail_category_name','legacy_status':'status','legacy_deleted':'delete_status','source_sequence':'detail_category_id'},{}),
+ ('lead_mngt','question','question_id',m.Question,{'text':'question','answer_type':'answer_type','question_type':'question_type','is_document':'is_document','is_mandatory':'is_mandatory','display_order':'is_order','legacy_status':'status','legacy_deleted':'delete_status','source_sequence':'question_id'}, {'service':('service_type','service_type',True),'subtype':('service_sub_type','service_sub_type',True),'category':('detail_category','detail_category',True)}),
+ ('lead_mngt','question_options','option_id',m.QuestionOption,{'value':'value','value_type':'value_type','legacy_deleted':'delete_status','source_sequence':'option_id'}, {'question':('question','question_id',False)}),
  # The valuation form itself: 1.95M answer cells, read in pages. answer_group is
  # the repeating-row index for grid questions and is never collapsed. No uniqueness
  # is asserted over (valuation, question, answer_group, option): the legacy data
@@ -158,6 +158,12 @@ ALLOWED = {(s,t) for s,t,*_ in SPECS} | {('uam_user','state'),('uam_user','distr
 # Tables that a later spec resolves a foreign key against. Everything else can be
 # discarded once imported instead of being held for the rest of the run.
 PARENT_TABLES = {link[0] for spec in SPECS for link in spec[5].values()}
+# Children owned by their parent. Once a valuation is edited in this system it is
+# locally owned, and its answers belong to that edit: the importer stages their
+# source rows as evidence but neither compares them nor requires them to exist,
+# since the local edit may have replaced them. Without this, one answer removed by
+# an edit leaves a source identity pointing at nothing, which aborts the import.
+PARENT_OWNED = {m.ValuationAnswer: ('valuation', 'valuation_id', m.Valuation)}
 
 
 def canonical(value):
@@ -293,6 +299,10 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                 seen=set()
                 # Only tables a later spec resolves against are kept in memory.
                 retain=table in PARENT_TABLES
+                owned_parents=set()
+                if model in PARENT_OWNED:
+                    owned_parents=set(m.LocalRecord.objects.filter(target_model=PARENT_OWNED[model][2]._meta.label)
+                                      .values_list('target_id',flat=True))
                 # Legacy service_sub_type duplicates the same subtype name under each service.
                 # Index by (normalized name, service) so a row whose subtype FK points at an
                 # equivalently named subtype filed under another service can be resolved.
@@ -327,6 +337,17 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                         digest.update(canonical([schema,table,key,fingerprint]).encode())
                         warnings=[]; values={}; problem=None; resolved={}
                         ident=identities.get(key)
+                        if owned_parents:
+                            parent_table,parent_column,_=PARENT_OWNED[model]
+                            owner=maps[parent_table].get(str(row.get(parent_column)))
+                            if owner is not None and owner.id in owned_parents:
+                                # Checked before the missing-target test below, which
+                                # sits outside the row's try and would abort the run.
+                                counts['unchanged']+=1
+                                m.SourceRow.objects.update_or_create(schema=schema,table=table,key=key,
+                                    defaults=dict(payload=payload,payload_hash=fingerprint,batch=batch,outcome='imported',
+                                                  problems=['Parent record is locally managed; source retained in staging only']))
+                                continue
                         obj=existing.get(ident.target_id) if ident else None
                         if ident and obj is None: raise ValueError('Source identity refers to a missing target; repair before import')
                         if obj is not None and obj.id in locally_owned:

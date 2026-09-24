@@ -257,12 +257,35 @@ class WorkOrder(Entity):
 
 
 class Valuation(Entity):
+    """One per case. legacy_status is the live status and holds the legacy text
+    values: Pending, Submit, Hold, Cancel, Revert. ValuationStatusEnum gives Hold
+    and Cancel the same number, but the source stores names, so nothing is lost.
+    Final approval is recorded on ValuationVerification; a completed valuation
+    stays Submit."""
     case = models.ForeignKey(Case, on_delete=models.PROTECT)
     work_order = models.ForeignKey(WorkOrder, null=True, on_delete=models.PROTECT)
     assessor = models.ForeignKey(Employee, null=True, on_delete=models.PROTECT)
     valuation_date = models.DateField(null=True)
     legacy_status = models.CharField(max_length=80, blank=True)
     report_number = models.CharField(max_length=100, blank=True)
+    assessor_name = models.CharField(max_length=200, blank=True)
+    submitted_to = models.ForeignKey(Employee, null=True, on_delete=models.PROTECT, related_name='valuations_received')
+    liable_employee = models.ForeignKey(Employee, null=True, on_delete=models.PROTECT, related_name='valuations_liable')
+    eligible_loan_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    desired_loan_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    total_billing_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    advance_collected = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    remaining_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    total_after_tax = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    total_after_tax_words = models.CharField(max_length=500, blank=True)
+    assessor_comment = models.TextField(blank=True)
+    non_cost_factor = models.TextField(blank=True)
+    REPORT_CATEGORIES = [(1, 'Safe'), (2, 'Risky')]                     # ReportCategoryEnum; 0 means unset
+    report_category = models.IntegerField(null=True, choices=REPORT_CATEGORIES)
+    dispatch_at_code = models.IntegerField(null=True)
+    dispatch_by_code = models.IntegerField(null=True)
+    status_reason = models.CharField(max_length=500, blank=True)
+    status_reason_date = models.DateField(null=True)
 
 
 class Invoice(Entity):
@@ -646,11 +669,15 @@ class IssuerAccount(NamedEntity):
 # ============================================================================
 
 class QuestionCategory(NamedEntity):
+    # Legacy ordering follows the source id; for options it fixes grid column order.
+    source_sequence = models.PositiveIntegerField(null=True, db_index=True)
     legacy_status = models.CharField(max_length=40, blank=True)
     legacy_deleted = models.CharField(max_length=40, blank=True)
 
 
 class Question(Entity):
+    # Legacy ordering follows the source id; for options it fixes grid column order.
+    source_sequence = models.PositiveIntegerField(null=True, db_index=True)
     service = models.ForeignKey(ServiceType, null=True, on_delete=models.PROTECT)
     subtype = models.ForeignKey(ServiceSubtype, null=True, on_delete=models.PROTECT)
     category = models.ForeignKey(QuestionCategory, null=True, on_delete=models.PROTECT)
@@ -665,6 +692,8 @@ class Question(Entity):
 
 
 class QuestionOption(Entity):
+    # Legacy ordering follows the source id; for options it fixes grid column order.
+    source_sequence = models.PositiveIntegerField(null=True, db_index=True)
     question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name='options')
     value = models.TextField(blank=True)
     value_type = models.CharField(max_length=200, blank=True)
