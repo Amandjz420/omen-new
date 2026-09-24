@@ -123,7 +123,7 @@ SPECS = [
  ('lead_mngt','sms_log','sms_log_id',m.SmsMessage,{'reference_client_id':'reference_client_id','record_id':'record_id','mobile':'mobile_no','message':'message','client_type':'client_type','template_id':'template_id','sender_id':'senderid','response_code':'responce_code','response_message':'responce_message','delivery_report':'delivery_report','request_reference':'request_ref_id','gateway_transaction':'reftxid','sent_at':'send_date','server_ip_address':'server_ip_address'},{}),
 
  # --- Billing ---------------------------------------------------------------
- ('lead_mngt','billing_head','billing_head_id',m.ChargeType,{'name':'billing_head_name','charge_kind':'type','legacy_status':'status','legacy_deleted':'delete_status'},{}),
+ ('lead_mngt','billing_head','billing_head_id',m.ChargeType,{'name':'billing_head_name','charge_kind':'type','legacy_status':'status','legacy_deleted':'delete_status','source_sequence':'billing_head_id'},{}),
  ('lead_mngt','valuation_billing','billing_id',m.ValuationCharge,{'amount':'amount','cgst':'cgst','sgst':'sgst','igst':'igst','total_amount':'total_amount'}, {'valuation':('valuation','valuation_id',False),'charge_type':('billing_head','billing_head_id',True)}),
  ('lead_mngt','offline_invoice','offline_invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','billed_amount':'total_amount','legacy_status':'payment_status'},{}),
  ('lead_mngt','offline_amount_received','offline_amount_received_id',m.Receipt,{'number':'invoice_no','received_date':'payment_date','amount':'amount_received','legacy_status':'payment_status','remark':'remark'}, {'invoice':('offline_invoice','offline_invoice_id',True)}),
@@ -163,7 +163,9 @@ PARENT_TABLES = {link[0] for spec in SPECS for link in spec[5].values()}
 # source rows as evidence but neither compares them nor requires them to exist,
 # since the local edit may have replaced them. Without this, one answer removed by
 # an edit leaves a source identity pointing at nothing, which aborts the import.
-PARENT_OWNED = {m.ValuationAnswer: ('valuation', 'valuation_id', m.Valuation)}
+PARENT_OWNED = {m.ValuationAnswer: ('valuation', 'valuation_id', m.Valuation),
+                m.ValuationCharge: ('valuation', 'valuation_id', m.Valuation),
+                m.ValuationAttachment: ('valuation', 'valuation_id', m.Valuation)}
 
 
 def canonical(value):

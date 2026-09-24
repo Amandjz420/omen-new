@@ -614,6 +614,8 @@ class DocumentUsage(Entity):
 # ============================================================================
 
 class ChargeType(NamedEntity):
+    # Legacy order follows billing_head_id; the discount head is legacy id 2.
+    source_sequence = models.PositiveIntegerField(null=True, db_index=True)
     charge_kind = models.CharField(max_length=40, blank=True)
     legacy_status = models.CharField(max_length=40, blank=True)
     legacy_deleted = models.CharField(max_length=40, blank=True)

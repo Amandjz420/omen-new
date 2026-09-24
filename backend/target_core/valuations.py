@@ -180,6 +180,12 @@ def answer_of(question, answers, options):
     return {'rows': [{'group': g, 'cells': cells} for g, cells in sorted(rows.items())]}
 
 
+def attached(answers):
+    from .files import file_json
+    return [{'option': str(a.option_id) if a.option_id else None, 'group': a.answer_group,
+             'file': file_json(a.document)} for a in answers if a.document_id]
+
+
 def question_json(question, answers):
     options = options_of(question)
     return {'id': question.pk, 'text': question.text.strip(), 'kind': KINDS.get(question.answer_type, 'text'),
@@ -187,7 +193,8 @@ def question_json(question, answers):
             'mandatory': question.is_mandatory, 'document': question.is_document,
             'retired': question.legacy_deleted not in LIVE or question.legacy_status != '1',
             'options': [{'id': o.pk, 'label': o.value.strip(), 'column': o.value_type or ''} for o in options],
-            'answer': answer_of(question, answers, options)}
+            'answer': answer_of(question, answers, options),
+            'documents': attached(answers) if question.is_document else []}
 
 
 def valuation_json(valuation, user):
@@ -295,7 +302,8 @@ def section(request, pk, key):
     if request.method == 'PUT':
         save_section(request, valuation, questions)
     answers = {}
-    for a in m.ValuationAnswer.objects.filter(valuation=valuation, question__in=questions).order_by('answer_group', 'id'):
+    for a in (m.ValuationAnswer.objects.filter(valuation=valuation, question__in=questions)
+              .select_related('document').order_by('answer_group', 'id')):
         answers.setdefault(a.question_id, []).append(a)
     return JsonResponse({'valuation': valuation.pk, 'key': key, 'editable': valuation.legacy_status in EDITABLE,
                          'questions': [question_json(q, answers.get(q.pk, [])) for q in questions],
@@ -354,5 +362,36 @@ def save_section(request, valuation, questions):
     # Local ownership first: once an imported valuation is edited, its answers are
     # this edit's to replace, and the importer no longer compares them.
     record(request.user, valuation, before, action='save_valuation_section')
-    m.ValuationAnswer.objects.filter(valuation=valuation, question__in=touched).delete()
-    m.ValuationAnswer.objects.bulk_create(rows, batch_size=500)
+    reconcile(valuation, touched, rows)
+
+
+def reconcile(valuation, questions, rows):
+    """Bring the stored answers for these questions into line with `rows`.
+
+    Rows are matched on (question, option, row group) and updated in place rather
+    than deleted and recreated. That keeps each answer's attached document: 35,284
+    imported answers carry one, and recreating the row would silently drop the
+    link. An answer that is no longer given is removed, and its document link with
+    it. Legacy rows that duplicate a key are collapsed, keeping any document."""
+    existing = {}
+    for answer in m.ValuationAnswer.objects.filter(valuation=valuation, question__in=questions).order_by('id'):
+        existing.setdefault((answer.question_id, answer.option_id, answer.answer_group), []).append(answer)
+    keep, creates, updates = set(), [], []
+    for wanted in rows:
+        key = (wanted.question_id, wanted.option_id, wanted.answer_group)
+        matches = existing.get(key) or []
+        if key in keep:
+            continue
+        keep.add(key)
+        if not matches:
+            creates.append(wanted)
+            continue
+        survivor = next((a for a in matches if a.document_id), matches[0])
+        if survivor.value != wanted.value:
+            survivor.value = wanted.value
+            updates.append(survivor)
+    obsolete = [a.pk for key, answers in existing.items() for a in answers
+                if key not in keep or a is not next((x for x in answers if x.document_id), answers[0])]
+    m.ValuationAnswer.objects.filter(pk__in=obsolete).delete()
+    m.ValuationAnswer.objects.bulk_update(updates, ['value'], batch_size=500)
+    m.ValuationAnswer.objects.bulk_create(creates, batch_size=500)

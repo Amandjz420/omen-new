@@ -78,7 +78,7 @@ function ValuationForm({api, id, onBack}) {
 
   useEffect(() => {api(`valuations/${id}/`).then(v => {setHead(v); setKey(v.sections[0]?.key || null);}).catch(e => setError(e.message));}, [id]);
   useEffect(() => {
-    if (!key) return;
+    if (!key || key.startsWith('__')) {setDirty(false); return;}
     setSection(null); setSaved('');
     api(`valuations/${id}/sections/${key}/`).then(s => {
       setSection(s); setDirty(false);
@@ -119,11 +119,15 @@ function ValuationForm({api, id, onBack}) {
       <nav className="sections">{head.sections.map(s => <button key={s.key} className={s.key === key ? 'active' : ''} onClick={() => choose(s.key)}>
         <span>{s.name}</span>
         <small>{s.answered}/{s.questions}{s.required ? ` · required ${s.required_answered}/${s.required}` : ''}</small>
-      </button>)}</nav>
+      </button>)}
+        {[['__billing', 'Billing'], ['__photos', 'Photos']].map(([k, label]) => <button key={k} className={k === key ? 'active' : ''} onClick={() => choose(k)}><span>{label}</span></button>)}
+      </nav>
       <div className="section-body">
         {error && <p role="alert" className="error">{error}</p>}
-        {!section ? <p>Loading section…</p> : <>
-          {section.questions.map(q => <Question key={q.id} q={q} value={draft[q.id]} readOnly={readOnly} onChange={a => edit(q.id, a)}/>)}
+        {key === '__billing' ? <Billing api={api} id={id}/> : key === '__photos' ? <Photos api={api} id={id}/> :
+        !section ? <p>Loading section…</p> : <>
+          {section.questions.map(q => <Question key={q.id} q={q} value={draft[q.id]} readOnly={readOnly} onChange={a => edit(q.id, a)}
+            files={q.document ? {api, id, dirty, reload: () => api(`valuations/${id}/sections/${key}/`).then(setSection)} : null}/>)}
           {!readOnly && <p className="actions"><button disabled={saving || !dirty} onClick={save}>{saving ? 'Saving…' : 'Save section'}</button>
             {saved && <span className="muted">{saved}</span>}{dirty && <span className="muted">Unsaved changes</span>}</p>}
         </>}
@@ -132,7 +136,41 @@ function ValuationForm({api, id, onBack}) {
   </section>;
 }
 
-function Question({q, value, readOnly, onChange}) {
+function Documents({q, selected, readOnly, files}) {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
+  const byOption = Object.fromEntries((q.documents || []).map(d => [d.option, d.file]));
+  async function attach(optionId, file) {
+    setBusy(optionId); setError('');
+    const form = new FormData();
+    form.append('question', q.id); form.append('option', optionId); form.append('file', file);
+    try {await files.api(`valuations/${files.id}/documents/`, {method: 'POST', body: form}); await files.reload();}
+    catch (e) {setError(e.message);} finally {setBusy('');}
+  }
+  async function detach(optionId) {
+    setBusy(optionId); setError('');
+    try {await files.api(`valuations/${files.id}/documents/?question=${q.id}&option=${optionId}`, {method: 'DELETE'}); await files.reload();}
+    catch (e) {setError(e.message);} finally {setBusy('');}
+  }
+  const chosen = q.options.filter(o => selected.has(o.id));
+  if (!chosen.length) return null;
+  return <div className="documents">
+    <small className="muted">Attach a document for each chosen item{files.dirty ? ' — save the section first' : ''}.</small>
+    {error && <p role="alert" className="error">{error}</p>}
+    {chosen.map(o => {const file = byOption[o.id]; return <div key={o.id} className="document-row">
+      <span>{o.label}</span>
+      {file ? (file.local
+        ? <a href={`/api/valuations/${files.id}/documents/${file.id}/file/`} target="_blank" rel="noopener">{file.name}</a>
+        : <small className="muted">{file.name || 'Document'} (legacy storage)</small>) : <small className="muted">No document</small>}
+      {!readOnly && <>
+        <label className="link">{file ? 'Replace' : 'Attach'}<input type="file" hidden disabled={files.dirty || busy === o.id}
+          accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp" onChange={e => e.target.files[0] && attach(o.id, e.target.files[0])}/></label>
+        {file && <button className="link" disabled={busy === o.id} onClick={() => detach(o.id)}>Remove</button>}</>}
+    </div>;})}
+  </div>;
+}
+
+function Question({q, value, readOnly, onChange, files}) {
   const title = <legend>{q.text}{q.mandatory && <span className="required"> *</span>}{q.retired && <small className="muted"> (retired question)</small>}</legend>;
   if (!value) return null;
   if (q.kind === 'single' || q.kind === 'multiple') {
@@ -144,7 +182,8 @@ function Question({q, value, readOnly, onChange}) {
     };
     return <fieldset className="question">{title}{q.options.map(o => <label key={o.id} className="choice">
       <input type={q.kind === 'single' ? 'radio' : 'checkbox'} name={q.id} disabled={readOnly}
-        checked={selected.has(o.id)} onChange={() => toggle(o.id)}/>{o.label}</label>)}</fieldset>;
+        checked={selected.has(o.id)} onChange={() => toggle(o.id)}/>{o.label}</label>)}
+      {files && <Documents q={q} selected={selected} readOnly={readOnly} files={files}/>}</fieldset>;
   }
   if (q.kind === 'text') {
     return <fieldset className="question">{title}<textarea rows={2} value={value.value} disabled={readOnly}
@@ -178,4 +217,85 @@ function Question({q, value, readOnly, onChange}) {
     </tbody></table></div>
     {!readOnly && <button className="link" onClick={() => setRows([...rows, {cells: {}}])}>+ Add row</button>}
   </fieldset>;
+}
+
+const rupees = v => Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+function Billing({api, id}) {
+  const [data, setData] = useState(null);
+  const [lines, setLines] = useState({});
+  const [advance, setAdvance] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const adopt = d => {setData(d); setLines(Object.fromEntries(d.lines.map(l => [l.charge_type, l.amount === '0.00' ? '' : l.amount]))); setAdvance(d.totals.advance === '0.00' ? '' : d.totals.advance);};
+  useEffect(() => {api(`valuations/${id}/billing/`).then(adopt).catch(e => setError(e.message));}, [id]);
+  if (!data) return error ? <p role="alert" className="error">{error}</p> : <p>Loading billing…</p>;
+  // Preview only; the server recomputes in exact decimal arithmetic on save.
+  const charges = data.lines.filter(l => !l.discount).reduce((t, l) => t + (Number(lines[l.charge_type]) || 0), 0);
+  const discount = data.lines.filter(l => l.discount).reduce((t, l) => t + Math.abs(Number(lines[l.charge_type]) || 0), 0);
+  const total = charges - discount, afterTax = total * (1 + Number(data.gst_rate)), remaining = afterTax - (Number(advance) || 0);
+  async function save() {
+    setSaving(true); setError('');
+    try {adopt(await api(`valuations/${id}/billing/`, {method: 'PUT', body: JSON.stringify({
+      advance, lines: data.lines.map(l => ({charge_type: l.charge_type, amount: lines[l.charge_type] || '0'}))})}));}
+    catch (e) {setError(e.message);} finally {setSaving(false);}
+  }
+  const stored = data.stored, differs = stored.after_tax !== null && Number(stored.after_tax).toFixed(2) !== data.totals.after_tax;
+  return <div>
+    <h3>Billing</h3>
+    {data.locked_reason && <p className="notice">{data.locked_reason}</p>}
+    {error && <p role="alert" className="error">{error}</p>}
+    <div className="table-wrap"><table><tbody>
+      {data.lines.map(l => <tr key={l.charge_type}><td>{l.name}{l.discount && <small> (reduces the bill)</small>}</td>
+        <td><input inputMode="decimal" value={lines[l.charge_type] ?? ''} disabled={!data.editable}
+          onChange={e => setLines({...lines, [l.charge_type]: e.target.value})}/></td></tr>)}
+      <tr><td><strong>Total</strong></td><td><strong>₹ {rupees(total)}</strong></td></tr>
+      <tr><td>GST at {Number(data.gst_rate) * 100}%</td><td>₹ {rupees(afterTax - total)}</td></tr>
+      <tr><td><strong>Total after GST</strong></td><td><strong>₹ {rupees(afterTax)}</strong></td></tr>
+      <tr><td>Advance paid by party</td><td><input inputMode="decimal" value={advance} disabled={!data.editable} onChange={e => setAdvance(e.target.value)}/></td></tr>
+      <tr><td><strong>Remaining</strong></td><td><strong>₹ {rupees(remaining)}</strong></td></tr>
+    </tbody></table></div>
+    {differs && <p className="muted">The previous system recorded a total after GST of ₹ {rupees(stored.after_tax)}. Saving will replace it with the correctly computed figure.</p>}
+    <p className="muted">These totals are provisional; invoicing sets the final GST split.</p>
+    {data.editable && <button disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save billing'}</button>}
+  </div>;
+}
+
+function Photos({api, id}) {
+  const [data, setData] = useState(null);
+  const [type, setType] = useState('1');
+  const [caption, setCaption] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {api(`valuations/${id}/photos/`).then(setData).catch(e => setError(e.message));}, [id]);
+  async function upload(file) {
+    setBusy(true); setError('');
+    const form = new FormData();
+    form.append('type', type); form.append('caption', caption); form.append('file', file);
+    try {setData(await api(`valuations/${id}/photos/`, {method: 'POST', body: form})); setCaption('');}
+    catch (e) {setError(e.message);} finally {setBusy(false);}
+  }
+  async function remove(photo) {
+    if (!window.confirm(`Remove the ${photo.type_label} photo?`)) return;
+    try {setData(await api(`valuations/${id}/photos/${photo.id}/`, {method: 'DELETE'}));} catch (e) {setError(e.message);}
+  }
+  if (!data) return error ? <p role="alert" className="error">{error}</p> : <p>Loading photos…</p>;
+  return <div>
+    <h3>Photos</h3>
+    {data.missing.length > 0 && <p className="notice">Usually taken but not yet added: {data.missing.join(', ')}.</p>}
+    {error && <p role="alert" className="error">{error}</p>}
+    {data.editable && <div className="toolbar">
+      <label>Shows<select value={type} onChange={e => setType(e.target.value)}>{data.types.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}</select></label>
+      <label>Caption<input value={caption} maxLength={500} onChange={e => setCaption(e.target.value)}/></label>
+      <label className="link">{busy ? 'Uploading…' : 'Choose photo'}<input type="file" hidden disabled={busy} accept="image/jpeg,image/png,image/webp,image/bmp"
+        onChange={e => e.target.files[0] && upload(e.target.files[0])}/></label>
+    </div>}
+    <div className="photo-grid">{data.photos.map(p => <figure key={p.id}>
+      {p.file?.local ? <img src={`/api/valuations/${id}/photos/${p.id}/file/`} alt={`${p.type_label} photo`} loading="lazy"/>
+        : <div className="photo-placeholder">Held in legacy storage</div>}
+      <figcaption><strong>{p.type_label}</strong>{p.caption && <small> · {p.caption}</small>}
+        {data.editable && <button className="link" onClick={() => remove(p)}>Remove</button>}</figcaption>
+    </figure>)}</div>
+    {data.photos.length === 0 && <p>No photos yet.</p>}
+  </div>;
 }

@@ -7,7 +7,9 @@ import {Valuations} from './valuations.jsx';
 
 let csrf = '';
 async function api(path, options = {}) {
-  const response = await fetch(`/api/${path}`, {...options, headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf, ...options.headers}});
+  // A FormData body carries files; the browser must set its own multipart boundary.
+  const json = !(options.body instanceof FormData);
+  const response = await fetch(`/api/${path}`, {...options, headers: {...(json ? {'Content-Type': 'application/json'} : {}), 'X-CSRFToken': csrf, ...options.headers}});
   const data = await response.json().catch(() => ({error: 'The server could not complete the request'}));
   if (!response.ok) throw new Error(data.problems?.length ? data.problems.join(' ') : data.error || `Request failed (${response.status})`);
   if (data.csrf) csrf = data.csrf;
