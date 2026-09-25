@@ -75,7 +75,8 @@ def totals(lines, advance, discount):
 
 
 def invoiced(valuation):
-    return m.Invoice.objects.filter(valuation=valuation).exists()
+    """A standing invoice locks billing; one reversed by a credit note does not."""
+    return m.Invoice.objects.filter(valuation=valuation, cancelled_at__isnull=True).exists()
 
 
 def billing_json(valuation):

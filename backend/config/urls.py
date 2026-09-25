@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path
-from target_core import views, workorders, valuations, valuation_billing, valuation_files, valuation_submit, verifications, bank_reports, approvals, intake
+from target_core import views, workorders, valuations, valuation_billing, valuation_files, valuation_submit, verifications, bank_reports, approvals, invoices, intake
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/intake/catalog/', intake.catalog),
@@ -25,6 +25,14 @@ urlpatterns = [
     path('api/valuations/<uuid:pk>/photos/<uuid:photo_pk>/file/', valuation_files.photo_file),
     path('api/valuations/<uuid:pk>/documents/', valuation_files.answer_document),
     path('api/valuations/<uuid:pk>/documents/<uuid:document_pk>/file/', valuation_files.document_file),
+    path('api/invoices/', invoices.queue),
+    path('api/invoices/valuations/<uuid:pk>/', invoices.for_valuation),
+    path('api/invoices/credit-notes/<uuid:pk>/document/', invoices.credit_document),
+    path('api/invoices/<uuid:pk>/', invoices.detail),
+    path('api/invoices/<uuid:pk>/document/', invoices.document),
+    path('api/invoices/<uuid:pk>/payments/', invoices.payment),
+    path('api/invoices/<uuid:pk>/write-off/', invoices.write_off),
+    path('api/invoices/<uuid:pk>/credit-note/', invoices.credit_note),
     path('api/approvals/', approvals.queue),
     path('api/approvals/<uuid:pk>/', approvals.detail),
     path('api/approvals/<uuid:pk>/approve/', approvals.approve),

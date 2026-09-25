@@ -15,27 +15,30 @@ from django.db.models.functions import Cast, Substr
 from . import models as m
 
 
-def legacy_maximum(model, field, prefix):
+def legacy_maximum(model, field, prefix, within=None):
     """Highest numeric suffix of numbers shaped PREFIX-MMYYDD<counter>.
 
     The legacy SQL is SUBSTRING(no, 9): two prefix characters, a hyphen and six
     date digits come first. Numbers not in that shape are ignored.
     """
-    top = (model.objects.filter(**{f'{field}__regex': rf'^{prefix}-[0-9]{{7,}}$'})
+    rows = within if within is not None else model.objects.all()
+    top = (rows.filter(**{f'{field}__regex': rf'^{prefix}-[0-9]{{7,}}$'})
            .annotate(suffix=Cast(Substr(field, 9), BigIntegerField()))
            .aggregate(top=Max('suffix')))['top']
     return top or 0
 
 
-def allocate(name, model, field, prefix):
+def allocate(name, model, field, prefix, within=None):
     """Next value of the named counter. Must run inside a transaction: the row
-    lock that makes this safe is released when that transaction ends."""
+    lock that makes this safe is released when that transaction ends. `within`
+    narrows the records the seed is read from, for a series that shares its
+    format with another (online and offline invoices both use I-)."""
     if not transaction.get_connection().in_atomic_block:
         raise RuntimeError('allocate() must run inside a transaction so the counter lock is held')
     counter, created = (m.LeadCounter.objects.select_for_update()
                         .get_or_create(name=name, defaults={'value': 0}))
     if created or counter.value == 0:
-        counter.value = legacy_maximum(model, field, prefix)
+        counter.value = legacy_maximum(model, field, prefix, within)
     counter.value += 1
     counter.save(update_fields=['value'])
     return counter.value

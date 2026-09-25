@@ -145,7 +145,7 @@ class StandingTests(Approval):
         m.Invoice.objects.create(valuation_id=self.v, number='INV-1')
         response = self.standing('cancel')
         self.assertEqual(response.status_code, 409)
-        self.assertIn('invoiced', response.json()['error'])
+        self.assertIn('credit note', response.json()['error'])
 
     def test_an_unknown_action_is_refused(self):
         self.assertEqual(self.standing('delete').status_code, 404)

@@ -92,6 +92,8 @@ class ClientOffice(NamedEntity):
     legacy_working_status = models.CharField(max_length=40, blank=True)
     state = models.CharField(max_length=150, blank=True)
     district = models.CharField(max_length=150, blank=True)
+    gstin = models.CharField(max_length=200, blank=True)          # printed on invoices billed to the client
+    ifsc = models.CharField(max_length=45, blank=True)
 
 
 class ContactDesignation(NamedEntity):
@@ -323,13 +325,33 @@ class Invoice(Entity):
     legacy_number_old = models.CharField(max_length=45, blank=True)
     PLACES = [('intra', 'Intra State (CGST + SGST)'), ('inter', 'Inter State (IGST)')]
     place_of_supply = models.CharField(max_length=10, blank=True, choices=PLACES)
+    # Set only on invoices this system issues.
+    local_sequence = models.PositiveBigIntegerField(null=True, blank=True, unique=True, editable=False)
+    issued_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    issued_by_name = models.CharField(max_length=200, blank=True)
+    # A cancelled invoice is reversed by a credit note and stays on record.
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['number'], condition=Q(local_sequence__isnull=False),
+                                               name='unique_new_invoice_number')]
 
 
 class InvoiceLine(Entity):
-    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT)
+    """A charge as it stood when the invoice was issued. A tax invoice must not
+    change after issue, so the lines are a snapshot rather than a view of the
+    valuation's current billing."""
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='lines')
     description = models.TextField()
     net_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
     tax_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
+    charge_type = models.ForeignKey('ChargeType', null=True, blank=True, on_delete=models.PROTECT)
+    cgst = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    sgst = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    igst = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    total_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    position = models.PositiveIntegerField(default=0)
 
 
 class Receipt(Entity):
@@ -1081,3 +1103,21 @@ class ValuationEvent(Entity):
     on = models.DateField(null=True)
     by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     by_name = models.CharField(max_length=200, blank=True)
+
+
+class CreditNote(Entity):
+    """Reverses an issued invoice in full. The legacy system had no way to
+    reverse an invoice: 21 valuations were cancelled with their invoice left
+    standing. An issued invoice is never edited or deleted; it is credited."""
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='credit_notes')
+    number = models.CharField(max_length=100, db_index=True)
+    local_sequence = models.PositiveBigIntegerField(unique=True, editable=False)
+    issued_on = models.DateField()
+    taxable_amount = models.DecimalField(max_digits=24, decimal_places=6)
+    tax_amount = models.DecimalField(max_digits=24, decimal_places=6)
+    total_amount = models.DecimalField(max_digits=24, decimal_places=6)
+    reason = models.TextField()
+    refund_due = models.DecimalField(max_digits=24, decimal_places=6, default=0)
+    issued_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    issued_by_name = models.CharField(max_length=200, blank=True)
+    document = models.ForeignKey(Document, null=True, blank=True, on_delete=models.PROTECT)

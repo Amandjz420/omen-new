@@ -99,7 +99,7 @@ def standing_json(valuation):
     report = current_report(valuation)
     approved = is_approved(verification)
     status = valuation.legacy_status
-    invoiced = m.Invoice.objects.filter(valuation=valuation).exists()
+    invoiced = m.Invoice.objects.filter(valuation=valuation, cancelled_at__isnull=True).exists()
     return {'id': valuation.pk, 'status': status, 'report_number': valuation.report_number,
             'lead_number': valuation.case.lead.number,
             'borrower': valuation.case.borrower.name if valuation.case.borrower_id else '',
@@ -242,8 +242,8 @@ def standing(request, pk, action):
     elif action == 'cancel':
         if was not in CANCELLABLE or approved:
             raise IntakeError(f'A {was or "closed"}{" approved" if approved else ""} valuation cannot be cancelled', 409)
-        if m.Invoice.objects.filter(valuation=valuation).exists():
-            raise IntakeError('This valuation has been invoiced; reverse the invoice through invoicing first', 409)
+        if m.Invoice.objects.filter(valuation=valuation, cancelled_at__isnull=True).exists():
+            raise IntakeError('This valuation has a standing invoice; issue a credit note first', 409)
         valuation.legacy_status, valuation.held_from_status, kind = 'Cancel', '', m.ValuationEvent.CANCEL
     else:
         raise IntakeError('Unknown action', 404)
