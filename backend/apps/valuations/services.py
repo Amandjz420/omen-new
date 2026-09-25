@@ -62,21 +62,29 @@ NOBODY = object()                                # scoped, but linked to no empl
 
 def scoped_employee(user):
     """None: unrestricted. An Employee: restricted to leads assigned to them.
-    NOBODY: restricted and linked to no employee, so sees nothing.
+    NOBODY: restricted, and sees nothing.
 
-    A user is restricted only when every active LEAD role they hold is a scoped
-    role; the legacy system grants one LEAD permission per user, so a mix does
-    not arise in practice, and the broader role wins if it ever does."""
+    It fails safe. A linked account with no eligible grant sees nothing: an empty
+    grant set used to be read as unrestricted, so deactivating an assessor's only
+    role widened their access (review finding G7). Unrestricted access needs an
+    eligible role other than the two scoped ones. Grants qualify by the shared
+    rule in apps.accounts.grants, the one provisioning uses. The check runs on
+    every request, so a grant change applies to an existing session at once.
+
+    A user with no linked legacy account (a Django-only superuser, say) is governed
+    by the interim staff policy alone and is not scoped here."""
+    from apps.accounts.grants import eligible_lead_grants
     account = getattr(user, 'legacy_account', None)
     if account is None:
         return None
     accounts = [account, *account.merged_accounts.all()]
-    roles = set(m.RoleAssignment.objects.filter(account__in=accounts, project__name='LEAD', legacy_status='1',
-                                                legacy_deleted__in=LIVE).values_list('role_id', flat=True))
+    roles = set(eligible_lead_grants().filter(account__in=accounts).values_list('role_id', flat=True))
+    if not roles:
+        return NOBODY
     scoped = set(m.SourceIdentity.objects.filter(environment='main', schema='uam_user', table='usertype',
                                                  key__in=[source_key(i) for i in SCOPED_ROLE_SOURCE_IDS])
                  .values_list('target_id', flat=True))
-    if not roles or not roles <= scoped:
+    if not roles <= scoped:
         return None
     return account.employee or NOBODY
 

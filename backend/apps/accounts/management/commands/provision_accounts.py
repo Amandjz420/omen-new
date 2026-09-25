@@ -24,6 +24,7 @@ from django.db import transaction
 from django.db.models import F as models_F
 from django.utils import timezone
 
+from apps.accounts.grants import eligible_lead_grants
 from target_core import models as m
 
 LEAD_PROJECT = 'LEAD'
@@ -72,11 +73,7 @@ class Command(BaseCommand):
 
     def eligible_grants(self):
         """A grant only qualifies with a real, enabled role in its own project."""
-        return (m.RoleAssignment.objects
-                .filter(project__name=LEAD_PROJECT, legacy_status='1', legacy_deleted='0',
-                        role__isnull=False, role__legacy_deleted='0', role__legacy_status='1')
-                .exclude(role__project_id=None)
-                .filter(role__project_id=models_F('project_id')))
+        return eligible_lead_grants()
 
     @transaction.atomic
     def handle(self, *args, **options):

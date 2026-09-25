@@ -295,3 +295,38 @@ class ImportedValuationEditTests(TestCase):
         self.assertEqual(m.ValuationAnswer.objects.get().value, '1999')
         staged = m.SourceRow.objects.get(table='valuation_answer')
         self.assertEqual(staged.payload['value'], '1995')     # source evidence retained
+
+
+class ScopeFailsSafeTests(Form, TestCase):
+    """Review finding G7: losing a grant must never widen access."""
+
+    def setUp(self):
+        self.build()
+        self.me = m.Employee.objects.create(name='Assessor')
+        self.other = m.Employee.objects.create(name='Someone else')
+        self.mine = self.lead_with_case(assigned=self.me)
+        self.theirs = self.lead_with_case(assigned=self.other)
+        self.theirs_valuation = m.Valuation.objects.create(case=self.theirs, legacy_status='Pending')
+
+    def read_theirs(self):
+        return self.client.get(f'/api/valuations/{self.theirs_valuation.pk}/').status_code
+
+    def test_deactivating_the_only_grant_does_not_widen_access(self):
+        user = user_with_role('157', self.me)
+        self.client.force_login(user)
+        self.assertEqual(self.read_theirs(), 404)
+        m.RoleAssignment.objects.filter(account__user=user).update(legacy_status='0')
+        self.assertEqual(self.read_theirs(), 404)                  # the same session; previously 200
+        self.assertEqual(self.client.get('/api/valuations/').json()['total'], 0)
+
+    def test_a_grant_whose_role_is_disabled_does_not_count(self):
+        user = user_with_role('145', self.me)                       # a broad role
+        self.client.force_login(user)
+        self.assertEqual(self.read_theirs(), 200)
+        held = m.RoleAssignment.objects.filter(account__user=user).values('role')
+        m.RoleDefinition.objects.filter(pk__in=held).update(legacy_status='0')
+        self.assertEqual(self.read_theirs(), 404)
+
+    def test_a_valid_broad_role_keeps_full_access(self):
+        self.client.force_login(user_with_role('145', self.me))
+        self.assertEqual(self.client.get('/api/valuations/').json()['total'], 2)
