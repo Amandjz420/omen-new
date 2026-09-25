@@ -162,6 +162,17 @@ ALLOWED = {(s,t) for s,t,*_ in SPECS} | {('uam_user','state'),('uam_user','distr
 # Tables that a later spec resolves a foreign key against. Everything else can be
 # discarded once imported instead of being held for the rest of the run.
 PARENT_TABLES = {link[0] for spec in SPECS for link in spec[5].values()}
+# Source values confirmed wrong, corrected on every import so a fresh import at
+# cutover is as correct as this one. Keyed by (schema, table, source id, column);
+# applied only while the source still holds the stated wrong value, so a fix made
+# at source is never overwritten. The original remains in the staged SourceRow
+# payload and each application is recorded as an issue on the row.
+SOURCE_CORRECTIONS = {
+    ('lead_mngt', 'account_detail', '4', 'gst_no'): (
+        '23AAACP0165G1ZX', '23AABFO1645E1ZS',
+        "Omen's Punjab National Bank account carried 23AAACP0165G1ZX, not Omen's GSTIN; "
+        "Omen's other three accounts carry the firm's 23AABFO1645E1ZS. Corrected on the data owner's instruction."),
+}
 # Children owned by their parent. Once a valuation is edited in this system it is
 # locally owned, and its answers belong to that edit: the importer stages their
 # source rows as evidence but neither compares them nor requires them to exist,
@@ -371,7 +382,12 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                         try:
                             for field,column in scalars.items():
                                 f=model._meta.get_field(field)
-                                value=convert(f,row[column],warnings,column)
+                                raw=row[column]
+                                fix=SOURCE_CORRECTIONS.get((schema,table,str(row[keycol]),column))
+                                if fix and str(raw or '').strip()==fix[0]:
+                                    raw=fix[1]
+                                    warnings.append(f'{column} corrected from {fix[0]} to {fix[1]}: {fix[2]}')
+                                value=convert(f,raw,warnings,column)
                                 f.run_validators(value)
                                 values[field]=value
                             for field,(parent,column,optional) in links.items():

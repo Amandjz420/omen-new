@@ -53,7 +53,7 @@ class TargetSchemaTests(TestCase):
 from contextlib import contextmanager
 from .models import (Case, ClientOffice, Document, Employee, Lead, LeadNote, Question,
                      QuestionOption, ServiceSubtype, SourceRow, ValuationAnswer)
-from .sync import SPECS, synchronize
+from .sync import SPECS, source_key, synchronize
 
 SPEC_BY = {(s, t): (k, model, scalars, links) for s, t, k, model, scalars, links in SPECS}
 
@@ -766,3 +766,36 @@ class TemplateImportTests(TestCase):
         synchronize(FakeSource(data))
         sent = tz.localtime(SmsMessage.objects.get().sent_at)
         self.assertEqual((sent.hour, sent.minute, sent.second), (11, 37, 25))
+
+
+class SourceCorrectionTests(TestCase):
+    """A confirmed source error is corrected on every import, with the original kept."""
+
+    def rows(self, gst):
+        return dataset({('lead_mngt', 'account_detail'): [
+            row('lead_mngt', 'account_detail', account_detail_id=4, bank_id=4, name='Punjab National Bank', gst_no=gst),
+            row('lead_mngt', 'account_detail', account_detail_id=2, bank_id=2, name='State Bank of india', gst_no='23AABFO1645E1ZS')]})
+
+    def test_the_wrong_gstin_is_corrected_and_the_original_kept(self):
+        from .models import IssuerAccount
+        synchronize(FakeSource(self.rows('23AAACP0165G1ZX')))
+        self.assertEqual(IssuerAccount.objects.get(code=4).gst_number, '23AABFO1645E1ZS')
+        staged = SourceRow.objects.get(table='account_detail', key=source_key(4))
+        self.assertEqual(staged.payload['gst_no'], '23AAACP0165G1ZX')             # evidence retained
+        self.assertTrue(any('corrected from 23AAACP0165G1ZX' in p for p in staged.problems))
+
+    def test_the_correction_is_stable_on_repeat(self):
+        synchronize(FakeSource(self.rows('23AAACP0165G1ZX')))
+        report = synchronize(FakeSource(self.rows('23AAACP0165G1ZX')))
+        self.assertEqual(report['lead_mngt.account_detail']['updated'], 0)
+
+    def test_a_value_fixed_at_source_is_not_overwritten(self):
+        from .models import IssuerAccount
+        synchronize(FakeSource(self.rows('23AABFO9999X1Z1')))
+        self.assertEqual(IssuerAccount.objects.get(code=4).gst_number, '23AABFO9999X1Z1')
+
+    def test_other_rows_are_untouched(self):
+        from .models import IssuerAccount
+        synchronize(FakeSource(self.rows('23AAACP0165G1ZX')))
+        staged = SourceRow.objects.get(table='account_detail', key=source_key(2))
+        self.assertFalse(staged.problems)
