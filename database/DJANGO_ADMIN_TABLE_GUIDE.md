@@ -166,3 +166,20 @@ All 83 existing business and migration models have explicit list layouts. Databa
 ## Maintaining the configuration
 
 Edit `backend/apps/common/admin_options.py` to adjust a model’s reviewed layout. Double underscores follow relationships, for example `valuation__case__borrower__name`. Django system checks and `apps.accounts.test_admin_lists` validate the lookup paths and render/search all 83 model pages. No model migration is needed for presentation-only changes.
+
+## Which tables are editable
+
+Workflow records are view-only in admin and change only through their workflow
+screens, which number, validate, audit and lock them (review finding G6): leads and
+their services, borrowers, cases, follow-ups, notes, parties and attachments; work
+orders; valuations, answers, attachments, verifications, reversions and events; bank
+reports; charges, invoices, invoice lines, credit notes, receipts, allocations and
+invoice follow-ups; financial operations; dispatch, dispatch items and SMS history;
+document metadata and usage; and the retained salary and leave baselines. Import
+evidence, audit and identity tables were already view-only.
+
+Reference data stays editable: the service catalogue and geography, banks, branches,
+client offices and contacts, charge heads, fee rules and Omen's accounts, employees
+and their assignment rules, targets and divisions, and the question and
+report-template setup. `WORKFLOW` and `READ_ONLY` in `apps/common/admin.py` are the
+authority.

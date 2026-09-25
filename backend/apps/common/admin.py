@@ -24,6 +24,25 @@ READ_ONLY = {
     'LocalRecord', 'LeadCounter', 'LegacyAccount', 'LegacyProject', 'RoleDefinition',
     'RoleAssignment', 'LoginEvent',
 }
+# Workflow records are changed only through their workflow services, which number,
+# validate, audit and lock them. The generic admin bypassed all of that: a lead
+# could be saved with no number and no audit entry, and an issued invoice edited
+# (review finding G6). They are browsable here but never writable. Reference data
+# (catalogue, geography, directory, charge heads, Omen's accounts, employees and
+# their assignments, question and report-template setup) stays editable. Records
+# kept as historical evidence (dispatch and SMS history, stored-document metadata,
+# the retained salary baselines) are view-only too.
+WORKFLOW = {
+    'Lead', 'RequestedService', 'Borrower', 'Case', 'FollowUp', 'LeadNote', 'LeadParty', 'LeadAttachment',
+    'WorkOrder', 'WorkOrderRevision',
+    'Valuation', 'ValuationAnswer', 'ValuationAttachment', 'ValuationVerification', 'Reversion', 'ValuationEvent',
+    'BankReport',
+    'ValuationCharge', 'Invoice', 'InvoiceLine', 'CreditNote', 'Receipt', 'ReceiptAllocation', 'InvoiceFollowUp',
+    'Dispatch', 'DispatchItem', 'SmsMessage',
+    'Document', 'DocumentUsage', 'UploadConfiguration',
+    'SalaryBaseline', 'SalaryBaselineComponent', 'SalaryResult', 'LeaveOpeningBalance',
+}
+
 STATUS_LABELS = {
     'Lead': {'1': 'New lead', '2': 'In process', '3': 'Cancelled', '4': 'Closed'},
     'Invoice': {'1': 'Fully paid', '2': 'Partly paid'},
@@ -152,7 +171,7 @@ def register_models(models):
     for model in models:
         if model._meta.proxy or admin.site.is_registered(model):
             continue
-        base = EvidenceAdmin if model.__name__ in READ_ONLY else OwnedAdmin
+        base = EvidenceAdmin if model.__name__ in READ_ONLY | WORKFLOW else OwnedAdmin
         display, search, filters, ordering = LAYOUTS[model.__name__]
         # Fail at startup if a configured column is stale, rather than silently
         # omitting it. Every existing model has an explicitly reviewed layout.
