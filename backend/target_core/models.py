@@ -304,8 +304,25 @@ class Invoice(Entity):
     legacy_paid_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
     legacy_remaining_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True)
     legacy_status = models.CharField(max_length=40, blank=True)
-    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
     document = models.ForeignKey(Document, null=True, on_delete=models.PROTECT)
+    # The Omen account the invoice directs payment to. Legacy invoice.bank_id, which
+    # joins account_detail.bank_id; first imported wrongly as a bank.
+    issuer_account = models.ForeignKey('IssuerAccount', null=True, blank=True, on_delete=models.PROTECT)
+    GSTIN_PARTIES = [(1, 'Client'), (2, 'Client Customer'), (3, 'Other')]          # GstEnum
+    gstin_party = models.IntegerField(null=True, blank=True, choices=GSTIN_PARTIES)
+    other_gstin = models.CharField(max_length=100, blank=True)
+    PAYERS = [(1, 'By Client'), (2, 'By Client Customer')]                        # PaidByEnum
+    payer = models.IntegerField(null=True, blank=True, choices=PAYERS)
+    PAYMENT_TYPES = [(1, 'Fully Payment'), (2, 'Partial Payment')]                 # InvoicePaymentTypeEnum
+    payment_type = models.IntegerField(null=True, blank=True, choices=PAYMENT_TYPES)
+    payment_date = models.DateField(null=True, blank=True)
+    bad_debt_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    bad_debt_remark = models.TextField(blank=True)
+    excess_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    remaining_words = models.CharField(max_length=500, blank=True)
+    legacy_number_old = models.CharField(max_length=45, blank=True)
+    PLACES = [('intra', 'Intra State (CGST + SGST)'), ('inter', 'Inter State (IGST)')]
+    place_of_supply = models.CharField(max_length=10, blank=True, choices=PLACES)
 
 
 class InvoiceLine(Entity):
@@ -646,7 +663,14 @@ class InvoiceFollowUp(Entity):
 
 
 class IssuerAccount(NamedEntity):
-    bank = models.ForeignKey(Bank, null=True, on_delete=models.PROTECT)
+    """One of Omen's own bank accounts, printed on an invoice for payment.
+
+    The legacy account_detail.bank_id is not a bank: it is the account's own code,
+    1 to 4, which invoice.bank_id refers to. It was first imported as a link to the
+    bank table, which attached each account to an unrelated bank (the Canara
+    account to a co-operative bank). The account's bank is identified by its IFSC
+    and name, which are what the invoice prints."""
+    code = models.PositiveIntegerField(null=True, db_index=True)
     branch_code = models.CharField(max_length=40, blank=True)
     account_number = models.CharField(max_length=40, blank=True)
     ifsc_code = models.CharField(max_length=100, blank=True)
