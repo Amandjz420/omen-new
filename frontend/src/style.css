@@ -30,3 +30,4 @@
 .track-status div{border:1px solid #ddd;border-radius:8px;padding:.5rem .75rem;display:flex;flex-direction:column}
 .track-status div.done{border-color:#12b76a;background:#ecfdf3}
 .panel.inset{margin-top:1rem}
+.standing{margin:.5rem 0 1rem}

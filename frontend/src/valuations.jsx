@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {Standing} from './approvals.jsx';
 
 const FILTERS = [['', 'Active work'], ['not_started', 'Not started'], ['Pending', 'Pending'], ['Revert', 'Reverted'],
                  ['Hold', 'On hold'], ['Submit', 'Submitted'], ['Cancel', 'Cancelled']];
@@ -112,6 +113,7 @@ function ValuationForm({api, id, onBack}) {
     <p>{head.lead_number} · {head.borrower} · {head.work_order}</p>
     <p className="muted">{head.service}{head.subtype ? ` / ${head.subtype}` : ''}{head.bank ? ` · ${head.bank}` : ''}{head.asset ? ` · ${head.asset}` : ''}</p>
     <p><span className="status">{LABELS[head.status] || head.status}</span></p>
+    <Standing api={api} id={id} onChange={next => setHead(h => ({...h, status: next.status, editable: ['Pending', 'Revert'].includes(next.status)}))}/>
     {readOnly && <p className="notice">This valuation is {(LABELS[head.status] || head.status).toLowerCase()} and cannot be edited.</p>}
     {head.status === 'Revert' && <p className="notice">This valuation was sent back for correction. Update the answers, then resubmit.</p>}
     <p className="muted">Some forms include a section for each bank. Complete the common parts and the section for {head.bank || 'this case\u2019s bank'} only.</p>

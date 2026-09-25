@@ -286,6 +286,10 @@ class Valuation(Entity):
     dispatch_by_code = models.IntegerField(null=True)
     status_reason = models.CharField(max_length=500, blank=True)
     status_reason_date = models.DateField(null=True)
+    # The status a hold was placed from, so unholding restores it. The legacy
+    # system always unheld to Pending, which would send a held submission back to
+    # the assessor. Unknown for the 24 imported holds, which unhold to Pending.
+    held_from_status = models.CharField(max_length=80, blank=True)
 
 
 class Invoice(Entity):
@@ -825,6 +829,9 @@ class BankReport(Entity):
     generated_by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     generated_by_name = models.CharField(max_length=200, blank=True)
     generated_at = models.DateTimeField(null=True, blank=True)
+    # Set at final approval, when the report is issued to the bank. Only an issued
+    # report is superseded by a final revert; an unissued draft is revised in place.
+    approved_at = models.DateTimeField(null=True, blank=True)
 
 
 # ============================================================================
@@ -1032,3 +1039,21 @@ class SmsMessage(Entity):
     gateway_transaction = models.CharField(max_length=100, blank=True)
     sent_at = models.DateTimeField(null=True, db_index=True)
     server_ip_address = models.CharField(max_length=100, blank=True)
+
+
+class ValuationEvent(Entity):
+    """A change to a valuation's standing: hold, unhold, cancel, final approval.
+
+    The legacy system kept one reason field on the valuation and overwrote it, so
+    only the latest hold or cancellation reason survived. Every change is kept
+    here. Sends-back are recorded as Reversion."""
+    HOLD, UNHOLD, CANCEL, APPROVE = 'hold', 'unhold', 'cancel', 'approve'
+    KINDS = [(HOLD, 'Put on hold'), (UNHOLD, 'Taken off hold'), (CANCEL, 'Cancelled'), (APPROVE, 'Final approval')]
+    valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='events')
+    kind = models.CharField(max_length=20, choices=KINDS)
+    from_status = models.CharField(max_length=80, blank=True)
+    to_status = models.CharField(max_length=80, blank=True)
+    reason = models.TextField(blank=True)
+    on = models.DateField(null=True)
+    by = models.ForeignKey('LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    by_name = models.CharField(max_length=200, blank=True)
