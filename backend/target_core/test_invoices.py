@@ -148,7 +148,7 @@ class CreditNoteTests(Invoicing):
         body = self.credit(invoice).json()
         self.assertTrue(body['cancelled'])
         note = body['credit_notes'][0]
-        self.assertRegex(note['number'], r'^C-\d{6}0001$')
+        self.assertRegex(note['number'], r'^CN-\d{6}0001$')
         self.assertEqual((note['total'], note['refund_due']), ('1180.00', '300.00'))
         self.assertTrue(m.Invoice.objects.filter(pk=invoice).exists())
 
@@ -189,3 +189,25 @@ class QueueTests(Invoicing):
         self.assertEqual((counts()['to_invoice'], counts()['unpaid']), (0, 1))
         self.pay(invoice, '1180')
         self.assertEqual((counts()['unpaid'], counts()['paid']), (0, 1))
+
+
+class CreditNoteNumberTests(Invoicing):
+    def test_credit_notes_never_share_a_number_with_a_cash_receipt(self):
+        """Legacy cash receipts use C- + MMYYDD + counter."""
+        from django.utils import timezone as tz
+        receipt_number = f"C-{tz.localdate():%m%y%d}0001"
+        m.Receipt.objects.create(origin='legacy_cash_receipt', number=receipt_number)
+        invoice = self.issue().json()['id']
+        note = self.client.post(f'/api/invoices/{invoice}/credit-note/', {'reason': 'x'},
+                                content_type='application/json').json()['credit_notes'][0]
+        self.assertNotEqual(note['number'], receipt_number)
+        self.assertTrue(note['number'].startswith('CN-'))
+
+    def test_longer_prefixes_read_the_counter_from_the_right_place(self):
+        import datetime
+        from .numbering import format_number, legacy_maximum
+        m.CreditNote.objects.create(invoice=m.Invoice.objects.create(origin='x', number='I-1'),
+                                    number=format_number('CN', datetime.date(2026, 9, 25), 42), local_sequence=42,
+                                    issued_on=datetime.date(2026, 9, 25), taxable_amount=1, tax_amount=0, total_amount=1, reason='r')
+        self.assertEqual(legacy_maximum(m.CreditNote, 'number', 'CN'), 42)
+        self.assertEqual(format_number('CN', datetime.date(2026, 9, 25), 42), 'CN-0926250042')

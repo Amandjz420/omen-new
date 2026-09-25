@@ -41,7 +41,7 @@ off the remainder, which the write-off action supports.
 
 Credit notes. The legacy system could not reverse an invoice: 21 valuations were
 cancelled with their invoice still standing. An invoice is never edited or
-deleted; it is reversed in full by a credit note (C- + MMYYDD + counter), which
+deleted; it is reversed in full by a credit note (CN- + MMYYDD + counter), which
 records any refund due. That releases the billing lock and allows cancellation.
 """
 import datetime
@@ -370,10 +370,12 @@ def credit_note(request, pk):
         tax = q(sum((q(c.cgst) + q(c.sgst) + q(c.igst) for c in charges), ZERO))
     total = q(invoice.billed_amount)
     today = timezone.localdate()
-    sequence = allocate('credit_note', m.CreditNote, 'number', 'C')
+    # CN-, not C-: legacy cash receipts are numbered C- + MMYYDD + counter, so a C-
+    # credit note could carry the same number as a cash receipt issued that day.
+    sequence = allocate('credit_note', m.CreditNote, 'number', 'CN')
     account, name = actor(request.user)
     before = snapshot(invoice)
-    credit = m.CreditNote.objects.create(invoice=invoice, number=format_number('C', today, sequence), local_sequence=sequence,
+    credit = m.CreditNote.objects.create(invoice=invoice, number=format_number('CN', today, sequence), local_sequence=sequence,
                                          issued_on=today, taxable_amount=taxable, tax_amount=tax, total_amount=total,
                                          reason=reason[:4000], refund_due=q(invoice.legacy_paid_amount),
                                          issued_by=account, issued_by_name=name[:200])

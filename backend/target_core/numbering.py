@@ -18,12 +18,15 @@ from . import models as m
 def legacy_maximum(model, field, prefix, within=None):
     """Highest numeric suffix of numbers shaped PREFIX-MMYYDD<counter>.
 
-    The legacy SQL is SUBSTRING(no, 9): two prefix characters, a hyphen and six
-    date digits come first. Numbers not in that shape are ignored.
+    The legacy SQL is SUBSTRING(no, 9) for its one-letter prefixes: the letter, a
+    hyphen and six date digits come first. Longer prefixes shift the start to
+    match. Numbers not in that shape are ignored.
     """
     rows = within if within is not None else model.objects.all()
+    # The counter starts after PREFIX, the hyphen and six date digits.
+    start = len(prefix) + 8
     top = (rows.filter(**{f'{field}__regex': rf'^{prefix}-[0-9]{{7,}}$'})
-           .annotate(suffix=Cast(Substr(field, 9), BigIntegerField()))
+           .annotate(suffix=Cast(Substr(field, start), BigIntegerField()))
            .aggregate(top=Max('suffix')))['top']
     return top or 0
 
