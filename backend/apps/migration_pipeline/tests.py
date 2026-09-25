@@ -613,15 +613,18 @@ class AdminSiteTests(TestCase):
         self.client.force_login(self.user)
         self.assertEqual(self.client.get('/admin/password_change/').status_code, 200)
 
-    def test_changing_the_password_anywhere_completes_onboarding(self):
-        """The check compares the stored hash, so a change made outside the API counts."""
-        self.client.force_login(self.user)
+    def test_a_password_set_outside_the_password_endpoint_does_not_complete_onboarding(self):
+        """Only the account holder's own change completes onboarding (review G8).
+        This previously asserted the opposite, by comparing stored hashes; but a
+        changed hash proves nothing, since Django rewrites it for an unchanged
+        password when it upgrades hashing parameters, and a password set through
+        the admin site or a shell is someone else's choice for the user."""
         self.user.set_password('Kestrel-Harbour-72')
         self.user.save()
         self.client.force_login(self.user)
-        self.assertEqual(self.client.get('/admin/').status_code, 200)
+        self.client.get('/admin/')
         self.account.refresh_from_db()
-        self.assertFalse(self.account.must_change_password)
+        self.assertTrue(self.account.must_change_password)
 
     def test_editing_an_imported_record_claims_it_from_the_importer(self):
         """An admin edit must transfer ownership, or the next import overwrites it."""

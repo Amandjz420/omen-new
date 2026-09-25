@@ -10,19 +10,18 @@ from django.views.decorators.http import require_GET, require_POST
 
 
 def onboarding_pending(user):
-    """True while a provisioned account still holds its issued initial password.
+    """True until the account holder has chosen their own password.
 
-    Compares the stored password hash rather than trusting the flag alone, so a
-    password changed through the admin site or a shell also completes onboarding.
-    """
+    Only a successful change through the password endpoint below clears it. It
+    used to clear whenever the stored hash differed from the issued one, but
+    Django rewrites the hash for the same password when it upgrades the hashing
+    parameters on sign-in, so signing in with the unchanged issued password
+    completed onboarding (review finding G8). A password set for someone through
+    the admin site or a shell is likewise not their own choice, so it does not
+    clear the requirement either. issued_password_hash is kept as evidence of
+    what was issued."""
     account = getattr(user, 'legacy_account', None)
-    if account is None or not account.must_change_password:
-        return False
-    if account.issued_password_hash and user.password != account.issued_password_hash:
-        account.must_change_password = False
-        account.save(update_fields=['must_change_password'])
-        return False
-    return True
+    return account is not None and account.must_change_password
 
 
 def staff_api(fn):
