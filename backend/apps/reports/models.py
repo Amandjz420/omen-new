@@ -46,6 +46,12 @@ class BankReport(Entity):
     # Set at final approval, when the report is issued to the bank. Only an issued
     # report is superseded by a final revert; an unissued draft is revised in place.
     approved_at = models.DateTimeField(null=True, blank=True)
+    # What the report was generated from: a hash of the valuation content it prints.
+    # Approval compares it with the valuation now, so a report generated before a
+    # send-back and a correction cannot be approved in place of a new one (review
+    # finding G1). Empty on imported reports, which therefore need regenerating
+    # before approval; all imported reports are already approved.
+    content_fingerprint = models.CharField(max_length=64, blank=True)
 
     class Meta:
         app_label = "target_core"

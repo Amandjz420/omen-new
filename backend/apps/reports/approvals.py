@@ -37,7 +37,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from target_core import models as m
-from apps.reports.services import current as current_report
+from apps.reports.services import current as current_report, is_stale
 from apps.documents.storage import file_json
 from apps.common.http import IntakeError, endpoint, find, payload
 from apps.audit.services import record, snapshot
@@ -90,6 +90,8 @@ def approval_blockers(valuation, verification, report):
         reasons.append('All four verifications are required')
     if report is None or report.document_id is None:
         reasons.append('Generate the bank report first')
+    elif is_stale(report, valuation):
+        reasons.append('The bank report no longer matches the valuation; regenerate it before approval')
     if is_approved(verification):
         reasons.append('The report already has final approval')
     return reasons

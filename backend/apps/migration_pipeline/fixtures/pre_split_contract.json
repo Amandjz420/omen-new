@@ -1218,7 +1218,8 @@
         "generated_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
         "generated_by_name": "models.CharField(blank=True, max_length=200)",
         "generated_at": "models.DateTimeField(blank=True, null=True)",
-        "approved_at": "models.DateTimeField(blank=True, null=True)"
+        "approved_at": "models.DateTimeField(blank=True, null=True)",
+        "content_fingerprint": "models.CharField(blank=True, max_length=64)"
       },
       "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
     },
@@ -1552,6 +1553,15 @@
         "FinancialOperation"
       ],
       "reason": "Review finding G3: retry-safe payments and write-offs. Deliberate addition after the split; every pre-split model entry is unchanged."
+    },
+    {
+      "date": "2026-09-26",
+      "migration": "0022_bankreport_content_fingerprint",
+      "changed_models": [
+        "BankReport"
+      ],
+      "added_models": [],
+      "reason": "Review finding G1: the report records a fingerprint of the valuation content it was generated from, checked at approval."
     }
   ]
 }

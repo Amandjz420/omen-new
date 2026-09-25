@@ -149,3 +149,51 @@ class StandingTests(Approval):
 
     def test_an_unknown_action_is_refused(self):
         self.assertEqual(self.standing('delete').status_code, 404)
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class StaleReportTests(Approval):
+    """Review finding G1: an out-of-date report must not receive final approval."""
+
+    def correct_year(self, year):
+        r = self.client.put(f'/api/valuations/{self.v}/sections/{self.site.pk}/',
+                            {'answers': [{'question': str(self.text.pk), 'value': year}]}, content_type='application/json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def send_back(self):
+        r = self.client.post(f'/api/verifications/{self.v}/revert/', {'remark': 'Wrong year'}, content_type='application/json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_codex_reproduction_is_refused_until_the_report_is_regenerated(self):
+        self.generate()
+        self.assertIn('1999 AD', self.document_text())
+        self.send_back()
+        self.correct_year('2025')
+        self.resubmit_and_verify()
+        refused = self.approve()
+        self.assertEqual(refused.status_code, 409)                           # previously 200
+        self.assertIn('no longer matches', refused.json()['error'])
+        self.assertTrue(self.client.get(f'/api/bank-reports/{self.v}/').json()['report']['stale'])
+        self.generate()
+        self.assertEqual(self.approve().status_code, 200)
+        text = self.document_text()
+        self.assertIn('2025 AD', text)
+        self.assertNotIn('1999 AD', text)
+
+    def test_the_bank_report_stage_send_back_is_covered_too(self):
+        self.generate()
+        self.final_revert()                                                  # unissued draft stays current
+        self.correct_year('2025')
+        self.resubmit_and_verify()
+        self.assertEqual(self.approve().status_code, 409)
+
+    def test_a_send_back_that_changes_nothing_leaves_the_report_valid(self):
+        self.generate()
+        self.send_back()
+        self.resubmit_and_verify()
+        self.assertEqual(self.approve().status_code, 200)
+
+    def test_an_imported_report_without_a_fingerprint_must_be_regenerated(self):
+        self.generate()
+        m.BankReport.objects.update(content_fingerprint='')
+        self.assertIn('no longer matches', self.approve().json()['error'])

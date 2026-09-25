@@ -71,6 +71,7 @@ function ReportForm({api, id, onBack}) {
     <button className="link" onClick={onBack}>← Back to bank reports</button>
     <h2>Bank report · {data.report_number}{data.report?.revision ? ` · Revision ${data.report.revision}` : ''}</h2>
     {data.blockers.map(b => <p key={b} className="notice">{b}</p>)}
+    {data.report?.stale && <p className="notice">The valuation has changed since this report was generated, so it no longer matches. Regenerate it before approval.</p>}
     {data.template_error && <p className="error">{data.template_error}</p>}
     {data.template && <p className="muted">Using the report template with {data.template.lines} lines.</p>}
     {data.report?.document && <p>{data.report.document.local

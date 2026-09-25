@@ -63,6 +63,35 @@ def is_bank_client(valuation):
     return office.client_type_id is not None and office.client_type_id == bank_client_type_id()
 
 
+def content_fingerprint(valuation):
+    """A hash of the valuation content a bank report prints: every answer with its
+    option, row group, value and attached document; every photo; the report
+    number; and the borrower, service and subtype in the subject line. It changes
+    whenever any of those do, by whatever route: a send-back and correction, a
+    photo added, or an edit made outside the workflow."""
+    import hashlib
+    import json
+    case = valuation.case
+    content = {
+        'report_number': valuation.report_number,
+        'borrower': case.borrower.name if case.borrower_id else '',
+        'service': str(case.service_id), 'subtype': str(case.subtype_id or ''),
+        'answers': sorted([str(a['question_id']), str(a['option_id'] or ''), a['answer_group'], a['value'] or '',
+                           str(a['document_id'] or '')]
+                          for a in m.ValuationAnswer.objects.filter(valuation=valuation)
+                          .values('question_id', 'option_id', 'answer_group', 'value', 'document_id')),
+        'photos': sorted([str(p['id']), p['attachment_type'] or '', p['name'] or '', str(p['document_id'] or '')]
+                         for p in m.ValuationAttachment.objects.filter(valuation=valuation)
+                         .values('id', 'attachment_type', 'name', 'document_id')),
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def is_stale(report, valuation):
+    """True when the report no longer reflects the valuation it was made from."""
+    return not report.content_fingerprint or report.content_fingerprint != content_fingerprint(valuation)
+
+
 def current(valuation):
     return (m.BankReport.objects.filter(valuation=valuation, superseded_at__isnull=True)
             .select_related('bank', 'branch', 'document').order_by('-revision', '-created_at').first())
@@ -118,6 +147,7 @@ def report_json(valuation):
             'template': template, 'template_error': error,
             'report': None if report is None else {
                 'id': report.pk, 'revision': report.revision, 'document': file_json(report.document),
+                'stale': is_stale(report, valuation),
                 'generated_at': report.generated_at, 'generated_by': report.generated_by_name},
             'values': {'market_fair_amount': value('market_fair_amount'), 'realisable_value_amount': value('realisable_value_amount'),
                        'book_value_amount': value('book_value_amount'), 'distress_value_amount': value('distress_value_amount'),
@@ -206,6 +236,8 @@ def generate(request, valuation):
     report.generated_by, report.generated_by_name, report.generated_at = account, name[:200], timezone.now()
     report.save()
 
+    report.content_fingerprint = content_fingerprint(valuation)
+    report.save(update_fields=['content_fingerprint'])
     content = render(report, template, bank is not None)          # raises before any file is written
     relative = f'bank_reports/{valuation.pk}/rev{report.revision}-{uuid.uuid4().hex}.pdf'
     report.document = m.Document.objects.create(storage_provider='local', storage_key=relative,
