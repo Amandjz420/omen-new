@@ -81,5 +81,6 @@
   "SourceRow": "migration_pipeline",
   "LocalRecord": "audit",
   "IntakeAudit": "audit",
-  "LeadCounter": "audit"
+  "LeadCounter": "audit",
+  "FinancialOperation": "billing"
 }

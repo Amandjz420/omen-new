@@ -304,10 +304,34 @@ def settle(invoice):
     invoice.payment_type = int(invoice.legacy_status) if invoice.legacy_status else None
 
 
+
+def operation(request_data, kind, invoice, fields):
+    """Replay an already-applied operation, or return (key, payload hash) for a
+    new one. Called with the invoice row locked, so identical concurrent retries
+    queue and the later one finds the first; the unique key is the backstop."""
+    import hashlib, json as _json
+    raw = request_data.get('operation_id')
+    try:
+        key = uuid.UUID(str(raw))
+    except (TypeError, ValueError):
+        raise IntakeError('operation_id is required: a new UUID for each intended operation')
+    canonical = _json.dumps({'kind': kind, 'invoice': str(invoice.pk),
+                             **{f: str(request_data.get(f) or '').strip() for f in fields}}, sort_keys=True)
+    digest = hashlib.sha256(canonical.encode()).hexdigest()
+    done = m.FinancialOperation.objects.filter(key=key).first()
+    if done is None:
+        return key, digest, None
+    if done.payload_hash != digest:
+        raise IntakeError('This operation_id was already used for a different request', 409)
+    return key, digest, done
+
 @endpoint(['POST'])
 def payment(request, pk):
     invoice = locked(pk, request.user)
-    data = payload(request, ['amount', 'date', 'mode', 'payer_name', 'remark'])
+    data = payload(request, ['operation_id', 'amount', 'date', 'mode', 'payer_name', 'remark'])
+    key, digest, done = operation(data, m.FinancialOperation.PAYMENT, invoice, ['amount', 'date', 'mode', 'payer_name', 'remark'])
+    if done:
+        return JsonResponse({**invoice_json(invoice), 'replayed': True})
     amount = money(data.get('amount'), 'Amount received')
     if amount <= 0:
         raise IntakeError('Enter the amount received')
@@ -321,10 +345,13 @@ def payment(request, pk):
     if invoice.issued_date and on < invoice.issued_date and invoice.local_sequence:
         raise IntakeError('The payment date cannot be before the invoice date')
     before = snapshot(invoice)
-    m.Receipt.objects.create(origin='local_invoice_payment', invoice=invoice, valuation=invoice.valuation,
-                             office=invoice.office, received_date=on, amount=amount,
-                             mode=str(data.get('mode') or '')[:40], payer_name=str(data.get('payer_name') or '')[:300],
-                             remark=str(data.get('remark') or '')[:2000])
+    receipt = m.Receipt.objects.create(origin='local_invoice_payment', invoice=invoice, valuation=invoice.valuation,
+                                       office=invoice.office, received_date=on, amount=amount,
+                                       mode=str(data.get('mode') or '')[:40], payer_name=str(data.get('payer_name') or '')[:300],
+                                       remark=str(data.get('remark') or '')[:2000])
+    account, name = actor(request.user)
+    m.FinancialOperation.objects.create(key=key, kind=m.FinancialOperation.PAYMENT, invoice=invoice, payload_hash=digest,
+                                        amount=amount, receipt=receipt, by=account, by_name=name[:200])
     invoice.legacy_paid_amount = q(invoice.legacy_paid_amount) + amount
     invoice.payment_date = on
     settle(invoice)
@@ -336,7 +363,10 @@ def payment(request, pk):
 @endpoint(['POST'])
 def write_off(request, pk):
     invoice = locked(pk, request.user)
-    data = payload(request, ['amount', 'remark'])
+    data = payload(request, ['operation_id', 'amount', 'remark'])
+    key, digest, done = operation(data, m.FinancialOperation.WRITE_OFF, invoice, ['amount', 'remark'])
+    if done:
+        return JsonResponse({**invoice_json(invoice), 'replayed': True})
     amount = money(data.get('amount'), 'Write-off')
     remark = str(data.get('remark') or '').strip()
     remaining, _ = balances(invoice.billed_amount, invoice.legacy_paid_amount, invoice.bad_debt_amount)
@@ -347,6 +377,9 @@ def write_off(request, pk):
     if not remark:
         raise IntakeError('Enter why it is being written off')
     before = snapshot(invoice)
+    account, name = actor(request.user)
+    m.FinancialOperation.objects.create(key=key, kind=m.FinancialOperation.WRITE_OFF, invoice=invoice, payload_hash=digest,
+                                        amount=amount, remark=remark[:4000], by=account, by_name=name[:200])
     invoice.bad_debt_amount = q(invoice.bad_debt_amount) + amount
     invoice.bad_debt_remark = remark[:4000]
     settle(invoice)

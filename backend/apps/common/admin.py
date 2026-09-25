@@ -19,6 +19,7 @@ from target_core import models as m
 
 # Evidence and machinery: visible, searchable, never editable.
 READ_ONLY = {
+    'FinancialOperation',
     'SourceRow', 'SourceIdentity', 'MigrationIssue', 'ImportBatch', 'IntakeAudit',
     'LocalRecord', 'LeadCounter', 'LegacyAccount', 'LegacyProject', 'RoleDefinition',
     'RoleAssignment', 'LoginEvent',

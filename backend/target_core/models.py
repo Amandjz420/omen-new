@@ -11,7 +11,7 @@ from apps.leads.models import Lead, RequestedService, Borrower, Case, LeadNote, 
 from apps.workorders.models import WorkOrder, WorkOrderRevision
 from apps.valuations.models import Valuation, QuestionCategory, Question, QuestionOption, ValuationAnswer, ValuationVerification, Reversion, ValuationAttachment, ValuationEvent
 from apps.reports.models import BankReport, ReportTemplate, ReportHeading, ReportTemplateLine
-from apps.billing.models import ChargeType, ValuationCharge, Invoice, InvoiceLine, Receipt, ReceiptAllocation, InvoiceFollowUp, IssuerAccount, FeeRule, CreditNote
+from apps.billing.models import ChargeType, ValuationCharge, Invoice, InvoiceLine, Receipt, ReceiptAllocation, InvoiceFollowUp, IssuerAccount, FeeRule, CreditNote, FinancialOperation
 from apps.documents.models import Document, UploadConfiguration, DocumentUsage
 from apps.dispatch.models import Dispatch, DispatchItem, SmsMessage
 from apps.migration_pipeline.models import ImportBatch, SourceIdentity, MigrationIssue, SourceRow

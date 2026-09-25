@@ -222,4 +222,25 @@ class CreditNote(Entity):
         app_label = "target_core"
 
 
-__all__ = ['ChargeType', 'ValuationCharge', 'Invoice', 'InvoiceLine', 'Receipt', 'ReceiptAllocation', 'InvoiceFollowUp', 'IssuerAccount', 'FeeRule', 'CreditNote']
+class FinancialOperation(Entity):
+    """One additive money operation, a payment or a write-off, keyed by an ID the
+    client generates for each intended operation. A retry after a lost response
+    carries the same ID and is answered from here instead of booking the money
+    again (review finding G3: the same 100 sent twice showed 200 paid). Two
+    genuinely separate equal payments carry different IDs and both count. Reusing
+    an ID for a different request is refused. Also the history of write-offs,
+    which the invoice itself holds only as a running total."""
+    PAYMENT, WRITE_OFF = 'payment', 'write_off'
+    KINDS = [(PAYMENT, 'Payment'), (WRITE_OFF, 'Write-off')]
+    key = models.UUIDField(unique=True)
+    kind = models.CharField(max_length=20, choices=KINDS)
+    invoice = models.ForeignKey('target_core.Invoice', on_delete=models.PROTECT, related_name='operations')
+    payload_hash = models.CharField(max_length=64)
+    amount = models.DecimalField(max_digits=24, decimal_places=6)
+    remark = models.TextField(blank=True)
+    receipt = models.ForeignKey('target_core.Receipt', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    by = models.ForeignKey('target_core.LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    by_name = models.CharField(max_length=200, blank=True)
+
+
+__all__ = ['ChargeType', 'ValuationCharge', 'Invoice', 'InvoiceLine', 'Receipt', 'ReceiptAllocation', 'InvoiceFollowUp', 'IssuerAccount', 'FeeRule', 'CreditNote', 'FinancialOperation']

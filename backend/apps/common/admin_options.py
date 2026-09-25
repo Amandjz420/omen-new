@@ -75,6 +75,7 @@ LAYOUTS = {
     'IssuerAccount': ('name code account_number ifsc_code branch_code gst_number', 'name account_number ifsc_code gst_number', 'created_at', 'code'),
     'FeeRule': ('bank__name fmv_category fmv_range_min fmv_range_max per_lac_amount min_fee max_fee legacy_deleted', 'bank__name fmv_category', 'bank fmv_category legacy_deleted', 'bank__name fmv_range_min'),
     'CreditNote': ('number invoice__number issued_on total_amount refund_due issued_by_name reason', 'number invoice__number issued_by_name reason', 'issued_on', '-issued_on'),
+    'FinancialOperation': ('invoice__number kind amount by_name created_at key', '=key invoice__number by_name remark', 'kind created_at', '-created_at'),
     'Document': ('original_name storage_provider media_type size_bytes content_verified created_at', 'original_name =storage_key =checksum', 'storage_provider content_verified', 'id'),
     'UploadConfiguration': ('document_number document_type original_name size_text uploaded_by_name', 'document_number original_name uploaded_by_name =storage_key', 'document_type', '-created_at'),
     'DocumentUsage': ('lead__number document__original_name report_usage__name usage_of_report_code remarks', 'lead__number document__original_name report_usage__name remarks', 'created_at', '-created_at'),

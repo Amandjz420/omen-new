@@ -128,6 +128,7 @@ All 83 existing business and migration models have explicit list layouts. Databa
 | IssuerAccount | `name`, `code`, `account_number`, `ifsc_code`, `branch_code`, `gst_number` | `name`, `account_number`, `ifsc_code`, `gst_number` | `created_at` | `code` |
 | FeeRule | `bank__name`, `fmv_category`, `fmv_range_min`, `fmv_range_max`, `per_lac_amount`, `min_fee`, `max_fee`, `legacy_deleted` | `bank__name`, `fmv_category` | `bank`, `fmv_category`, `legacy_deleted` | `bank__name`, `fmv_range_min` |
 | CreditNote | `number`, `invoice__number`, `issued_on`, `total_amount`, `refund_due`, `issued_by_name`, `reason` | `number`, `invoice__number`, `issued_by_name`, `reason` | `issued_on` | `-issued_on` |
+| FinancialOperation (read-only) | `invoice__number`, `kind`, `amount`, `by_name`, `created_at`, `key` | `=key`, `invoice__number`, `by_name`, `remark` | `kind`, `created_at` | `-created_at` |
 
 ### Documents
 

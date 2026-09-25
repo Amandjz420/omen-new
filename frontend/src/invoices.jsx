@@ -106,8 +106,12 @@ function Issue({api, valuation, onBack, onIssued}) {
 
 function Invoice({api, id, onBack}) {
   const [inv, setInv] = useState(null);
-  const [pay, setPay] = useState({amount: '', date: today(), mode: '', payer_name: ''});
-  const [wo, setWo] = useState({amount: '', remark: ''});
+  // One operation ID per intended payment or write-off. It is kept when a request
+  // fails, so resubmitting after a lost response is a safe retry the server
+  // answers without booking the money again, and renewed only after success.
+  const newId = () => crypto.randomUUID();
+  const [pay, setPay] = useState({amount: '', date: today(), mode: '', payer_name: '', operation_id: newId()});
+  const [wo, setWo] = useState({amount: '', remark: '', operation_id: newId()});
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -115,7 +119,12 @@ function Invoice({api, id, onBack}) {
   async function act(path, body, confirmText) {
     if (confirmText && !window.confirm(confirmText)) return;
     setBusy(path); setError('');
-    try {setInv(await api(`invoices/${id}/${path}/`, {method: 'POST', body: JSON.stringify(body)})); setPay(p => ({...p, amount: ''})); setWo({amount: '', remark: ''}); setReason('');}
+    try {
+      setInv(await api(`invoices/${id}/${path}/`, {method: 'POST', body: JSON.stringify(body)}));
+      if (path === 'payments') setPay(p => ({...p, amount: '', operation_id: newId()}));
+      if (path === 'write-off') setWo({amount: '', remark: '', operation_id: newId()});
+      setReason('');
+    }
     catch (e) {setError(e.message);} finally {setBusy('');}
   }
   if (!inv) return <section className="panel">{error ? <p role="alert" className="error">{error}</p> : <p>Loading…</p>}</section>;

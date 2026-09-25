@@ -1,3 +1,4 @@
+import uuid
 """Invoicing: issue, GST, numbering, balances, payments, write-offs and credit notes."""
 import io
 from decimal import Decimal
@@ -34,8 +35,9 @@ class Invoicing(Approval):
         body = {'place': 'intra', 'party': 1, 'account': str(self.sbi_account.pk), **overrides}
         return self.client.post(f'/api/invoices/valuations/{self.v}/', body, content_type='application/json')
 
-    def pay(self, invoice, amount, **extra):
-        return self.client.post(f'/api/invoices/{invoice}/payments/', {'amount': amount, **extra}, content_type='application/json')
+    def pay(self, invoice, amount, operation_id=None, **extra):
+        body = {'operation_id': str(operation_id or uuid.uuid4()), 'amount': amount, **extra}
+        return self.client.post(f'/api/invoices/{invoice}/payments/', body, content_type='application/json')
 
     def pdf(self, url):
         r = self.client.get(url)
@@ -131,7 +133,8 @@ class PaymentTests(Invoicing):
         invoice = self.issue().json()['id']
         self.pay(invoice, '1000')
         wo = lambda a, r='Bank will not pay': self.client.post(f'/api/invoices/{invoice}/write-off/',
-                                                                 {'amount': a, 'remark': r}, content_type='application/json')
+                                                                 {'operation_id': str(uuid.uuid4()), 'amount': a, 'remark': r},
+                                                                 content_type='application/json')
         self.assertEqual(wo('500').status_code, 400)                           # more than is owed
         self.assertEqual(wo('180', r='').status_code, 400)                     # no reason
         body = wo('180').json()
@@ -211,3 +214,40 @@ class CreditNoteNumberTests(Invoicing):
                                     issued_on=datetime.date(2026, 9, 25), taxable_amount=1, tax_amount=0, total_amount=1, reason='r')
         self.assertEqual(legacy_maximum(m.CreditNote, 'number', 'CN'), 42)
         self.assertEqual(format_number('CN', datetime.date(2026, 9, 25), 42), 'CN-0926250042')
+
+
+class RetryTests(Invoicing):
+    """Review finding G3: a retried payment must not book the money twice."""
+
+    def test_a_retried_payment_is_booked_once(self):
+        invoice = self.issue().json()['id']
+        op = uuid.uuid4()
+        first = self.pay(invoice, '100', operation_id=op).json()
+        again = self.pay(invoice, '100', operation_id=op).json()
+        self.assertEqual((first['paid'], again['paid']), ('100.00', '100.00'))      # previously 200.00
+        self.assertTrue(again['replayed'])
+        self.assertEqual(m.Receipt.objects.filter(invoice_id=invoice).count(), 1)
+
+    def test_two_separate_equal_payments_both_count(self):
+        invoice = self.issue().json()['id']
+        self.pay(invoice, '100')
+        self.assertEqual(self.pay(invoice, '100').json()['paid'], '200.00')
+
+    def test_an_operation_id_cannot_be_reused_for_a_different_payment(self):
+        invoice = self.issue().json()['id']
+        op = uuid.uuid4()
+        self.pay(invoice, '100', operation_id=op)
+        self.assertEqual(self.pay(invoice, '250', operation_id=op).status_code, 409)
+
+    def test_a_payment_needs_an_operation_id(self):
+        invoice = self.issue().json()['id']
+        response = self.client.post(f'/api/invoices/{invoice}/payments/', {'amount': '100'}, content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_retried_write_off_is_applied_once(self):
+        invoice = self.issue().json()['id']
+        body = {'operation_id': str(uuid.uuid4()), 'amount': '180', 'remark': 'Unrecoverable'}
+        post = lambda: self.client.post(f'/api/invoices/{invoice}/write-off/', body, content_type='application/json').json()
+        self.assertEqual(post()['bad_debt'], '180.00')
+        self.assertEqual(post()['bad_debt'], '180.00')
+        self.assertEqual(m.FinancialOperation.objects.filter(kind='write_off').count(), 1)
