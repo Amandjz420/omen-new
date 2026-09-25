@@ -1,6 +1,43 @@
 # Validation evidence
 
-## Current checkpoint — 24 September 2026
+## Current checkpoint — business-app refactor, 25 September 2026
+
+Admin list follow-up: all 83 models have reviewed columns, related-field search,
+business filters and ordering. Sixteen focused tests pass on both SQLite and
+PostgreSQL, including rendering/searching every model list, filter behavior,
+related-column query counts, domain navigation and autocomplete permissions.
+System checks and migration-drift checks pass. The existing receipt migration
+0020 was confirmed applied on the local database; this admin change applied no
+migration. See [the admin table guide](database/DJANGO_ADMIN_TABLE_GUIDE.md).
+
+Admin navigation follow-up: the home page and sidebar now display business-domain
+groups. Nine focused admin/architecture tests pass on SQLite, covering domain
+landing pages, existing model URLs, unknown domains, anonymous access and a
+view-only user seeing only their permitted model. Schema drift remains zero.
+This UI grouping does not change the earlier business permissions or workflow policy.
+
+The backend model definitions and workflows are organized under `backend/apps/`.
+See [the architecture guide](database/DJANGO_APP_ARCHITECTURE.md). This checkpoint
+validates structural compatibility, not resolution of the separately reported
+business-workflow defects.
+
+- **265 tests pass on PostgreSQL under `config.settings`; 265 pass under `config.target`.**
+- All 83 model definitions match the pre-refactor field, relationship, constraint,
+  table and persistent-label contract. All 54 API patterns remain present once.
+- Django system checks and `makemigrations --check --dry-run` pass with no drift.
+- Existing migration files, including the pre-existing uncommitted receipt migration
+  0020, are byte-for-byte unchanged. No application-data migration or import was run.
+- Compatibility tests cover model/admin identity, management-command discovery,
+  credential output location and the bundled PDF letterhead. Domain tests include
+  the existing import/reimport, auth, lead, valuation, report and finance checks.
+- The React source and API URLs did not change. No additional browser acceptance
+  or production cutover was performed for this refactor.
+
+The dated checkpoints below are historical and should not be read as the current
+feature inventory. See the [expanded gap review](database/MIGRATION_GAP_REVIEW_2026-09-25.md)
+for outstanding business functionality and defects.
+
+## Historical checkpoint — 24 September 2026
 
 Lead intake is now implemented behind the existing admin/staff gate; business roles are deferred by the owner. See [the current implementation report](database/LEAD_INTAKE_IMPLEMENTATION.md) for APIs, source rules, limitations and evidence. Migration 0009 is applied locally after a consistent database backup. All 72 tests pass under both settings; frontend build and migration-drift checks pass. A disposable-database browser test covered office/contact creation, lead numbering and assignment, services, borrowers, cases and follow-ups. Existing target lead, case, office, contact and account counts were preserved.
 

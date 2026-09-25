@@ -1,0 +1,213 @@
+"""Invoicing: issue, GST, numbering, balances, payments, write-offs and credit notes."""
+import io
+from decimal import Decimal
+
+from django.test import override_settings
+from django.utils import timezone
+from pypdf import PdfReader
+
+from target_core import models as m
+from target_core.sync import source_key
+from apps.reports.test_approvals import Approval
+from apps.reports.test_reports import MEDIA
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class Invoicing(Approval):
+    def setUp(self):
+        super().setUp()
+        batch = m.ImportBatch.objects.create()
+        self.professional = m.ChargeType.objects.create(name='Professional charges', legacy_status='1', legacy_deleted='0', source_sequence=1)
+        self.discount = m.ChargeType.objects.create(name='Discount (if any)', legacy_status='1', legacy_deleted='0', source_sequence=2)
+        self.courier = m.ChargeType.objects.create(name='Delivery / Courier Charges', legacy_status='1', legacy_deleted='0', source_sequence=6)
+        m.SourceIdentity.objects.create(batch=batch, environment='main', schema='lead_mngt', table='billing_head',
+                                        key=source_key('2'), target_model='target_core.ChargeType', target_id=self.discount.pk)
+        for head, amount in ((self.professional, '1000'), (self.discount, '-100'), (self.courier, '100')):
+            m.ValuationCharge.objects.create(valuation_id=self.v, charge_type=head, amount=Decimal(amount))
+        m.Valuation.objects.filter(pk=self.v).update(advance_collected=Decimal('0'))
+        self.sbi_account = m.IssuerAccount.objects.create(name='State Bank of india', code=2, account_number='000009684', ifsc_code='SBIN0005793')
+        office = m.Valuation.objects.get(pk=self.v).case.lead.office
+        m.ClientOffice.objects.filter(pk=office.pk).update(gstin='23ABCDE1234F1Z5')
+        self.generate()
+
+    def issue(self, **overrides):
+        body = {'place': 'intra', 'party': 1, 'account': str(self.sbi_account.pk), **overrides}
+        return self.client.post(f'/api/invoices/valuations/{self.v}/', body, content_type='application/json')
+
+    def pay(self, invoice, amount, **extra):
+        return self.client.post(f'/api/invoices/{invoice}/payments/', {'amount': amount, **extra}, content_type='application/json')
+
+    def pdf(self, url):
+        r = self.client.get(url)
+        return ' '.join(''.join(p.extract_text() for p in PdfReader(io.BytesIO(b''.join(r.streaming_content))).pages).split())
+
+
+class IssueTests(Invoicing):
+    def test_intra_state_splits_gst_into_cgst_and_sgst(self):
+        body = self.issue().json()
+        # taxable 1000 - 100 + 100 = 1000; 9% + 9% on each line
+        self.assertEqual((body['total'], body['remaining']), ('1180.00', '1180.00'))
+        pro = next(l for l in body['lines'] if l['description'] == 'Professional charges')
+        self.assertEqual((pro['cgst'], pro['sgst'], pro['igst'], pro['total']), ('90.00', '90.00', '0.00', '1180.00'))
+        disc = next(l for l in body['lines'] if l['description'].startswith('Discount'))
+        self.assertEqual((disc['amount'], disc['cgst']), ('-100.00', '-9.00'))
+
+    def test_inter_state_puts_all_gst_into_igst(self):
+        body = self.issue(place='inter').json()
+        pro = next(l for l in body['lines'] if l['description'] == 'Professional charges')
+        self.assertEqual((pro['cgst'], pro['igst']), ('0.00', '180.00'))
+        self.assertEqual(body['total'], '1180.00')
+
+    def test_the_number_continues_the_online_series_not_the_offline_one(self):
+        m.Invoice.objects.create(origin='legacy_invoice', number='I-09260911946')
+        m.Invoice.objects.create(origin='legacy_offline_invoice', number='I-11200315556')
+        self.assertTrue(self.issue().json()['number'].endswith('11947'))
+
+    def test_the_lines_are_snapshotted_and_the_billing_updated(self):
+        self.issue()
+        invoice = m.Invoice.objects.get(local_sequence__isnull=False)
+        self.assertEqual(invoice.lines.count(), 3)
+        charge = m.ValuationCharge.objects.get(valuation_id=self.v, charge_type=self.professional)
+        self.assertEqual((charge.cgst, charge.sgst), (Decimal('90.00'), Decimal('90.00')))
+        v = m.Valuation.objects.get(pk=self.v)
+        self.assertEqual((v.total_after_tax, v.total_after_tax_words), (Decimal('1180.00'), 'One Thousand One Hundred Eighty'))
+
+    def test_an_advance_above_the_total_is_recorded_as_excess(self):
+        """Regression: the legacy code zeroed remaining and then read it as the excess."""
+        m.Valuation.objects.filter(pk=self.v).update(advance_collected=Decimal('1500'))
+        body = self.issue().json()
+        self.assertEqual((body['remaining'], body['excess']), ('0.00', '320.00'))
+
+    def test_a_valuation_is_invoiced_once(self):
+        self.issue()
+        self.assertIn('already has an invoice', self.issue().json()['error'])
+
+    def test_an_invoice_needs_the_bank_report(self):
+        m.BankReport.objects.update(superseded_at=timezone.now())
+        self.assertIn('bank report', self.issue().json()['error'])
+
+    def test_another_partys_gstin_is_required_and_validated(self):
+        self.assertEqual(self.issue(party=3).status_code, 400)
+        self.assertEqual(self.issue(party=3, other_gstin='NOT-A-GSTIN').status_code, 400)
+        self.assertEqual(self.issue(party=3, other_gstin='27AABCU9603R1ZM').status_code, 201)
+
+    def test_the_place_of_supply_is_suggested_from_the_gstin_state(self):
+        draft = self.client.get(f'/api/invoices/valuations/{self.v}/').json()
+        self.assertEqual(draft['suggested_place'], 'intra')                    # 23 = Madhya Pradesh
+        office = m.Valuation.objects.get(pk=self.v).case.lead.office
+        m.ClientOffice.objects.filter(pk=office.pk).update(gstin='27ABCDE1234F1Z5')
+        self.assertEqual(self.client.get(f'/api/invoices/valuations/{self.v}/').json()['suggested_place'], 'inter')
+
+    def test_the_document_is_a_tax_invoice(self):
+        invoice = self.issue().json()
+        text = self.pdf(f"/api/invoices/{invoice['id']}/document/")
+        for expected in ('TAX INVOICE', '23AABFO1645E1ZS', invoice['number'], 'Professional charges', '1,180.00',
+                         'One Thousand One Hundred Eighty', 'SBIN0005793', 'Intra State'):
+            self.assertIn(expected, text)
+
+
+class PaymentTests(Invoicing):
+    def test_partial_then_full_payment(self):
+        invoice = self.issue().json()['id']
+        partial = self.pay(invoice, '500').json()
+        self.assertEqual((partial['remaining'], partial['payment_status']), ('680.00', 'Partly paid'))
+        full = self.pay(invoice, '680').json()
+        self.assertEqual((full['remaining'], full['payment_status']), ('0.00', 'Fully paid'))
+        self.assertEqual(len(full['payments']), 2)
+        self.assertEqual(m.Receipt.objects.filter(invoice_id=invoice).count(), 2)
+
+    def test_an_overpayment_is_recorded_as_excess(self):
+        invoice = self.issue().json()['id']
+        body = self.pay(invoice, '1200').json()
+        self.assertEqual((body['remaining'], body['excess']), ('0.00', '20.00'))
+
+    def test_a_payment_needs_an_amount_and_a_real_date(self):
+        invoice = self.issue().json()['id']
+        self.assertEqual(self.pay(invoice, '0').status_code, 400)
+        future = (timezone.localdate() + timezone.timedelta(days=1)).isoformat()
+        self.assertEqual(self.pay(invoice, '10', date=future).status_code, 400)
+
+    def test_writing_off_the_remainder_closes_the_invoice(self):
+        invoice = self.issue().json()['id']
+        self.pay(invoice, '1000')
+        wo = lambda a, r='Bank will not pay': self.client.post(f'/api/invoices/{invoice}/write-off/',
+                                                                 {'amount': a, 'remark': r}, content_type='application/json')
+        self.assertEqual(wo('500').status_code, 400)                           # more than is owed
+        self.assertEqual(wo('180', r='').status_code, 400)                     # no reason
+        body = wo('180').json()
+        self.assertEqual((body['remaining'], body['bad_debt'], body['payment_status']), ('0.00', '180.00', 'Fully paid'))
+
+
+class CreditNoteTests(Invoicing):
+    def credit(self, invoice, reason='Double entry'):
+        return self.client.post(f'/api/invoices/{invoice}/credit-note/', {'reason': reason}, content_type='application/json')
+
+    def test_a_credit_note_reverses_the_invoice_without_deleting_it(self):
+        invoice = self.issue().json()['id']
+        self.pay(invoice, '300')
+        body = self.credit(invoice).json()
+        self.assertTrue(body['cancelled'])
+        note = body['credit_notes'][0]
+        self.assertRegex(note['number'], r'^CN-\d{6}0001$')
+        self.assertEqual((note['total'], note['refund_due']), ('1180.00', '300.00'))
+        self.assertTrue(m.Invoice.objects.filter(pk=invoice).exists())
+
+    def test_a_credited_invoice_takes_no_further_payments(self):
+        invoice = self.issue().json()['id']
+        self.credit(invoice)
+        self.assertEqual(self.pay(invoice, '10').status_code, 409)
+
+    def test_a_credit_note_releases_billing_and_cancellation(self):
+        invoice = self.issue().json()['id']
+        self.assertEqual(self.standing('cancel').status_code, 409)
+        self.credit(invoice)
+        self.assertEqual(self.standing('cancel').json()['status'], 'Cancel')
+
+    def test_a_credited_valuation_can_be_invoiced_again(self):
+        first = self.issue().json()
+        self.credit(first['id'])
+        second = self.issue().json()
+        self.assertNotEqual(first['number'], second['number'])
+
+    def test_a_reason_is_required(self):
+        invoice = self.issue().json()['id']
+        self.assertEqual(self.credit(invoice, reason='').status_code, 400)
+
+    def test_the_credit_note_document(self):
+        invoice = self.issue().json()
+        note = self.credit(invoice['id']).json()['credit_notes'][0]
+        text = self.pdf(f"/api/invoices/credit-notes/{note['id']}/document/")
+        for expected in ('CREDIT NOTE', note['number'], invoice['number'], 'Double entry'):
+            self.assertIn(expected, text)
+
+
+class QueueTests(Invoicing):
+    def test_the_buckets_follow_the_invoice_through_its_life(self):
+        counts = lambda: self.client.get('/api/invoices/').json()['counts']
+        self.assertEqual(counts()['to_invoice'], 1)
+        invoice = self.issue().json()['id']
+        self.assertEqual((counts()['to_invoice'], counts()['unpaid']), (0, 1))
+        self.pay(invoice, '1180')
+        self.assertEqual((counts()['unpaid'], counts()['paid']), (0, 1))
+
+
+class CreditNoteNumberTests(Invoicing):
+    def test_credit_notes_never_share_a_number_with_a_cash_receipt(self):
+        """Legacy cash receipts use C- + MMYYDD + counter."""
+        from django.utils import timezone as tz
+        receipt_number = f"C-{tz.localdate():%m%y%d}0001"
+        m.Receipt.objects.create(origin='legacy_cash_receipt', number=receipt_number)
+        invoice = self.issue().json()['id']
+        note = self.client.post(f'/api/invoices/{invoice}/credit-note/', {'reason': 'x'},
+                                content_type='application/json').json()['credit_notes'][0]
+        self.assertNotEqual(note['number'], receipt_number)
+        self.assertTrue(note['number'].startswith('CN-'))
+
+    def test_longer_prefixes_read_the_counter_from_the_right_place(self):
+        import datetime
+        from target_core.numbering import format_number, legacy_maximum
+        m.CreditNote.objects.create(invoice=m.Invoice.objects.create(origin='x', number='I-1'),
+                                    number=format_number('CN', datetime.date(2026, 9, 25), 42), local_sequence=42,
+                                    issued_on=datetime.date(2026, 9, 25), taxable_amount=1, tax_amount=0, total_amount=1, reason='r')
+        self.assertEqual(legacy_maximum(m.CreditNote, 'number', 'CN'), 42)
+        self.assertEqual(format_number('CN', datetime.date(2026, 9, 25), 42), 'CN-0926250042')

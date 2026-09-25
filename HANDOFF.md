@@ -1,3 +1,11 @@
+## Latest handoff: business-app refactor — 25 September 2026
+
+Read [DJANGO_APP_ARCHITECTURE.md](database/DJANGO_APP_ARCHITECTURE.md) before editing. All 83 target model definitions now live in `backend/apps/<domain>/models.py`; workflow implementations, URLs, admin registrations, commands and tests live with their business domains. `target_core` Python modules are compatibility imports, and its migrations and persistent app label intentionally remain authoritative. Edit implementations in `apps/`, not compatibility wrappers.
+
+The receipt fields, importer additions and uncommitted migration 0020 present before the split were preserved. No application database migration or import was run. Both PostgreSQL settings pass 265 tests, and schema-drift/route/model-compatibility checks pass. The prior gap review remains open: this change reorganizes code and does not resolve the business defects. See VALIDATION.md for the evidence and the architecture guide for per-domain test commands and model-label rules.
+
+---
+
 # Django and React migration: handoff to Claude / Devin
 
 **Latest checkpoint, 24 September 2026:** [Lead intake implementation](database/LEAD_INTAKE_IMPLEMENTATION.md) supersedes older operational-gap statements below for clients, contacts, lead creation, services, borrowers, cases, assignment and follow-ups. Business roles are explicitly deferred; existing admin/staff access remains required. Migration 0009 is applied locally, 72 tests pass under both settings, and the complete intake path was browser-tested against a disposable database. Work orders and valuation execution are next. The material below is retained as historical handoff evidence.

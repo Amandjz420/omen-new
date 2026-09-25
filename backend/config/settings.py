@@ -15,15 +15,30 @@ if not SECRET_KEY:
             f.write(secrets.token_urlsafe(48))
     SECRET_KEY = secret_file.read_text().strip()
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
-INSTALLED_APPS = ['django.contrib.admin', 'django.contrib.auth', 'django.contrib.contenttypes',
+INSTALLED_APPS = ['apps.common.admin_config.DomainAdminConfig', 'django.contrib.auth', 'django.contrib.contenttypes',
                   'django.contrib.messages', 'django.contrib.sessions', 'django.contrib.staticfiles',
-                  'target_core']
+                  'target_core',
+                  'apps.accounts.apps.DomainConfig',
+                  'apps.organization.apps.DomainConfig',
+                  'apps.directory.apps.DomainConfig',
+                  'apps.catalog.apps.DomainConfig',
+                  'apps.leads.apps.DomainConfig',
+                  'apps.workorders.apps.DomainConfig',
+                  'apps.valuations.apps.DomainConfig',
+                  'apps.reports.apps.DomainConfig',
+                  'apps.billing.apps.DomainConfig',
+                  'apps.documents.apps.DomainConfig',
+                  'apps.dispatch.apps.DomainConfig',
+                  'apps.migration_pipeline.apps.DomainConfig',
+                  'apps.audit.apps.DomainConfig',
+                  'apps.analytics.apps.DomainConfig',
+]
 MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
               'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware',
               'django.contrib.auth.middleware.AuthenticationMiddleware',
               'django.contrib.messages.middleware.MessageMiddleware',
               # Onboarding is enforced for the admin site too, not just the API.
-              'target_core.middleware.RequirePasswordChange',
+              'apps.accounts.middleware.RequirePasswordChange',
               'django.middleware.clickjacking.XFrameOptionsMiddleware']
 ROOT_URLCONF = 'config.urls'
 TEMPLATES = [{

@@ -1,0 +1,1528 @@
+{
+  "models": {
+    "ImportBatch": {
+      "label": "target_core.ImportBatch",
+      "table": "target_core_importbatch",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "snapshot_checksum": "models.CharField(max_length=64)",
+        "conversion_version": "models.CharField(max_length=80)",
+        "source_environment": "models.CharField(max_length=20)",
+        "status": "models.CharField(default='staged', max_length=30)",
+        "summary": "models.JSONField(default=dict)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "SourceIdentity": {
+      "label": "target_core.SourceIdentity",
+      "table": "target_core_sourceidentity",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "batch": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.importbatch')",
+        "environment": "models.CharField(max_length=20)",
+        "schema": "models.CharField(max_length=80)",
+        "table": "models.CharField(max_length=100)",
+        "key": "models.CharField(max_length=512)",
+        "target_model": "models.CharField(max_length=100)",
+        "target_id": "models.UUIDField()"
+      },
+      "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(fields=('environment', 'schema', 'table', 'key'), name='source_identity_unique')], 'indexes': []}"
+    },
+    "MigrationIssue": {
+      "label": "target_core.MigrationIssue",
+      "table": "target_core_migrationissue",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "batch": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.importbatch')",
+        "source_identity": "models.JSONField(default=dict)",
+        "reason": "models.TextField()",
+        "resolution": "models.TextField(blank=True)",
+        "resolved": "models.BooleanField(default=False)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Bank": {
+      "label": "target_core.Bank",
+      "table": "target_core_bank",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "BankBranch": {
+      "label": "target_core.BankBranch",
+      "table": "target_core_bankbranch",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "bank": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.bank')",
+        "ifsc": "models.CharField(blank=True, db_index=True, max_length=40)",
+        "micr": "models.CharField(blank=True, max_length=40)",
+        "address": "models.TextField(blank=True)",
+        "city": "models.CharField(blank=True, max_length=150)",
+        "district": "models.CharField(blank=True, max_length=150)",
+        "state": "models.CharField(blank=True, max_length=150)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ClientType": {
+      "label": "target_core.ClientType",
+      "table": "target_core_clienttype",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Employee": {
+      "label": "target_core.Employee",
+      "table": "target_core_employee",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "employee_code": "models.CharField(blank=True, db_index=True, max_length=100)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "user": "models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='employee_profile', to=settings.AUTH_USER_MODEL)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ClientOffice": {
+      "label": "target_core.ClientOffice",
+      "table": "target_core_clientoffice",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "branch_name": "models.CharField(blank=True, max_length=500)",
+        "client_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clienttype')",
+        "bank": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.bank')",
+        "directory_branch": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.bankbranch')",
+        "address": "models.TextField(blank=True)",
+        "owner": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "legacy_working_status": "models.CharField(blank=True, max_length=40)",
+        "state": "models.CharField(blank=True, max_length=150)",
+        "district": "models.CharField(blank=True, max_length=150)",
+        "gstin": "models.CharField(blank=True, max_length=200)",
+        "ifsc": "models.CharField(blank=True, max_length=45)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ContactDesignation": {
+      "label": "target_core.ContactDesignation",
+      "table": "target_core_contactdesignation",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Contact": {
+      "label": "target_core.Contact",
+      "table": "target_core_contact",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "office": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.clientoffice')",
+        "designation": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.contactdesignation')",
+        "phone": "models.CharField(blank=True, max_length=80)",
+        "alternate_phone": "models.CharField(blank=True, max_length=80)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ServiceType": {
+      "label": "target_core.ServiceType",
+      "table": "target_core_servicetype",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ServiceSubtype": {
+      "label": "target_core.ServiceSubtype",
+      "table": "target_core_servicesubtype",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "service": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Lead": {
+      "label": "target_core.Lead",
+      "table": "target_core_lead",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "intake_key": "models.UUIDField(editable=False, null=True, unique=True)",
+        "intake_hash": "models.CharField(blank=True, editable=False, max_length=64)",
+        "local_sequence": "models.PositiveBigIntegerField(editable=False, null=True, unique=True)",
+        "number": "models.CharField(blank=True, db_index=True, max_length=100)",
+        "office": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.clientoffice')",
+        "contact": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.contact')",
+        "assigned_employee": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "received_date": "models.DateField(db_index=True, null=True)",
+        "date_basis": "models.CharField(default='unknown', max_length=40)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)",
+        "enquiry_mode": "models.IntegerField(choices=[(1, 'Phone'), (2, 'Email'), (3, 'Online'), (4, 'Walk In'), (5, 'Letter')], null=True)",
+        "party_count": "models.PositiveIntegerField(null=True)",
+        "case_count": "models.PositiveIntegerField(null=True)",
+        "received_by": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='leads_received', to='target_core.employee')",
+        "client_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clienttype')",
+        "legacy_number_old": "models.CharField(blank=True, max_length=45)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "RequestedService": {
+      "label": "target_core.RequestedService",
+      "table": "target_core_requestedservice",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "service": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicesubtype')",
+        "party_count": "models.PositiveIntegerField(null=True)",
+        "case_count": "models.PositiveIntegerField(null=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LeadCounter": {
+      "label": "target_core.LeadCounter",
+      "table": "target_core_leadcounter",
+      "fields": {
+        "name": "models.CharField(max_length=30, primary_key=True, serialize=False)",
+        "value": "models.PositiveBigIntegerField(default=0)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LocalRecord": {
+      "label": "target_core.LocalRecord",
+      "table": "target_core_localrecord",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "target_model": "models.CharField(max_length=100)",
+        "target_id": "models.UUIDField()"
+      },
+      "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(fields=('target_model', 'target_id'), name='local_record_unique')], 'indexes': []}"
+    },
+    "IntakeAudit": {
+      "label": "target_core.IntakeAudit",
+      "table": "target_core_intakeaudit",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "actor": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL)",
+        "action": "models.CharField(max_length=60)",
+        "target_model": "models.CharField(max_length=100)",
+        "target_id": "models.UUIDField()",
+        "before": "models.JSONField(default=dict)",
+        "after": "models.JSONField(default=dict)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Borrower": {
+      "label": "target_core.Borrower",
+      "table": "target_core_borrower",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "lead": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "agreed_fee": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "currency": "models.CharField(blank=True, max_length=3)",
+        "property_count": "models.PositiveIntegerField(null=True)",
+        "contact_number": "models.CharField(blank=True, max_length=20)",
+        "email": "models.CharField(blank=True, max_length=100)",
+        "payer": "models.IntegerField(choices=[(1, 'By Client'), (2, 'By Client Customer')], null=True)",
+        "fee_basis": "models.IntegerField(choices=[(1, 'By Circular'), (2, 'By Fixed')], null=True)",
+        "customer_payment_method": "models.IntegerField(choices=[(1, 'By Bank'), (2, 'By Cash'), (3, 'By Any Other')], null=True)",
+        "payer_name": "models.CharField(blank=True, max_length=500)",
+        "payer_mobile": "models.CharField(blank=True, max_length=30)",
+        "pay_by_date": "models.DateField(null=True)",
+        "gst_number": "models.CharField(blank=True, max_length=200)",
+        "payment_reference_number": "models.CharField(blank=True, max_length=15)",
+        "payment_reference_name": "models.CharField(blank=True, max_length=105)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Case": {
+      "label": "target_core.Case",
+      "table": "target_core_case",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "borrower": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.borrower')",
+        "service": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicesubtype')",
+        "asset_address": "models.TextField(blank=True)",
+        "asset_district": "models.CharField(blank=True, max_length=150)",
+        "asset_state": "models.CharField(blank=True, max_length=150)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "asset_pin_code": "models.CharField(blank=True, max_length=15)",
+        "asset_block_code": "models.CharField(blank=True, max_length=20)",
+        "asset_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "contact_person_name": "models.CharField(blank=True, max_length=500)",
+        "contact_number": "models.CharField(blank=True, max_length=20)",
+        "expected_report_date": "models.DateField(null=True)",
+        "remarks": "models.TextField(blank=True)",
+        "usage_of_report_code": "models.CharField(blank=True, max_length=500)",
+        "scrutiny_document_code": "models.CharField(blank=True, max_length=500)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Document": {
+      "label": "target_core.Document",
+      "table": "target_core_document",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "storage_provider": "models.CharField(max_length=40)",
+        "storage_container": "models.CharField(blank=True, max_length=300)",
+        "storage_key": "models.TextField()",
+        "original_name": "models.TextField(blank=True)",
+        "media_type": "models.CharField(blank=True, max_length=150)",
+        "size_bytes": "models.PositiveBigIntegerField(null=True)",
+        "checksum": "models.CharField(blank=True, max_length=64)",
+        "content_verified": "models.BooleanField(default=False)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "WorkOrder": {
+      "label": "target_core.WorkOrder",
+      "table": "target_core_workorder",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "borrower": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='work_orders', to='target_core.borrower')",
+        "number": "models.CharField(blank=True, db_index=True, max_length=100)",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_number_old": "models.CharField(blank=True, max_length=45)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)",
+        "request_key": "models.UUIDField(editable=False, null=True, unique=True)",
+        "request_hash": "models.CharField(blank=True, editable=False, max_length=64)",
+        "local_sequence": "models.PositiveBigIntegerField(editable=False, null=True, unique=True)",
+        "issued_by": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='work_orders_issued', to=settings.AUTH_USER_MODEL)",
+        "issued_at": "models.DateTimeField(null=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(condition=models.Q(('local_sequence__isnull', False)), fields=('borrower',), name='one_new_work_order_per_borrower'), models.UniqueConstraint(condition=models.Q(('local_sequence__isnull', False)), fields=('number',), name='unique_new_work_order_number')], 'indexes': []}"
+    },
+    "Valuation": {
+      "label": "target_core.Valuation",
+      "table": "target_core_valuation",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "case": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.case')",
+        "work_order": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.workorder')",
+        "assessor": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "valuation_date": "models.DateField(null=True)",
+        "legacy_status": "models.CharField(blank=True, max_length=80)",
+        "report_number": "models.CharField(blank=True, max_length=100)",
+        "assessor_name": "models.CharField(blank=True, max_length=200)",
+        "submitted_to": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='valuations_received', to='target_core.employee')",
+        "liable_employee": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='valuations_liable', to='target_core.employee')",
+        "eligible_loan_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "desired_loan_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "total_billing_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "advance_collected": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "remaining_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "total_after_tax": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "total_after_tax_words": "models.CharField(blank=True, max_length=500)",
+        "assessor_comment": "models.TextField(blank=True)",
+        "non_cost_factor": "models.TextField(blank=True)",
+        "report_category": "models.IntegerField(choices=[(1, 'Safe'), (2, 'Risky')], null=True)",
+        "dispatch_at_code": "models.IntegerField(null=True)",
+        "dispatch_by_code": "models.IntegerField(null=True)",
+        "status_reason": "models.CharField(blank=True, max_length=500)",
+        "status_reason_date": "models.DateField(null=True)",
+        "held_from_status": "models.CharField(blank=True, max_length=80)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Invoice": {
+      "label": "target_core.Invoice",
+      "table": "target_core_invoice",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.valuation')",
+        "office": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clientoffice')",
+        "number": "models.CharField(blank=True, db_index=True, max_length=100)",
+        "origin": "models.CharField(max_length=30)",
+        "issued_date": "models.DateField(null=True)",
+        "due_date": "models.DateField(null=True)",
+        "currency": "models.CharField(blank=True, max_length=3)",
+        "billed_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "legacy_paid_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "legacy_remaining_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "issuer_account": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.issueraccount')",
+        "gstin_party": "models.IntegerField(blank=True, choices=[(1, 'Client'), (2, 'Client Customer'), (3, 'Other')], null=True)",
+        "other_gstin": "models.CharField(blank=True, max_length=100)",
+        "payer": "models.IntegerField(blank=True, choices=[(1, 'By Client'), (2, 'By Client Customer')], null=True)",
+        "payment_type": "models.IntegerField(blank=True, choices=[(1, 'Fully Payment'), (2, 'Partial Payment')], null=True)",
+        "payment_date": "models.DateField(blank=True, null=True)",
+        "bad_debt_amount": "models.DecimalField(blank=True, decimal_places=6, max_digits=24, null=True)",
+        "bad_debt_remark": "models.TextField(blank=True)",
+        "excess_amount": "models.DecimalField(blank=True, decimal_places=6, max_digits=24, null=True)",
+        "remaining_words": "models.CharField(blank=True, max_length=500)",
+        "legacy_number_old": "models.CharField(blank=True, max_length=45)",
+        "place_of_supply": "models.CharField(blank=True, choices=[('intra', 'Intra State (CGST + SGST)'), ('inter', 'Inter State (IGST)')], max_length=10)",
+        "local_sequence": "models.PositiveBigIntegerField(blank=True, editable=False, null=True, unique=True)",
+        "issued_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "issued_by_name": "models.CharField(blank=True, max_length=200)",
+        "cancelled_at": "models.DateTimeField(blank=True, null=True)",
+        "cancel_reason": "models.TextField(blank=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(condition=models.Q(('local_sequence__isnull', False)), fields=('number',), name='unique_new_invoice_number')], 'indexes': []}"
+    },
+    "InvoiceLine": {
+      "label": "target_core.InvoiceLine",
+      "table": "target_core_invoiceline",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "invoice": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='lines', to='target_core.invoice')",
+        "description": "models.TextField()",
+        "net_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "tax_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "charge_type": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.chargetype')",
+        "cgst": "models.DecimalField(blank=True, decimal_places=6, max_digits=24, null=True)",
+        "sgst": "models.DecimalField(blank=True, decimal_places=6, max_digits=24, null=True)",
+        "igst": "models.DecimalField(blank=True, decimal_places=6, max_digits=24, null=True)",
+        "total_amount": "models.DecimalField(blank=True, decimal_places=6, max_digits=24, null=True)",
+        "position": "models.PositiveIntegerField(default=0)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Receipt": {
+      "label": "target_core.Receipt",
+      "table": "target_core_receipt",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "number": "models.CharField(blank=True, max_length=100)",
+        "origin": "models.CharField(max_length=40)",
+        "received_date": "models.DateField(null=True)",
+        "amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "currency": "models.CharField(blank=True, max_length=3)",
+        "verified": "models.BooleanField(default=False)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "invoice": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='receipts', to='target_core.invoice')",
+        "valuation": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.valuation')",
+        "office": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clientoffice')",
+        "borrower": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.borrower')",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "payer_name": "models.CharField(blank=True, max_length=300)",
+        "mode": "models.CharField(blank=True, max_length=40)",
+        "remark": "models.TextField(blank=True)",
+        "received_as": "models.IntegerField(blank=True, choices=[(1, 'Advance'), (2, 'Recovery'), (3, 'Other')], null=True)",
+        "payment_mode": "models.IntegerField(blank=True, choices=[(1, 'Cash'), (2, 'Cheque'), (3, 'Draft'), (4, 'Netbanking'), (5, 'UPI')], null=True)",
+        "mobile": "models.CharField(blank=True, max_length=500)",
+        "amount_received_on": "models.DateField(blank=True, null=True)",
+        "cheque_draft_number": "models.CharField(blank=True, max_length=200)",
+        "cheque_draft_bank": "models.CharField(blank=True, max_length=200)",
+        "issue_date": "models.DateField(blank=True, null=True)",
+        "in_favour_of": "models.CharField(blank=True, max_length=500)",
+        "proforma_invoice_number": "models.CharField(blank=True, max_length=500)",
+        "received_against_code": "models.IntegerField(blank=True, null=True)",
+        "receivable_bank_code": "models.IntegerField(blank=True, null=True)",
+        "description": "models.CharField(blank=True, max_length=500)",
+        "maker": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "checked_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "checked_at": "models.DateTimeField(blank=True, null=True)",
+        "verified_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "verified_at": "models.DateTimeField(blank=True, null=True)",
+        "duplicate_of": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='duplicates', to='target_core.receipt')"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ReceiptAllocation": {
+      "label": "target_core.ReceiptAllocation",
+      "table": "target_core_receiptallocation",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "receipt": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.receipt')",
+        "invoice": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.invoice')",
+        "amount": "models.DecimalField(decimal_places=6, max_digits=24)",
+        "posting_key": "models.CharField(max_length=100, unique=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [models.CheckConstraint(condition=models.Q(('amount__gt', 0)), name='allocation_amount_positive')], 'indexes': []}"
+    },
+    "SalaryBaseline": {
+      "label": "target_core.SalaryBaseline",
+      "table": "target_core_salarybaseline",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "employee": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "source_variant": "models.CharField(max_length=80)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "SalaryBaselineComponent": {
+      "label": "target_core.SalaryBaselineComponent",
+      "table": "target_core_salarybaselinecomponent",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "baseline": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.salarybaseline')",
+        "pay_code": "models.CharField(max_length=80)",
+        "amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "from_period": "models.CharField(blank=True, max_length=20)",
+        "to_period": "models.CharField(blank=True, max_length=20)",
+        "mode": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "SalaryResult": {
+      "label": "target_core.SalaryResult",
+      "table": "target_core_salaryresult",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "employee": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "period": "models.CharField(max_length=20)",
+        "gross_earning": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "gross_deduction": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "net_salary": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "paid_days": "models.DecimalField(decimal_places=3, max_digits=8, null=True)",
+        "legacy_payment_status": "models.CharField(blank=True, max_length=80)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LeaveOpeningBalance": {
+      "label": "target_core.LeaveOpeningBalance",
+      "table": "target_core_leaveopeningbalance",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "employee": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "leave_type_code": "models.CharField(max_length=80)",
+        "as_of_date": "models.DateField()",
+        "days": "models.DecimalField(decimal_places=3, max_digits=10)",
+        "evidence": "models.JSONField(default=dict)",
+        "reconciled": "models.BooleanField(default=False)"
+      },
+      "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(fields=('employee', 'leave_type_code', 'as_of_date'), name='leave_opening_balance_unique')], 'indexes': []}"
+    },
+    "SourceRow": {
+      "label": "target_core.SourceRow",
+      "table": "target_core_sourcerow",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "schema": "models.CharField(max_length=80)",
+        "table": "models.CharField(max_length=100)",
+        "key": "models.CharField(max_length=512)",
+        "payload": "models.JSONField(default=dict)",
+        "payload_hash": "models.CharField(max_length=64)",
+        "batch": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.importbatch')",
+        "outcome": "models.CharField(max_length=30)",
+        "problems": "models.JSONField(default=list)"
+      },
+      "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(fields=('schema', 'table', 'key'), name='source_row_unique')], 'indexes': []}"
+    },
+    "LeadNote": {
+      "label": "target_core.LeadNote",
+      "table": "target_core_leadnote",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='notes', to='target_core.lead')",
+        "author": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL)",
+        "body": "models.TextField(max_length=4000)",
+        "prototype_note_id": "models.BigIntegerField(null=True, unique=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "State": {
+      "label": "target_core.State",
+      "table": "target_core_state",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "census_code": "models.CharField(blank=True, max_length=10)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "District": {
+      "label": "target_core.District",
+      "table": "target_core_district",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "state": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.state')",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "census_code": "models.CharField(blank=True, max_length=10)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Region": {
+      "label": "target_core.Region",
+      "table": "target_core_region",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Circle": {
+      "label": "target_core.Circle",
+      "table": "target_core_circle",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "region": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.region')",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Block": {
+      "label": "target_core.Block",
+      "table": "target_core_block",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "district": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.district')",
+        "region": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.region')",
+        "circle": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.circle')",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "census_code": "models.CharField(blank=True, max_length=10)",
+        "area_type": "models.CharField(blank=True, max_length=10)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Panchayat": {
+      "label": "target_core.Panchayat",
+      "table": "target_core_panchayat",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "block": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.block')",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Village": {
+      "label": "target_core.Village",
+      "table": "target_core_village",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "panchayat": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.panchayat')",
+        "legacy_panchayat_code": "models.CharField(blank=True, db_index=True, max_length=10)",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "census_code": "models.CharField(blank=True, max_length=10)",
+        "pincode": "models.CharField(blank=True, max_length=10)",
+        "area_type": "models.CharField(blank=True, max_length=10)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "City": {
+      "label": "target_core.City",
+      "table": "target_core_city",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "code": "models.CharField(blank=True, max_length=20)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Location": {
+      "label": "target_core.Location",
+      "table": "target_core_location",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "city": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.city')",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "code": "models.CharField(blank=True, max_length=20)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "SubLocation": {
+      "label": "target_core.SubLocation",
+      "table": "target_core_sublocation",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "location": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.location')",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "code": "models.CharField(blank=True, max_length=20)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "AdministrativeDivision": {
+      "label": "target_core.AdministrativeDivision",
+      "table": "target_core_administrativedivision",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "circle": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.circle')",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "OfficialLocation": {
+      "label": "target_core.OfficialLocation",
+      "table": "target_core_officiallocation",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "city": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.city')",
+        "kind": "models.CharField(blank=True, max_length=20)",
+        "code": "models.CharField(blank=True, max_length=10)",
+        "name_hindi": "models.CharField(blank=True, max_length=250)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "IfscArea": {
+      "label": "target_core.IfscArea",
+      "table": "target_core_ifscarea",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "ifsc": "models.CharField(db_index=True, max_length=45)",
+        "state": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.state')",
+        "district": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.district')",
+        "block": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.block')"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LeadDivision": {
+      "label": "target_core.LeadDivision",
+      "table": "target_core_leaddivision",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LeadSubdivision": {
+      "label": "target_core.LeadSubdivision",
+      "table": "target_core_leadsubdivision",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "division": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.leaddivision')",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "FollowUp": {
+      "label": "target_core.FollowUp",
+      "table": "target_core_followup",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='follow_ups', to='target_core.lead')",
+        "call_status": "models.CharField(blank=True, max_length=50)",
+        "logged_date_text": "models.CharField(blank=True, max_length=50)",
+        "logged_time_text": "models.CharField(blank=True, max_length=20)",
+        "remark": "models.TextField(blank=True)",
+        "legacy_update_date": "models.CharField(blank=True, max_length=45)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "EmployeeTarget": {
+      "label": "target_core.EmployeeTarget",
+      "table": "target_core_employeetarget",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "employee": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "financial_year": "models.CharField(blank=True, max_length=20)",
+        "period_start": "models.DateField(null=True)",
+        "period_end": "models.DateField(null=True)",
+        "target_cases": "models.PositiveIntegerField(null=True)",
+        "target_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "EmployeeAssignmentRule": {
+      "label": "target_core.EmployeeAssignmentRule",
+      "table": "target_core_employeeassignmentrule",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "employee": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.employee')",
+        "client_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clienttype')",
+        "service": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicesubtype')",
+        "report_usage": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.reportusage')",
+        "usage_of_report_code": "models.CharField(blank=True, max_length=40)",
+        "asset_value": "models.DecimalField(decimal_places=6, max_digits=24, null=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LeadParty": {
+      "label": "target_core.LeadParty",
+      "table": "target_core_leadparty",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "borrower_name": "models.CharField(blank=True, max_length=300)",
+        "contact_person_name": "models.CharField(blank=True, max_length=300)",
+        "contact_number": "models.CharField(blank=True, max_length=80)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ValuationAttachment": {
+      "label": "target_core.ValuationAttachment",
+      "table": "target_core_valuationattachment",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='attachments', to='target_core.valuation')",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "name": "models.CharField(blank=True, max_length=500)",
+        "attachment_type": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ScrutinyRequirement": {
+      "label": "target_core.ScrutinyRequirement",
+      "table": "target_core_scrutinyrequirement",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "service": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicesubtype')",
+        "client_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clienttype')",
+        "report_usage": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.reportusage')",
+        "usage_of_report_code": "models.CharField(blank=True, max_length=40)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "UploadConfiguration": {
+      "label": "target_core.UploadConfiguration",
+      "table": "target_core_uploadconfiguration",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "document_number": "models.CharField(blank=True, max_length=250)",
+        "document_type": "models.CharField(blank=True, max_length=150)",
+        "storage_key": "models.TextField(blank=True)",
+        "public_path": "models.TextField(blank=True)",
+        "original_name": "models.CharField(blank=True, max_length=300)",
+        "size_text": "models.CharField(blank=True, max_length=20)",
+        "uploaded_by_name": "models.CharField(blank=True, max_length=150)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LeadAttachment": {
+      "label": "target_core.LeadAttachment",
+      "table": "target_core_leadattachment",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "attachment_type": "models.CharField(blank=True, max_length=40)",
+        "remark": "models.TextField(blank=True)",
+        "proposal_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "DocumentUsage": {
+      "label": "target_core.DocumentUsage",
+      "table": "target_core_documentusage",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "report_usage": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.reportusage')",
+        "usage_of_report_code": "models.CharField(blank=True, max_length=40)",
+        "remarks": "models.TextField(blank=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ChargeType": {
+      "label": "target_core.ChargeType",
+      "table": "target_core_chargetype",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "source_sequence": "models.PositiveIntegerField(db_index=True, null=True)",
+        "charge_kind": "models.CharField(blank=True, max_length=40)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ValuationCharge": {
+      "label": "target_core.ValuationCharge",
+      "table": "target_core_valuationcharge",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='charges', to='target_core.valuation')",
+        "charge_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.chargetype')",
+        "amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "cgst": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "sgst": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "igst": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "total_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "InvoiceFollowUp": {
+      "label": "target_core.InvoiceFollowUp",
+      "table": "target_core_invoicefollowup",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "invoice": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='follow_ups', to='target_core.invoice')",
+        "call_status": "models.CharField(blank=True, max_length=50)",
+        "logged_date_text": "models.CharField(blank=True, max_length=50)",
+        "logged_time_text": "models.CharField(blank=True, max_length=20)",
+        "remark": "models.TextField(blank=True)",
+        "legacy_update_date": "models.CharField(blank=True, max_length=45)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "IssuerAccount": {
+      "label": "target_core.IssuerAccount",
+      "table": "target_core_issueraccount",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "code": "models.PositiveIntegerField(db_index=True, null=True)",
+        "branch_code": "models.CharField(blank=True, max_length=40)",
+        "account_number": "models.CharField(blank=True, max_length=40)",
+        "ifsc_code": "models.CharField(blank=True, max_length=100)",
+        "branch_address": "models.TextField(blank=True)",
+        "gst_number": "models.CharField(blank=True, max_length=100)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "QuestionCategory": {
+      "label": "target_core.QuestionCategory",
+      "table": "target_core_questioncategory",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "source_sequence": "models.PositiveIntegerField(db_index=True, null=True)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Question": {
+      "label": "target_core.Question",
+      "table": "target_core_question",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "source_sequence": "models.PositiveIntegerField(db_index=True, null=True)",
+        "service": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicesubtype')",
+        "category": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.questioncategory')",
+        "text": "models.TextField(blank=True)",
+        "answer_type": "models.PositiveSmallIntegerField(null=True)",
+        "question_type": "models.PositiveSmallIntegerField(null=True)",
+        "is_document": "models.BooleanField(default=False)",
+        "is_mandatory": "models.BooleanField(default=False)",
+        "display_order": "models.DecimalField(decimal_places=2, max_digits=8, null=True)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "QuestionOption": {
+      "label": "target_core.QuestionOption",
+      "table": "target_core_questionoption",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "source_sequence": "models.PositiveIntegerField(db_index=True, null=True)",
+        "question": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='options', to='target_core.question')",
+        "value": "models.TextField(blank=True)",
+        "value_type": "models.CharField(blank=True, max_length=200)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ValuationAnswer": {
+      "label": "target_core.ValuationAnswer",
+      "table": "target_core_valuationanswer",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='answers', to='target_core.valuation')",
+        "question": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.question')",
+        "option": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.questionoption')",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "answer_group": "models.PositiveIntegerField(db_index=True, default=0)",
+        "value": "models.TextField(blank=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': [models.Index(fields=['valuation', 'question', 'answer_group'], name='target_core_valuati_ea5bb1_idx')]}"
+    },
+    "ValuationVerification": {
+      "label": "target_core.ValuationVerification",
+      "table": "target_core_valuationverification",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='verifications', to='target_core.valuation')",
+        "legal_done_by_name": "models.TextField(blank=True)",
+        "legal_date": "models.DateField(null=True)",
+        "legal_status": "models.CharField(blank=True, max_length=40)",
+        "legal_remark": "models.TextField(blank=True)",
+        "technical_done_by_name": "models.CharField(blank=True, max_length=250)",
+        "technical_date": "models.DateField(null=True)",
+        "technical_status": "models.CharField(blank=True, max_length=40)",
+        "technical_remark": "models.TextField(blank=True)",
+        "social_done_by_name": "models.CharField(blank=True, max_length=250)",
+        "social_date": "models.DateField(null=True)",
+        "social_status": "models.CharField(blank=True, max_length=40)",
+        "social_remark": "models.TextField(blank=True)",
+        "general_done_by_name": "models.CharField(blank=True, max_length=300)",
+        "general_date": "models.DateField(null=True)",
+        "general_status": "models.CharField(blank=True, max_length=40)",
+        "general_remark": "models.TextField(blank=True)",
+        "final_done_by_name": "models.CharField(blank=True, max_length=200)",
+        "final_status": "models.CharField(blank=True, max_length=100)",
+        "legal_done_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "technical_done_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "social_done_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "general_done_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "final_done_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Reversion": {
+      "label": "target_core.Reversion",
+      "table": "target_core_reversion",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='reversions', to='target_core.valuation')",
+        "remark": "models.CharField(blank=True, max_length=300)",
+        "reverted_on": "models.DateField(null=True)",
+        "reverted_by_name": "models.CharField(blank=True, max_length=200)",
+        "reverted_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "stage": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "WorkOrderRevision": {
+      "label": "target_core.WorkOrderRevision",
+      "table": "target_core_workorderrevision",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "lead": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "number": "models.CharField(blank=True, max_length=100)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "FeeRule": {
+      "label": "target_core.FeeRule",
+      "table": "target_core_feerule",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "bank": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.bank')",
+        "fmv_category": "models.CharField(blank=True, max_length=40)",
+        "fmv_range_min": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "fmv_range_max": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "per_lac_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "additional_charge": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "min_fee": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "max_fee": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ReportUsage": {
+      "label": "target_core.ReportUsage",
+      "table": "target_core_reportusage",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "service": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicesubtype')",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "BankReport": {
+      "label": "target_core.BankReport",
+      "table": "target_core_bankreport",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='bank_reports', to='target_core.valuation')",
+        "bank": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.bank')",
+        "branch": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.bankbranch')",
+        "document": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')",
+        "report_number": "models.CharField(blank=True, max_length=45)",
+        "report_date": "models.DateField(null=True)",
+        "our_reference": "models.CharField(blank=True, max_length=50)",
+        "your_reference": "models.CharField(blank=True, max_length=150)",
+        "omen_id": "models.CharField(blank=True, max_length=50)",
+        "unique_reference": "models.CharField(blank=True, max_length=50)",
+        "market_fair_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "realisable_value_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "book_value_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "distress_value_amount": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "market_fair_amount_word": "models.CharField(blank=True, max_length=400)",
+        "realisable_value_amount_word": "models.CharField(blank=True, max_length=400)",
+        "book_value_amount_word": "models.CharField(blank=True, max_length=400)",
+        "distress_value_amount_word": "models.CharField(blank=True, max_length=400)",
+        "bank_certificate": "models.TextField(blank=True)",
+        "legacy_liable_fa": "models.CharField(blank=True, max_length=40)",
+        "revision": "models.PositiveIntegerField(default=0)",
+        "superseded_at": "models.DateTimeField(blank=True, null=True)",
+        "template": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.reporttemplate')",
+        "generated_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "generated_by_name": "models.CharField(blank=True, max_length=200)",
+        "generated_at": "models.DateTimeField(blank=True, null=True)",
+        "approved_at": "models.DateTimeField(blank=True, null=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LegacyProject": {
+      "label": "target_core.LegacyProject",
+      "table": "target_core_legacyproject",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "RoleDefinition": {
+      "label": "target_core.RoleDefinition",
+      "table": "target_core_roledefinition",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "project": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.legacyproject')",
+        "code": "models.CharField(blank=True, max_length=20)",
+        "name_hindi": "models.CharField(blank=True, max_length=500)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LegacyAccount": {
+      "label": "target_core.LegacyAccount",
+      "table": "target_core_legacyaccount",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "login_id": "models.CharField(blank=True, db_index=True, max_length=50)",
+        "email": "models.CharField(blank=True, max_length=100)",
+        "mobile": "models.CharField(blank=True, max_length=12)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "employee": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='legacy_accounts', to='target_core.employee')",
+        "user": "models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='legacy_account', to=settings.AUTH_USER_MODEL)",
+        "merged_into": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='merged_accounts', to='target_core.legacyaccount')",
+        "merge_reason": "models.CharField(blank=True, max_length=300)",
+        "must_change_password": "models.BooleanField(default=True)",
+        "issued_password_hash": "models.CharField(blank=True, editable=False, max_length=128)",
+        "provisioned_at": "models.DateTimeField(blank=True, null=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "RoleAssignment": {
+      "label": "target_core.RoleAssignment",
+      "table": "target_core_roleassignment",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "account": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='role_assignments', to='target_core.legacyaccount')",
+        "role": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.roledefinition')",
+        "project": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.legacyproject')",
+        "legacy_role_code": "models.CharField(blank=True, max_length=10)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)",
+        "remark": "models.CharField(blank=True, max_length=250)",
+        "scope_region": "models.CharField(blank=True, max_length=10)",
+        "scope_circle": "models.CharField(blank=True, max_length=10)",
+        "scope_division": "models.CharField(blank=True, max_length=10)",
+        "scope_subdivision": "models.CharField(blank=True, max_length=10)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "LoginEvent": {
+      "label": "target_core.LoginEvent",
+      "table": "target_core_loginevent",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "account": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='login_events', to='target_core.legacyaccount')",
+        "login_at": "models.DateTimeField(db_index=True, null=True)",
+        "logout_at": "models.DateTimeField(null=True)",
+        "ip_address": "models.CharField(blank=True, max_length=100)",
+        "mac_address": "models.CharField(blank=True, max_length=100)",
+        "login_action": "models.CharField(blank=True, max_length=200)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ReportTemplate": {
+      "label": "target_core.ReportTemplate",
+      "table": "target_core_reporttemplate",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "client_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clienttype')",
+        "service": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.servicesubtype')",
+        "bank": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.bank')",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ReportHeading": {
+      "label": "target_core.ReportHeading",
+      "table": "target_core_reportheading",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "name": "models.CharField(max_length=500)",
+        "client_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clienttype')",
+        "bank": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.bank')",
+        "display_order": "models.IntegerField(null=True)",
+        "legacy_status": "models.CharField(blank=True, max_length=40)",
+        "legacy_deleted": "models.CharField(blank=True, max_length=40)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ReportTemplateLine": {
+      "label": "target_core.ReportTemplateLine",
+      "table": "target_core_reporttemplateline",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "template": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='lines', to='target_core.reporttemplate')",
+        "question": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.question')",
+        "heading": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.reportheading')",
+        "output_label": "models.CharField(blank=True, max_length=1000)",
+        "content_before": "models.CharField(blank=True, max_length=500)",
+        "content_after": "models.CharField(blank=True, max_length=500)",
+        "sequence": "models.IntegerField(null=True)",
+        "indexing": "models.CharField(blank=True, max_length=10)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "Dispatch": {
+      "label": "target_core.Dispatch",
+      "table": "target_core_dispatch",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "number": "models.CharField(db_index=True, max_length=50)",
+        "client_name": "models.CharField(blank=True, max_length=100)",
+        "customer_name": "models.CharField(blank=True, max_length=200)",
+        "town": "models.CharField(blank=True, max_length=255)",
+        "document_count": "models.IntegerField(null=True)",
+        "report_references": "models.CharField(blank=True, max_length=500)",
+        "other_documents": "models.CharField(blank=True, max_length=500)",
+        "mode": "models.IntegerField(choices=[(1, 'Courier'), (2, 'Speed Post'), (3, 'By Hand'), (4, 'Pick up from HO'), (5, 'By E-Mail'), (6, 'Normal Post')], null=True)",
+        "status": "models.IntegerField(choices=[(1, 'Lying at HO'), (2, 'Under Transit'), (3, 'Delivered')], null=True)",
+        "courier": "models.IntegerField(choices=[(1, 'Madhur Courier Services'), (2, 'India Post Services'), (3, 'Other')], null=True)",
+        "other_courier": "models.CharField(blank=True, max_length=500)",
+        "consignment_number": "models.CharField(blank=True, max_length=500)",
+        "authorized_person": "models.CharField(blank=True, max_length=500)",
+        "cost": "models.DecimalField(decimal_places=6, max_digits=24, null=True)",
+        "outward_date": "models.DateField(null=True)",
+        "filter_date": "models.DateField(null=True)",
+        "delivered_date": "models.DateField(null=True)",
+        "cancelled": "models.BooleanField(default=False)",
+        "cancel_remark": "models.TextField(blank=True)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "DispatchItem": {
+      "label": "target_core.DispatchItem",
+      "table": "target_core_dispatchitem",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "dispatch": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='items', to='target_core.dispatch')",
+        "position": "models.PositiveIntegerField()",
+        "reference": "models.CharField(max_length=100)",
+        "valuation": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='dispatch_items', to='target_core.valuation')",
+        "lead": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
+        "resolution": "models.CharField(choices=[('exact', 'Matched a report number exactly'), ('normalized', 'Matched after correcting spacing, hyphen or prefix'), ('lead_number', 'A lead number entered where a report number belongs'), ('unresolved', 'No valuation carries this report number')], max_length=20)"
+      },
+      "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(fields=('dispatch', 'position'), name='dispatch_item_position')], 'indexes': []}"
+    },
+    "SmsMessage": {
+      "label": "target_core.SmsMessage",
+      "table": "target_core_smsmessage",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "reference_client_id": "models.CharField(blank=True, max_length=100)",
+        "record_id": "models.IntegerField(null=True)",
+        "mobile": "models.CharField(blank=True, max_length=100)",
+        "message": "models.TextField(blank=True)",
+        "client_type": "models.CharField(blank=True, max_length=100)",
+        "template_id": "models.CharField(blank=True, max_length=100)",
+        "sender_id": "models.CharField(blank=True, max_length=100)",
+        "response_code": "models.CharField(blank=True, max_length=100)",
+        "response_message": "models.TextField(blank=True)",
+        "delivery_report": "models.CharField(blank=True, max_length=100)",
+        "request_reference": "models.CharField(blank=True, max_length=100)",
+        "gateway_transaction": "models.CharField(blank=True, max_length=100)",
+        "sent_at": "models.DateTimeField(db_index=True, null=True)",
+        "server_ip_address": "models.CharField(blank=True, max_length=100)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "ValuationEvent": {
+      "label": "target_core.ValuationEvent",
+      "table": "target_core_valuationevent",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='events', to='target_core.valuation')",
+        "kind": "models.CharField(choices=[('hold', 'Put on hold'), ('unhold', 'Taken off hold'), ('cancel', 'Cancelled'), ('approve', 'Final approval')], max_length=20)",
+        "from_status": "models.CharField(blank=True, max_length=80)",
+        "to_status": "models.CharField(blank=True, max_length=80)",
+        "reason": "models.TextField(blank=True)",
+        "on": "models.DateField(null=True)",
+        "by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "by_name": "models.CharField(blank=True, max_length=200)"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    },
+    "CreditNote": {
+      "label": "target_core.CreditNote",
+      "table": "target_core_creditnote",
+      "fields": {
+        "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
+        "created_at": "models.DateTimeField(auto_now_add=True)",
+        "updated_at": "models.DateTimeField(auto_now=True)",
+        "invoice": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='credit_notes', to='target_core.invoice')",
+        "number": "models.CharField(db_index=True, max_length=100)",
+        "local_sequence": "models.PositiveBigIntegerField(editable=False, unique=True)",
+        "issued_on": "models.DateField()",
+        "taxable_amount": "models.DecimalField(decimal_places=6, max_digits=24)",
+        "tax_amount": "models.DecimalField(decimal_places=6, max_digits=24)",
+        "total_amount": "models.DecimalField(decimal_places=6, max_digits=24)",
+        "reason": "models.TextField()",
+        "refund_due": "models.DecimalField(decimal_places=6, default=0, max_digits=24)",
+        "issued_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "issued_by_name": "models.CharField(blank=True, max_length=200)",
+        "document": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.document')"
+      },
+      "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
+    }
+  },
+  "routes": [
+    "api/intake/catalog/",
+    "api/intake/offices/",
+    "api/intake/offices/<uuid:pk>/",
+    "api/intake/contacts/",
+    "api/intake/contacts/<uuid:pk>/",
+    "api/intake/leads/",
+    "api/intake/leads/<uuid:pk>/",
+    "api/intake/leads/<uuid:pk>/<str:kind>/",
+    "api/session/",
+    "api/login/",
+    "api/logout/",
+    "api/password/",
+    "api/offices/",
+    "api/leads/",
+    "api/leads/<uuid:pk>/",
+    "api/summary/",
+    "api/valuations/",
+    "api/valuations/cases/<uuid:pk>/",
+    "api/valuations/<uuid:pk>/",
+    "api/valuations/<uuid:pk>/sections/<str:key>/",
+    "api/valuations/<uuid:pk>/billing/",
+    "api/valuations/<uuid:pk>/submission/",
+    "api/valuations/<uuid:pk>/photos/",
+    "api/valuations/<uuid:pk>/photos/<uuid:photo_pk>/",
+    "api/valuations/<uuid:pk>/photos/<uuid:photo_pk>/file/",
+    "api/valuations/<uuid:pk>/documents/",
+    "api/valuations/<uuid:pk>/documents/<uuid:document_pk>/file/",
+    "api/invoices/",
+    "api/invoices/valuations/<uuid:pk>/",
+    "api/invoices/credit-notes/<uuid:pk>/document/",
+    "api/invoices/<uuid:pk>/",
+    "api/invoices/<uuid:pk>/document/",
+    "api/invoices/<uuid:pk>/payments/",
+    "api/invoices/<uuid:pk>/write-off/",
+    "api/invoices/<uuid:pk>/credit-note/",
+    "api/approvals/",
+    "api/approvals/<uuid:pk>/",
+    "api/approvals/<uuid:pk>/approve/",
+    "api/approvals/<uuid:pk>/revert/",
+    "api/valuations/<uuid:pk>/standing/",
+    "api/valuations/<uuid:pk>/standing/<str:action>/",
+    "api/bank-reports/",
+    "api/bank-reports/banks/",
+    "api/bank-reports/branches/",
+    "api/bank-reports/<uuid:pk>/",
+    "api/bank-reports/<uuid:pk>/document/",
+    "api/verifications/",
+    "api/verifications/<uuid:pk>/",
+    "api/verifications/<uuid:pk>/revert/",
+    "api/verifications/<uuid:pk>/<str:track>/",
+    "api/work-orders/",
+    "api/work-orders/<uuid:pk>/",
+    "api/work-orders/<uuid:pk>/document/",
+    "api/work-orders/leads/<uuid:pk>/"
+  ]
+}

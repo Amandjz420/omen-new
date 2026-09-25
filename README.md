@@ -84,3 +84,7 @@ At the lead-intake checkpoint, 72 tests pass under both settings; browser verifi
 - [Handoff history](HANDOFF.md)
 
 Older reports describe their dated checkpoints and must not override the current implementation guide. SQL dumps, SQLite databases, credentials and salary/contact payloads must not be committed or included in general-purpose handoffs.
+
+## Code organization
+
+The backend is organized into business apps under `backend/apps/`. See [the Django architecture guide](database/DJANGO_APP_ARCHITECTURE.md) for model ownership, workflow locations, domain tests and migration compatibility. Existing database labels and API URLs are preserved.
