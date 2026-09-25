@@ -248,3 +248,33 @@ class ImportedExtrasEditTests(TestCase):
         self.assertEqual(report['lead_mngt.valuation_billing']['inserted'], 0)
         self.assertEqual(m.ValuationCharge.objects.get().amount, Decimal('1500.00'))
         self.assertFalse(m.ValuationAttachment.objects.exists())
+
+
+class BillingTotalsTests(Extras):
+    """Review finding G5: totals must match the stored lines."""
+
+    def test_codex_reproduction_an_omitted_line_still_counts(self):
+        self.bill({'1': '1000', '3': '100'})
+        body = self.bill({'1': '2000'}).json()                              # the photo line is omitted
+        self.assertEqual(body['totals']['total'], '2100.00')                 # previously 2000.00
+        stored = sum(c.amount for c in m.ValuationCharge.objects.filter(valuation_id=self.v))
+        self.assertEqual(m.Valuation.objects.get(pk=self.v).total_billing_amount, stored)
+
+    def test_a_retired_head_with_a_stored_line_is_shown_and_counted(self):
+        self.bill({'1': '1000', '6': '50'})
+        m.ChargeType.objects.filter(pk=self.heads['6'].pk).update(legacy_deleted='1')
+        body = self.client.get(f'/api/valuations/{self.v}/billing/').json()
+        courier = next(l for l in body['lines'] if l['charge_type'] == str(self.heads['6'].pk))
+        self.assertTrue(courier['retired'])
+        self.assertEqual(body['totals']['total'], '1050.00')
+        self.assertEqual(self.bill({'6': '0', '1': '1000'}).json()['totals']['total'], '1000.00')   # correctable
+
+    def test_a_head_with_several_legacy_lines_is_not_edited_as_one(self):
+        for amount in ('600', '400'):
+            m.ValuationCharge.objects.create(valuation_id=self.v, charge_type=self.heads['1'], amount=Decimal(amount))
+        body = self.client.get(f'/api/valuations/{self.v}/billing/').json()
+        pro = next(l for l in body['lines'] if l['charge_type'] == str(self.heads['1'].pk))
+        self.assertEqual((pro['amount'], pro['stored_lines']), ('1000.00', 2))
+        self.assertEqual(self.bill({'1': '1500'}).status_code, 409)
+        self.assertEqual(self.bill({'1': '1000', '3': '100'}).json()['totals']['total'], '1100.00')
+        self.assertEqual(m.ValuationCharge.objects.filter(valuation_id=self.v, charge_type=self.heads['1']).count(), 2)

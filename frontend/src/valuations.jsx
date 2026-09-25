@@ -256,8 +256,10 @@ function Billing({api, id}) {
     {data.locked_reason && <p className="notice">{data.locked_reason}</p>}
     {error && <p role="alert" className="error">{error}</p>}
     <div className="table-wrap"><table><tbody>
-      {data.lines.map(l => <tr key={l.charge_type}><td>{l.name}{l.discount && <small> (reduces the bill)</small>}</td>
-        <td><input inputMode="decimal" value={lines[l.charge_type] ?? ''} disabled={!data.editable}
+      {data.lines.map(l => <tr key={l.charge_type}><td>{l.name}{l.discount && <small> (reduces the bill)</small>}
+        {l.retired && <small className="muted"> (retired charge; set to 0 to remove)</small>}
+        {l.stored_lines > 1 && <small className="muted"> ({l.stored_lines} lines from the previous system; shown as their total)</small>}</td>
+        <td><input inputMode="decimal" value={lines[l.charge_type] ?? ''} disabled={!data.editable || l.stored_lines > 1}
           onChange={e => setLines({...lines, [l.charge_type]: e.target.value})}/></td></tr>)}
       <tr><td><strong>Total</strong></td><td><strong>₹ {rupees(total)}</strong></td></tr>
       <tr><td>GST at {Number(data.gst_rate) * 100}%</td><td>₹ {rupees(afterTax - total)}</td></tr>

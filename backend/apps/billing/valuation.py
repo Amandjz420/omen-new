@@ -75,6 +75,23 @@ def totals(lines, advance, discount):
             'after_tax': after_tax, 'advance': advance, 'remaining': after_tax - advance}
 
 
+def stored_lines(valuation):
+    """Every stored charge line, grouped by head, current or retired. Totals are
+    always the sum of all of them, as the legacy total was: the save used to total
+    only the submitted lines, so a line omitted from a request stayed stored but
+    was left out of the total (review finding G5). 42 heads across 7 imported
+    valuations hold more than one legacy line, which a per-head lookup hid."""
+    grouped = {}
+    for charge in m.ValuationCharge.objects.filter(valuation=valuation).select_related('charge_type').order_by('id'):
+        grouped.setdefault(charge.charge_type_id, []).append(charge)
+    return grouped
+
+
+def line_amount(charges, discount):
+    total = sum((c.amount or Decimal('0') for c in charges), Decimal('0'))
+    return -abs(total) if charges and charges[0].charge_type_id == discount else total
+
+
 def invoiced(valuation):
     """A standing invoice locks billing; one reversed by a credit note does not."""
     return m.Invoice.objects.filter(valuation=valuation, cancelled_at__isnull=True).exists()
@@ -82,9 +99,12 @@ def invoiced(valuation):
 
 def billing_json(valuation):
     discount = discount_id()
-    stored = {c.charge_type_id: c for c in m.ValuationCharge.objects.filter(valuation=valuation)}
-    lines = {h.pk: (stored[h.pk].amount if h.pk in stored and stored[h.pk].amount is not None else Decimal('0'))
-             for h in heads()}
+    stored = stored_lines(valuation)
+    current = heads()
+    retired = [charges[0].charge_type for head_id, charges in stored.items()
+               if head_id not in {h.pk for h in current} and charges[0].charge_type is not None]
+    shown = current + sorted(retired, key=lambda h: (h.source_sequence or 0, h.name))
+    lines = {h.pk: line_amount(stored.get(h.pk, []), discount) for h in shown}
     advance = valuation.advance_collected or Decimal('0')
     computed = totals(lines, advance, discount)
     locked = invoiced(valuation)
@@ -94,7 +114,8 @@ def billing_json(valuation):
             'locked_reason': 'This valuation has been invoiced; change its charges through invoicing.' if locked else '',
             'gst_rate': str(GST_RATE),
             'lines': [{'charge_type': h.pk, 'name': h.name.strip(), 'discount': h.pk == discount,
-                       'amount': as_str(abs(lines[h.pk]))} for h in heads()],
+                       'amount': as_str(abs(lines[h.pk])), 'retired': h not in current,
+                       'stored_lines': len(stored.get(h.pk, []))} for h in shown],
             'totals': {k: as_str(v) for k, v in computed.items()},
             # What the legacy system stored, so a discrepancy with the computed
             # figures stays visible rather than being silently replaced.
@@ -122,13 +143,23 @@ def save(request, valuation):
     data = payload(request, ['lines', 'advance'])
     if not isinstance(data.get('lines'), list):
         raise IntakeError('lines must be a list')
-    known = {str(h.pk): h for h in heads()}
     discount = discount_id()
+    stored = stored_lines(valuation)
+    known = {str(h.pk): h for h in heads()}
+    # A retired head that still holds lines on this valuation can be corrected.
+    known.update({str(head_id): charges[0].charge_type for head_id, charges in stored.items()
+                  if charges[0].charge_type is not None})
     amounts = {}
     for item in data['lines']:
         head = known.get(str((item or {}).get('charge_type')))
         if head is None:
             raise IntakeError('Every line must name a current charge head')
+        if len(stored.get(head.pk, [])) > 1:
+            existing_total = abs(line_amount(stored[head.pk], discount))
+            if money(item.get('amount'), head.name.strip()).copy_abs() != existing_total:
+                raise IntakeError(f'{head.name.strip()} holds {len(stored[head.pk])} lines from the previous system; '
+                                  'review them before changing the amount', 409)
+            continue                                    # unchanged: its stored lines stay as they are
         amount = money(item.get('amount'), head.name.strip())
         if head.pk != discount and amount < 0:
             raise IntakeError(f'{head.name.strip()} cannot be negative; enter reductions as a discount')
@@ -137,19 +168,22 @@ def save(request, valuation):
     advance = money(data.get('advance'), 'Advance paid')
     if advance < 0:
         raise IntakeError('Advance paid cannot be negative')
-    computed = totals(amounts, advance, discount)
+    # Partial update: submitted heads change, every other stored line stays, and the
+    # totals come from the final stored set rather than the request alone.
+    final = {head_id: line_amount(charges, discount) for head_id, charges in stored.items()}
+    final.update(amounts)
+    computed = totals(final, advance, discount)
     if computed['total'] < 0:
         raise IntakeError('The discount is larger than the charges')
 
     before = snapshot(valuation)
-    existing = {c.charge_type_id: c for c in m.ValuationCharge.objects.filter(valuation=valuation)}
     for head_id, amount in amounts.items():
-        line = existing.get(head_id)
-        if line is None:
+        lines = stored.get(head_id, [])
+        if not lines:
             m.ValuationCharge.objects.create(valuation=valuation, charge_type_id=head_id, amount=amount)
-        elif line.amount != amount:
-            line.amount = amount
-            line.save(update_fields=['amount'])
+        elif lines[0].amount != amount:
+            lines[0].amount = amount
+            lines[0].save(update_fields=['amount'])
     valuation.total_billing_amount = computed['total']
     valuation.advance_collected = advance
     valuation.total_after_tax = computed['after_tax']
