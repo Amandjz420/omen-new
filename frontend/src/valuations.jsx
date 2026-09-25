@@ -82,7 +82,7 @@ function ValuationForm({api, id, onBack}) {
     if (!key || key.startsWith('__')) {setDirty(false); return;}
     setSection(null); setSaved('');
     api(`valuations/${id}/sections/${key}/`).then(s => {
-      setSection(s); setDirty(false);
+      setSection(s); setDirty(false); setChanged(new Set());
       setDraft(Object.fromEntries(s.questions.map(q => [q.id, structuredClone(q.answer)])));
     }).catch(e => setError(e.message));
   }, [key]);
@@ -91,14 +91,20 @@ function ValuationForm({api, id, onBack}) {
     if (dirty && !window.confirm('Leave this section without saving your changes?')) return;
     setKey(next);
   }
-  const edit = (qid, answer) => {setDraft(d => ({...d, [qid]: answer})); setDirty(true); setSaved('');};
+  // Only questions the user changed are sent; an untouched question is never
+  // rewritten, so opening and saving a section cannot alter historical answers.
+  const [changed, setChanged] = useState(new Set());
+  const edit = (qid, answer) => {setDraft(d => ({...d, [qid]: answer})); setChanged(c => new Set(c).add(qid)); setDirty(true); setSaved('');};
 
   async function save() {
+    const edited = section.questions.filter(q => changed.has(q.id));
+    const conflicting = edited.filter(q => q.conflicts?.length);
+    if (conflicting.length && !window.confirm(`${conflicting.map(q => `"${q.text}"`).join(', ')} ${conflicting.length > 1 ? 'hold' : 'holds'} conflicting answers from the previous system. Saving replaces them with what you entered. Continue?`)) return;
     setSaving(true); setError('');
     try {
-      const answers = section.questions.map(q => ({question: q.id, ...draft[q.id]}));
+      const answers = edited.map(q => ({question: q.id, ...draft[q.id], ...(q.conflicts?.length ? {resolve: true} : {})}));
       const result = await api(`valuations/${id}/sections/${key}/`, {method: 'PUT', body: JSON.stringify({answers})});
-      setSection(result); setDirty(false);
+      setSection(result); setDirty(false); setChanged(new Set());
       setDraft(Object.fromEntries(result.questions.map(q => [q.id, structuredClone(q.answer)])));
       setHead(h => ({...h, sections: result.sections}));
       setSaved('Saved');
@@ -174,7 +180,8 @@ function Documents({q, selected, readOnly, files}) {
 }
 
 export function Question({q, value, readOnly, onChange, files}) {
-  const title = <legend>{q.text}{q.mandatory && <span className="required"> *</span>}{q.retired && <small className="muted"> (retired question)</small>}</legend>;
+  const title = <><legend>{q.text}{q.mandatory && <span className="required"> *</span>}{q.retired && <small className="muted"> (retired question)</small>}</legend>
+    {q.conflicts?.length > 0 && <p className="notice">The previous system stored conflicting answers here: {q.conflicts.map(c => c.values.join(' / ')).join('; ')}. The first is shown. Changing this question replaces them.</p>}</>;
   if (!value) return null;
   if (q.kind === 'single' || q.kind === 'multiple') {
     const selected = new Set(value.selected);

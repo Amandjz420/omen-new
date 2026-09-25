@@ -185,8 +185,23 @@ def answer_of(question, answers, options):
     rows = {}
     for a in answers:
         if a.option_id:
-            rows.setdefault(a.answer_group, {})[str(a.option_id)] = a.value
+            rows.setdefault(a.answer_group, {}).setdefault(str(a.option_id), a.value)
     return {'rows': [{'group': g, 'cells': cells} for g, cells in sorted(rows.items())]}
+
+
+def conflicts(answers):
+    """Stored answers that share one cell (question, option, row group) but differ
+    in value or attached document. The legacy data holds some; the form shows the
+    first, so they are reported rather than silently merged (review finding G2)."""
+    cells = {}
+    for a in answers:
+        cells.setdefault((str(a.option_id or ''), a.answer_group), []).append(a)
+    out = []
+    for (option, group), found in cells.items():
+        if len(found) > 1 and len({(a.value, a.document_id) for a in found}) > 1:
+            out.append({'option': option or None, 'group': group, 'values': [a.value for a in found],
+                        'documents': sum(1 for a in found if a.document_id)})
+    return out
 
 
 def attached(answers):
@@ -203,6 +218,7 @@ def question_json(question, answers):
             'retired': question.legacy_deleted not in LIVE or question.legacy_status != '1',
             'options': [{'id': o.pk, 'label': o.value.strip(), 'column': o.value_type or ''} for o in options],
             'answer': answer_of(question, answers, options),
+            'conflicts': conflicts(answers),
             'documents': attached(answers) if question.is_document else []}
 
 
@@ -328,6 +344,9 @@ def save_section(request, valuation, questions):
     if not isinstance(submitted, list):
         raise IntakeError('answers must be a list')
     by_id = {str(q.pk): q for q in questions}
+    stored = {}
+    for a in m.ValuationAnswer.objects.filter(valuation=valuation, question__in=questions).order_by('answer_group', 'id'):
+        stored.setdefault(a.question_id, []).append(a)
     rows, touched = [], []
     for item in submitted:
         if not isinstance(item, dict) or str(item.get('question')) not in by_id:
@@ -335,7 +354,7 @@ def save_section(request, valuation, questions):
         question = by_id[str(item['question'])]
         options = {str(o.pk): o for o in options_of(question)}
         kind = KINDS.get(question.answer_type, 'text')
-        touched.append(question)
+        start = len(rows)
 
         def cell(option_id, value, group=0):
             if option_id not in options:
@@ -359,7 +378,24 @@ def save_section(request, valuation, questions):
                     cell(str(option_id), value)
         else:
             columns = {o.value_type: str(o.pk) for o in options.values() if o.value_type}
-            for group, entry in enumerate(item.get('rows') or [], 1):
+            # A row keeps its stored group number; renumbering from 1 made saved rows
+            # stop matching their stored answers and attachments. New rows take the
+            # next free number.
+            entries = item.get('rows') or []
+            given = []
+            for entry in entries:
+                g = (entry or {}).get('group')
+                if g is not None and (not isinstance(g, int) or isinstance(g, bool) or g < 0):
+                    raise IntakeError('A row group must be a whole number')
+                given.append(g)
+            if len([g for g in given if g is not None]) != len({g for g in given if g is not None}):
+                raise IntakeError(f'Two rows share a group in "{question.text.strip()[:60]}"')
+            taken = {a.answer_group for a in stored.get(question.pk, [])} | {g for g in given if g is not None}
+            following = max(taken | {0}) + 1
+            for entry, g in zip(entries, given):
+                if g is None:
+                    g, following = following, following + 1
+                group = g
                 cells = {str(k): v for k, v in ((entry or {}).get('cells') or {}).items()}
                 if kind == 'formula':
                     cells = formula(cells, columns)
@@ -367,11 +403,33 @@ def save_section(request, valuation, questions):
                     for option_id, value in cells.items():
                         cell(option_id, value, group)
 
+        wanted = rows[start:]
+        have = stored.get(question.pk, [])
+        shown = {}
+        for a in have:                                   # what the form displayed: the first per cell
+            shown.setdefault((a.option_id, a.answer_group), a.value)
+        asked = {(w.option_id, w.answer_group): w.value for w in wanted}
+        if asked == shown:
+            del rows[start:]                             # unchanged: leave its stored rows exactly as they are
+            continue
+        if conflicts(have) and item.get('resolve') is not True:
+            raise IntakeError(f'"{question.text.strip()[:60]}" holds conflicting historical answers for the same cell. '
+                              'Review them and confirm to replace them.', 409)
+        touched.append((question, have, wanted))
+
+    if not touched:
+        return
     before = snapshot(valuation)
     # Local ownership first: once an imported valuation is edited, its answers are
     # this edit's to replace, and the importer no longer compares them.
     record(request.user, valuation, before, action='save_valuation_section')
-    reconcile(valuation, touched, rows)
+    # Answer-level evidence of what each changed question held before and after.
+    row = lambda option, group, value, document=None: [str(option or ''), group, value, str(document or '')]
+    m.IntakeAudit.objects.create(
+        actor=request.user, action='change_valuation_answers', target_model=valuation._meta.label, target_id=valuation.pk,
+        before={str(q.pk): [row(a.option_id, a.answer_group, a.value, a.document_id) for a in have] for q, have, _ in touched},
+        after={str(q.pk): [row(w.option_id, w.answer_group, w.value) for w in wanted] for q, _, wanted in touched})
+    reconcile(valuation, [q for q, _, _ in touched], rows)
 
 
 def reconcile(valuation, questions, rows):

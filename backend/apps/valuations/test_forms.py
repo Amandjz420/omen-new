@@ -330,3 +330,88 @@ class ScopeFailsSafeTests(Form, TestCase):
     def test_a_valid_broad_role_keeps_full_access(self):
         self.client.force_login(user_with_role('145', self.me))
         self.assertEqual(self.client.get('/api/valuations/').json()['total'], 2)
+
+
+class HistoricalAnswerTests(Form, TestCase):
+    """Review finding G2: reading and saving must not rewrite historical answers."""
+
+    def setUp(self):
+        self.build()
+        self.client.force_login(User.objects.create_user('staff', password='x', is_staff=True))
+        case = self.lead_with_case()
+        self.v = self.client.post(f'/api/valuations/cases/{case.pk}/', {}, content_type='application/json').json()['id']
+        self.name, self.share = self.grid_opts
+
+    def store(self, option, group, value, document=None):
+        return m.ValuationAnswer.objects.create(valuation_id=self.v, question=self.grid, option=option,
+                                                answer_group=group, value=value, document=document)
+
+    def section(self):
+        return self.client.get(f'/api/valuations/{self.v}/sections/{self.site.pk}/').json()
+
+    def grid_of(self, body):
+        return next(q for q in body['questions'] if q['id'] == str(self.grid.pk))
+
+    def put(self, answers):
+        return self.client.put(f'/api/valuations/{self.v}/sections/{self.site.pk}/', {'answers': answers},
+                               content_type='application/json')
+
+    def stored(self):
+        return sorted((str(a.option_id), a.answer_group, a.value)
+                      for a in m.ValuationAnswer.objects.filter(valuation_id=self.v, question=self.grid))
+
+    def test_codex_reproduction_duplicate_cell_survives_an_unchanged_save(self):
+        self.store(self.name, 7, 'Mr. Tiwari')
+        self.store(self.name, 7, 'Mrs. Tiwari')
+        before = self.stored()
+        grid = self.grid_of(self.section())
+        self.assertEqual(len(grid['conflicts']), 1)                        # reported, not hidden
+        self.assertEqual(self.put([{'question': grid['id'], **grid['answer']}]).status_code, 200)
+        self.assertEqual(self.stored(), before)                            # previously one answer, in group 1
+
+    def test_an_unchanged_whole_section_round_trip_writes_nothing(self):
+        self.store(self.name, 7, 'Mr. Tiwari')
+        self.store(self.share, 9, '50%')
+        ids = set(m.ValuationAnswer.objects.values_list('id', flat=True))
+        body = self.section()
+        self.assertEqual(self.put([{'question': q['id'], **q['answer']} for q in body['questions']]).status_code, 200)
+        self.assertEqual(set(m.ValuationAnswer.objects.values_list('id', flat=True)), ids)
+        self.assertFalse(m.IntakeAudit.objects.filter(action='change_valuation_answers').exists())
+
+    def test_editing_one_row_keeps_group_numbers_and_documents(self):
+        deed = m.Document.objects.create(storage_provider='local', storage_key='x', original_name='deed.pdf')
+        kept = self.store(self.name, 7, 'Mr. Tiwari', document=deed)
+        self.store(self.name, 9, 'Mrs. Tiwari')
+        grid = self.grid_of(self.section())
+        rows = grid['answer']['rows']
+        rows[1]['cells'][str(self.name.pk)] = 'Mrs. Sharma'                  # edit group 9 only
+        self.assertEqual(self.put([{'question': grid['id'], 'rows': rows}]).status_code, 200)
+        self.assertEqual(self.stored(), [(str(self.name.pk), 7, 'Mr. Tiwari'), (str(self.name.pk), 9, 'Mrs. Sharma')])
+        kept.refresh_from_db()
+        self.assertEqual(kept.document_id, deed.pk)                         # same row, document intact
+
+    def test_a_new_row_takes_the_next_free_group(self):
+        self.store(self.name, 7, 'Mr. Tiwari')
+        grid = self.grid_of(self.section())
+        rows = grid['answer']['rows'] + [{'cells': {str(self.name.pk): 'New owner'}}]
+        self.put([{'question': grid['id'], 'rows': rows}])
+        self.assertIn((str(self.name.pk), 8, 'New owner'), self.stored())
+
+    def test_changing_a_conflicting_cell_needs_confirmation_and_is_evidenced(self):
+        self.store(self.name, 7, 'Mr. Tiwari')
+        self.store(self.name, 7, 'Mrs. Tiwari')
+        grid = self.grid_of(self.section())
+        rows = grid['answer']['rows']
+        rows[0]['cells'][str(self.name.pk)] = 'Resolved owner'
+        refused = self.put([{'question': grid['id'], 'rows': rows}])
+        self.assertEqual(refused.status_code, 409)
+        self.assertEqual(len(self.stored()), 2)                             # nothing merged
+        self.assertEqual(self.put([{'question': grid['id'], 'rows': rows, 'resolve': True}]).status_code, 200)
+        self.assertEqual(self.stored(), [(str(self.name.pk), 7, 'Resolved owner')])
+        audit = m.IntakeAudit.objects.get(action='change_valuation_answers')
+        self.assertEqual(sorted(r[2] for r in audit.before[str(self.grid.pk)]), ['Mr. Tiwari', 'Mrs. Tiwari'])
+
+    def test_two_rows_cannot_claim_one_group(self):
+        grid = self.grid_of(self.section())
+        rows = [{'group': 3, 'cells': {str(self.name.pk): 'A'}}, {'group': 3, 'cells': {str(self.name.pk): 'B'}}]
+        self.assertEqual(self.put([{'question': grid['id'], 'rows': rows}]).status_code, 400)
