@@ -1,6 +1,6 @@
 # Analytics
 
-See [the architecture guide](../../../database/DJANGO_APP_ARCHITECTURE.md) for boundaries and the stable database-label policy.
+See [the architecture guide](../../../migration-required/app-reference/DJANGO_APP_ARCHITECTURE.md) for boundaries and the stable database-label policy.
 
 This app owns read APIs and currently defines no persisted models.
 

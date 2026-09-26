@@ -8,7 +8,7 @@ PostgreSQL, including rendering/searching every model list, filter behavior,
 related-column query counts, domain navigation and autocomplete permissions.
 System checks and migration-drift checks pass. The existing receipt migration
 0020 was confirmed applied on the local database; this admin change applied no
-migration. See [the admin table guide](database/DJANGO_ADMIN_TABLE_GUIDE.md).
+migration. See [the admin table guide](../app-reference/DJANGO_ADMIN_TABLE_GUIDE.md).
 
 Admin navigation follow-up: the home page and sidebar now display business-domain
 groups. Nine focused admin/architecture tests pass on SQLite, covering domain
@@ -17,7 +17,7 @@ view-only user seeing only their permitted model. Schema drift remains zero.
 This UI grouping does not change the earlier business permissions or workflow policy.
 
 The backend model definitions and workflows are organized under `backend/apps/`.
-See [the architecture guide](database/DJANGO_APP_ARCHITECTURE.md). This checkpoint
+See [the architecture guide](../app-reference/DJANGO_APP_ARCHITECTURE.md). This checkpoint
 validates structural compatibility, not resolution of the separately reported
 business-workflow defects.
 
@@ -34,12 +34,12 @@ business-workflow defects.
   or production cutover was performed for this refactor.
 
 The dated checkpoints below are historical and should not be read as the current
-feature inventory. See the [expanded gap review](database/MIGRATION_GAP_REVIEW_2026-09-25.md)
+feature inventory. See the [expanded gap review](../reviews/MIGRATION_GAP_REVIEW_2026-09-25.md)
 for outstanding business functionality and defects.
 
 ## Historical checkpoint — 24 September 2026
 
-Lead intake is now implemented behind the existing admin/staff gate; business roles are deferred by the owner. See [the current implementation report](database/LEAD_INTAKE_IMPLEMENTATION.md) for APIs, source rules, limitations and evidence. Migration 0009 is applied locally after a consistent database backup. All 72 tests pass under both settings; frontend build and migration-drift checks pass. A disposable-database browser test covered office/contact creation, lead numbering and assignment, services, borrowers, cases and follow-ups. Existing target lead, case, office, contact and account counts were preserved.
+Lead intake is now implemented behind the existing admin/staff gate; business roles are deferred by the owner. See [the current implementation report](../app-reference/LEAD_INTAKE_IMPLEMENTATION.md) for APIs, source rules, limitations and evidence. Migration 0009 is applied locally after a consistent database backup. All 72 tests pass under both settings; frontend build and migration-drift checks pass. A disposable-database browser test covered office/contact creation, lead numbering and assignment, services, borrowers, cases and follow-ups. Existing target lead, case, office, contact and account counts were preserved.
 
 The sections below record the earlier identity-import checkpoint. Its source import totals remain relevant, but its test count and operational scope are historical.
 
@@ -88,7 +88,7 @@ grants and 74,164 login events are retained as evidence.
 ## Checks performed
 
 - **Fresh 73-table repeat import proposes 0 inserts and 0 updates**
-  (`database/target-repeat-73.json`), run against PostgreSQL.
+  (`migration-required/import-runs/repeat-proofs/target-repeat-73.json`), run against PostgreSQL.
 - 90 tests pass, on PostgreSQL, under both `config.settings` and `config.target`.
   `makemigrations --check` reports no drift. Frontend production build passes.
 - Every quarantine traced to a dangling legacy foreign key.

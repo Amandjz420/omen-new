@@ -40,7 +40,7 @@ The eight tests are the existing model/access-protection checks. There are no ne
 
 The saved zero-change repeat report covers 60 tables and 589,857 rows. The saved 61-table dry run predates the answer import and proposes 1,947,183 inserts. It is not evidence for idempotency of the full streaming pipeline. Run and retain a full 61-table post-import repeat report after fixing the defects.
 
-Locations: backend/target_core/tests.py; backend/target_core/management/commands/; database/target-repeat-2.json; database/target-dry-run-4.json.
+Locations: backend/target_core/tests.py; backend/target_core/management/commands/; migration-required/import-runs/repeat-proofs/target-repeat-2.json; migration-required/import-runs/dry-runs/target-dry-run-4.json.
 
 ### P2 — The UI hides corrected and unresolved case classifications
 

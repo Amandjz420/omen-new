@@ -165,7 +165,7 @@ The other current tests include schema/access protections and newly added import
 
 ### Browser
 
-The current production React build is tested with a temporary synthetic SQLite database and a loopback-only test server. `database/serve_flow_audit.py` builds that disposable environment and never opens the imported target database. This separates screen behavior from historical-data correctness.
+The current production React build is tested with a temporary synthetic SQLite database and a loopback-only test server. `migration-required/data-migration/serve_flow_audit.py` builds that disposable environment and never opens the imported target database. This separates screen behavior from historical-data correctness.
 
 Results: staff sign-in, overview reconciliation counts, lead search by source ID, linked case display, case-level warning display, note creation, session persistence after reload, note persistence after reload, office listing, import-history display and sign-out all passed in the browser. A browser success on this fixture is not evidence of every imported record's correctness, production deployment readiness or full-scale performance.
 
@@ -208,11 +208,11 @@ From `omen-next/backend`:
 .venv/bin/python manage.py test
 .venv/bin/python manage.py test --settings=config.target
 .venv/bin/python manage.py makemigrations --check --dry-run
-.venv/bin/python ../database/build_flow_inventory.py
+.venv/bin/python ../migration-required/data-migration/build_flow_inventory.py
 ```
 
 From `omen-next/frontend`: `npm run build`.
 
-For a synthetic browser check, run `backend/.venv/bin/python database/serve_flow_audit.py` from `omen-next`, use the temporary account it prints at `http://127.0.0.1:8187/`, then stop that test server. It removes its temporary database on normal shutdown. Do not use this test harness as deployment configuration.
+For a synthetic browser check, run `backend/.venv/bin/python migration-required/data-migration/serve_flow_audit.py` from `omen-next`, use the temporary account it prints at `http://127.0.0.1:8187/`, then stop that test server. It removes its temporary database on normal shutdown. Do not use this test harness as deployment configuration.
 
-Generated appendix: [LEAD_FLOW_INVENTORY.md](LEAD_FLOW_INVENTORY.md). Migration method: [MIGRATION_METHOD.md](MIGRATION_METHOD.md). Prior review: [REVIEW_CLAUDE_DEVIN.md](../REVIEW_CLAUDE_DEVIN.md).
+Generated appendix: [LEAD_FLOW_INVENTORY.md](LEAD_FLOW_INVENTORY.md). Migration method: [MIGRATION_METHOD.md](MIGRATION_METHOD.md). Prior review: [REVIEW_CLAUDE_DEVIN.md](../reviews/REVIEW_CLAUDE_DEVIN.md).

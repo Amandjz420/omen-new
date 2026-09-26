@@ -1,6 +1,6 @@
 ## Latest handoff: business-app refactor — 25 September 2026
 
-Read [DJANGO_APP_ARCHITECTURE.md](database/DJANGO_APP_ARCHITECTURE.md) before editing. All 83 target model definitions now live in `backend/apps/<domain>/models.py`; workflow implementations, URLs, admin registrations, commands and tests live with their business domains. `target_core` Python modules are compatibility imports, and its migrations and persistent app label intentionally remain authoritative. Edit implementations in `apps/`, not compatibility wrappers.
+Read [DJANGO_APP_ARCHITECTURE.md](../app-reference/DJANGO_APP_ARCHITECTURE.md) before editing. All 83 target model definitions now live in `backend/apps/<domain>/models.py`; workflow implementations, URLs, admin registrations, commands and tests live with their business domains. `target_core` Python modules are compatibility imports, and its migrations and persistent app label intentionally remain authoritative. Edit implementations in `apps/`, not compatibility wrappers.
 
 The receipt fields, importer additions and uncommitted migration 0020 present before the split were preserved. No application database migration or import was run. Both PostgreSQL settings pass 265 tests, and schema-drift/route/model-compatibility checks pass. The prior gap review remains open: this change reorganizes code and does not resolve the business defects. See VALIDATION.md for the evidence and the architecture guide for per-domain test commands and model-label rules.
 
@@ -8,7 +8,7 @@ The receipt fields, importer additions and uncommitted migration 0020 present be
 
 # Django and React migration: handoff to Claude / Devin
 
-**Latest checkpoint, 24 September 2026:** [Lead intake implementation](database/LEAD_INTAKE_IMPLEMENTATION.md) supersedes older operational-gap statements below for clients, contacts, lead creation, services, borrowers, cases, assignment and follow-ups. Business roles are explicitly deferred; existing admin/staff access remains required. Migration 0009 is applied locally, 72 tests pass under both settings, and the complete intake path was browser-tested against a disposable database. Work orders and valuation execution are next. The material below is retained as historical handoff evidence.
+**Latest checkpoint, 24 September 2026:** [Lead intake implementation](../app-reference/LEAD_INTAKE_IMPLEMENTATION.md) supersedes older operational-gap statements below for clients, contacts, lead creation, services, borrowers, cases, assignment and follow-ups. Business roles are explicitly deferred; existing admin/staff access remains required. Migration 0009 is applied locally, 72 tests pass under both settings, and the complete intake path was browser-tested against a disposable database. Work orders and valuation execution are next. The material below is retained as historical handoff evidence.
 
 Status at handoff: 16 September 2026. This document supersedes older progress claims where they conflict. The migration is incomplete. The architecture correction is implemented but its new import and API paths are not yet validated end to end.
 
@@ -86,9 +86,9 @@ Suggested execution, from `omen-next/backend`, after reviewing and testing the i
 .venv/bin/python manage.py test
 .venv/bin/python manage.py test --settings=config.target
 .venv/bin/python manage.py makemigrations --check --dry-run
-.venv/bin/python manage.py sync_legacy --settings=config.full_database --dry-run --report ../database/target-dry-run.json
-.venv/bin/python manage.py sync_legacy --settings=config.full_database --report ../database/target-import.json
-.venv/bin/python manage.py sync_legacy --settings=config.full_database --dry-run --report ../database/target-repeat.json
+.venv/bin/python manage.py sync_legacy --settings=config.full_database --dry-run --report ../migration-required/import-runs/dry-runs/target-dry-run.json
+.venv/bin/python manage.py sync_legacy --settings=config.full_database --report ../migration-required/import-runs/imports/target-import.json
+.venv/bin/python manage.py sync_legacy --settings=config.full_database --dry-run --report ../migration-required/import-runs/repeat-proofs/target-repeat.json
 ```
 
 The MySQL source configuration is local to `database/.local/connection.json`; do not include its contents in handoff reports. The ordinary web application uses the target database and does not need source access to serve imported data.
@@ -106,8 +106,8 @@ After the review gate, continue the remaining business migration in dependency o
 - `backend/target_core/models.py`, `sync.py`, `views.py`, `tests.py`, `migrations/`
 - `backend/config/settings.py`, `target.py`, `full_database.py`, `urls.py`
 - `frontend/src/` and `archive/prototype_core/`
-- `database/BUSINESS_ENTITIES.md`, `TARGET_SCHEMA_DESIGN.md`, `entity-review.json`, `target-disposition.json`
-- `database/mapping-catalog.json`, `verification.json`, `object-verification.json`
+- `migration-required/data-migration/BUSINESS_ENTITIES.md`, `TARGET_SCHEMA_DESIGN.md`, `entity-review.json`, `target-disposition.json`
+- `migration-required/data-migration/mapping-catalog.json`, `verification.json`, `object-verification.json`
 
 Do not distribute the SQL dump, credentials, salary/contact payloads or SQLite databases with a general-purpose handoff summary. Give implementation agents access only through the authorized project environment.
 

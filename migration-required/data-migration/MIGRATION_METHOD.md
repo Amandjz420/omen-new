@@ -79,16 +79,16 @@ The dump was restored into an isolated local MariaDB service. Verification captu
 
 The source baseline is recorded in:
 
-- `database/verification.json`
-- `database/object-verification.json`
-- `database/mapping-catalog.json`
-- `database/README.md`
+- `migration-required/data-migration/verification.json`
+- `migration-required/data-migration/object-verification.json`
+- `migration-required/data-migration/mapping-catalog.json`
+- `migration-required/data-migration/README.md`
 
 These reports establish what exists in the snapshot. They do not establish what should exist in the new product.
 
 ## 5. Phase B — Classify every source table
 
-Every source table received one preliminary disposition in `database/target-disposition.json` and `database/SOURCE_TO_TARGET.md`:
+Every source table received one preliminary disposition in `migration-required/data-migration/target-disposition.json` and `migration-required/data-migration/SOURCE_TO_TARGET.md`:
 
 - Retain as a business-domain candidate.
 - Consolidate repeated or period-partitioned tables.
@@ -309,7 +309,7 @@ inserted + updated + unchanged + quarantined = source_rows
 
 Reports use schema-qualified table names so tables such as `lead_mngt.upload` and `uam_user.upload` cannot overwrite each other in the report.
 
-The current committed full-import evidence is `database/target-import-final.json`. It records 61 tables and 2,537,219 source rows. Reports must not contain database credentials or complete source payloads.
+The current committed full-import evidence is `migration-required/import-runs/imports/target-import-final.json`. It records 61 tables and 2,537,219 source rows. Reports must not contain database credentials or complete source payloads.
 
 ## 17. Execution sequence
 
@@ -325,16 +325,16 @@ Run commands from `omen-next/backend`. The first command confirms target schema 
 .venv/bin/python manage.py sync_legacy \
   --settings=config.full_database \
   --dry-run \
-  --report ../database/target-dry-run.json
+  --report ../migration-required/import-runs/dry-runs/target-dry-run.json
 
 .venv/bin/python manage.py sync_legacy \
   --settings=config.full_database \
-  --report ../database/target-import.json
+  --report ../migration-required/import-runs/imports/target-import.json
 
 .venv/bin/python manage.py sync_legacy \
   --settings=config.full_database \
   --dry-run \
-  --report ../database/target-repeat.json
+  --report ../migration-required/import-runs/repeat-proofs/target-repeat.json
 ```
 
 Expected repeat-run behavior is zero unintended inserts and zero unintended updates. Quarantined rows may appear again until their relationships or mapping rules are resolved. The full 61-table repeat report must be retained as acceptance evidence.

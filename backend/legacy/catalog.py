@@ -7,7 +7,7 @@ from pathlib import Path
 
 @lru_cache(maxsize=1)
 def catalog():
-    path = Path(__file__).resolve().parents[2] / 'database/mapping-catalog.json'
+    path = Path(__file__).resolve().parents[2] / 'migration-required/data-migration/mapping-catalog.json'
     return {(t['schema'], t['table']): t for t in json.loads(path.read_text())['tables']}
 
 

@@ -6,7 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 STATE = ROOT / 'database' / '.local'
 NAME = 'omen-full-database-20260916'
 IMAGE = 'mariadb:10.11'

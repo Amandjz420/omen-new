@@ -8,7 +8,7 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'backend'))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.full_database')
 
@@ -49,7 +49,7 @@ def main():
     import django
     django.setup()
     from django.db import connections
-    catalog = json.loads((ROOT / 'database' / 'mapping-catalog.json').read_text())
+    catalog = json.loads((ROOT / 'migration-required' / 'data-migration' / 'mapping-catalog.json').read_text())
     expected, digest = source_counts(ROOT.parent / 'all_schemas_2026-09-10.sql', catalog['tables'])
     if digest != catalog['source_sha256']:
         raise SystemExit('Source checksum mismatch')
@@ -98,7 +98,7 @@ def main():
     for schema in catalog['schemas']:
         subset = [r for r in results if r['schema'] == schema]
         summary['schemas'][schema] = {'tables': len(subset), 'rows': sum(r['restored_rows'] for r in subset)}
-    (ROOT / 'database' / 'verification.json').write_text(json.dumps(summary, indent=2))
+    (ROOT / 'migration-required' / 'data-migration' / 'verification.json').write_text(json.dumps(summary, indent=2))
     print(json.dumps({k: v for k, v in summary.items() if k not in ('tables', 'objects')}, indent=2), flush=True)
     if failures:
         raise SystemExit('Reconciliation failures; see verification.json')

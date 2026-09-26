@@ -6,7 +6,7 @@ from bootstrap import ROOT, STATE, NAME
 
 
 def main():
-    catalog = json.loads((ROOT / 'database/mapping-catalog.json').read_text())
+    catalog = json.loads((ROOT / 'migration-required/data-migration/mapping-catalog.json').read_text())
     schemas = ','.join("'" + s + "'" for s in catalog['schemas'])
     sql = f"""SELECT TABLE_SCHEMA,TABLE_NAME,'view' FROM information_schema.VIEWS WHERE TABLE_SCHEMA IN ({schemas})
 UNION ALL SELECT TRIGGER_SCHEMA,TRIGGER_NAME,'trigger' FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA IN ({schemas})
@@ -25,7 +25,7 @@ SELECT CONSTRAINT_SCHEMA,TABLE_NAME,CONSTRAINT_NAME FROM information_schema.TABL
               'missing_objects': sorted(expected - objects), 'unexpected_objects': sorted(objects - expected),
               'missing_foreign_keys': sorted(expected_fk - constraints), 'unexpected_foreign_keys': sorted(constraints - expected_fk),
               'behavior_status': 'Definitions restored; trigger/procedure execution parity not tested.'}
-    (ROOT / 'database/object-verification.json').write_text(json.dumps(report, indent=2))
+    (ROOT / 'migration-required/data-migration/object-verification.json').write_text(json.dumps(report, indent=2))
     print(json.dumps({k:v for k,v in report.items() if not k.startswith('restored_')}, indent=2))
     if not report['objects_match'] or not report['foreign_keys_match']:
         raise SystemExit('Database object reconciliation failed')

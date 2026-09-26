@@ -1,6 +1,6 @@
 # Proposed clean Django database design
 
-**Updated owner direction:** Do not migrate historical attendance; build it fresh. Preserve payroll results, salary baselines and leave-balance evidence separately. See [CLEAN_TARGET_STATUS.md](CLEAN_TARGET_STATUS.md) for the 27 implemented managed entities and [BUSINESS_ENTITIES.md](BUSINESS_ENTITIES.md) for the complete review of the 202 highlighted sources. The monthly-consolidation plan below is the prior design and is no longer the historical import plan.
+**Updated owner direction:** Do not migrate historical attendance; build it fresh. Preserve payroll results, salary baselines and leave-balance evidence separately. See [CLEAN_TARGET_STATUS.md](../data-migration/CLEAN_TARGET_STATUS.md) for the 27 implemented managed entities and [BUSINESS_ENTITIES.md](../data-migration/BUSINESS_ENTITIES.md) for the complete review of the 202 highlighted sources. The monthly-consolidation plan below is the prior design and is no longer the historical import plan.
 
 Status: first design and complete source-disposition inventory. No consolidation has been applied. The restored seven-schema database remains the migration reference. This document supersedes carrying the generated 982-table compatibility layer forward as the final application schema.
 
@@ -20,7 +20,7 @@ The 580 main-schema tables have this preliminary disposition:
 
 These are source classifications, not a final target-table count. New tables may be required for payment allocations, permission scopes, migration identity and audit trails. Reducing table count must not combine entities with different identities or lifecycle rules.
 
-The full register is [SOURCE_TO_TARGET.md](SOURCE_TO_TARGET.md); the machine-readable register is [target-disposition.json](target-disposition.json). Every source table appears exactly once, including unresolved and UAT entries. Classification rules are in `design_target.py`. Backup classifications are name-based candidates, not proof of non-use.
+The full register is [SOURCE_TO_TARGET.md](../data-migration/SOURCE_TO_TARGET.md); the machine-readable register is [target-disposition.json](../data-migration/target-disposition.json). Every source table appears exactly once, including unresolved and UAT entries. Classification rules are in `design_target.py`. Backup classifications are name-based candidates, not proof of non-use.
 
 ## Monorepo and data ownership
 

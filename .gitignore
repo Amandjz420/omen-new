@@ -11,3 +11,5 @@ database/.local/
 *.before-unification
 staticfiles/
 storage/
+# Superseded SQLite databases from earlier migration phases; may hold legacy personal data.
+migration-required/database-backups/

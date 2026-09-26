@@ -1,6 +1,6 @@
 """Disposable loopback-only browser test server. Never opens target.sqlite3.
 
-Run with backend/.venv/bin/python database/serve_flow_audit.py after building React.
+Run with backend/.venv/bin/python migration-required/data-migration/serve_flow_audit.py after building React.
 All fixture data and credentials exist only in a temporary SQLite database.
 """
 import os
@@ -9,7 +9,7 @@ import secrets
 import sys
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'backend'))
 os.environ['DJANGO_SETTINGS_MODULE'] = 'config.settings'
 os.environ['DJANGO_DEBUG'] = '1'

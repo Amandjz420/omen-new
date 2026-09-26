@@ -8,9 +8,9 @@ import json
 from pathlib import Path
 import re
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT.parent / 'omen-lead-new/src/main/java/com/awzpact/lead/controller'
-DEST = ROOT / 'database/LEAD_FLOW_INVENTORY.md'
+DEST = ROOT / 'migration-required/data-migration/LEAD_FLOW_INVENTORY.md'
 TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|//[^\n]*|/\*[\s\S]*?\*/')
 
 
@@ -57,9 +57,9 @@ def main():
     for spec in specs.elts:
         schema, table = spec.elts[0].value, spec.elts[1].value
         targets[(schema,table)] = spec.elts[3].attr
-    report = json.loads((ROOT/'database/target-import-final.json').read_text())['tables']
+    report = json.loads((ROOT/'migration-required/import-runs/imports/target-import-final.json').read_text())['tables']
     # Native dump baseline tables, sourced from the existing disposition register.
-    register = (ROOT/'database/SOURCE_TO_TARGET.md').read_text().split('## lead_mngt\n',1)[1].split('\n## ',1)[0]
+    register = (ROOT/'migration-required/data-migration/SOURCE_TO_TARGET.md').read_text().split('## lead_mngt\n',1)[1].split('\n## ',1)[0]
     lines += ['## Every lead_mngt source table', '',
         'Counts below are from the preserved source inventory and last saved full import report, not a fresh import. '
         'A model/import mapping is not an operational API.', '',
