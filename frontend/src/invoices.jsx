@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 
-const BUCKETS = [['to_invoice', 'To invoice'], ['unpaid', 'Unpaid'], ['paid', 'Paid'], ['cancelled', 'Cancelled']];
+const BUCKETS = [['to_invoice', 'To invoice'], ['unpaid', 'Unpaid'], ['paid', 'Paid'], ['cancelled', 'Cancelled'], ['offline', 'Offline']];
 const rs = v => `₹ ${Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -17,22 +17,30 @@ function Queue({api, onIssue, onOpen}) {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
+  const [due, setDue] = useState(true);
   useEffect(() => {
-    const t = setTimeout(() => api(`invoices/?state=${state}&q=${encodeURIComponent(q)}&page=${page}`)
+    const t = setTimeout(() => api(`invoices/?state=${state}&q=${encodeURIComponent(q)}&page=${page}${state === 'offline' && due ? '&due=1' : ''}`)
       .then(r => {setList(r); setError('');}).catch(e => setError(e.message)), 250);
     return () => clearTimeout(t);
-  }, [state, q, page]);
-  const issuing = state === 'to_invoice';
+  }, [state, q, page, due]);
+  const issuing = state === 'to_invoice', offline = state === 'offline';
   return <section className="panel">
     <div className="tabs">{BUCKETS.map(([k, l]) => <button key={k} className={k === state ? 'active' : ''} onClick={() => {setState(k); setPage(1);}}>
       {l}{list && <span className="count"> {list.counts[k].toLocaleString('en-IN')}</span>}</button>)}</div>
-    <div className="toolbar"><label className="search">Search<input placeholder={issuing ? 'Report, lead or borrower' : 'Invoice, report or borrower'} value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label></div>
+    <div className="toolbar"><label className="search">Search<input placeholder={issuing ? 'Report, lead or borrower' : offline ? 'Invoice, client, customer or reference' : 'Invoice, report or borrower'} value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label>
+      {offline && <label className="choice"><input type="checkbox" checked={due} onChange={e => {setDue(e.target.checked); setPage(1);}}/>Outstanding only{list && ` (${list.counts.offline_due.toLocaleString('en-IN')})`}</label>}</div>
+    {offline && <p className="muted">Invoices raised outside the system in 2020–21 and recorded afterwards. They belong to no valuation; their lead and report numbers are kept as references.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
-      <div className="table-wrap"><table><thead><tr>{issuing
+      <div className="table-wrap"><table><thead><tr>{offline
+        ? <><th>Invoice</th><th>Date</th><th>Billed to</th><th>Customer</th><th>Reference</th><th>Total</th><th>Outstanding</th><th></th></>
+        : issuing
         ? <><th>Report</th><th>Lead</th><th>Borrower</th><th>Billed</th><th></th></>
         : <><th>Invoice</th><th>Date</th><th>Report</th><th>Borrower</th><th>Total</th><th>Outstanding</th><th></th></>}</tr></thead>
-      <tbody>{list.results.map(r => issuing
+      <tbody>{list.results.map(r => offline
+        ? <tr key={r.id}><td><strong>{r.number}</strong></td><td>{r.issued_on || '—'}</td><td>{r.billed_to}</td><td>{r.customer}</td>
+            <td>{r.report_number || '—'}</td><td>{rs(r.total)}</td><td>{rs(r.remaining)}</td><td><button className="link" onClick={() => onOpen(r.id)}>Open →</button></td></tr>
+        : issuing
         ? <tr key={r.valuation}><td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td><td>{rs(r.total)}</td>
             <td><button className="link" onClick={() => onIssue(r.valuation)}>Invoice →</button></td></tr>
         : <tr key={r.id}><td><strong>{r.number}</strong></td><td>{r.issued_on || '—'}</td><td>{r.report_number}</td><td>{r.borrower}</td>
@@ -136,6 +144,13 @@ function Invoice({api, id, onBack}) {
     <p>{inv.report_number} · {inv.borrower} · issued {inv.issued_on || '—'}{inv.due_on ? ` · due ${inv.due_on}` : ''} · <span className="status">{inv.payment_status}</span></p>
     {inv.document && (inv.document.local ? <p><a href={`/api/invoices/${id}/document/`} target="_blank" rel="noopener">View the invoice (PDF)</a></p>
       : <p className="muted">The invoice document is held in legacy storage and has not been retrieved yet.</p>)}
+    {inv.offline && <div className="notice">
+      <p>Offline invoice, recorded from outside the system. Billed to <strong>{inv.billed_to.name}</strong>{inv.billed_to.branch ? `, ${inv.billed_to.branch}` : ''}{inv.billed_to.customer ? ` · customer ${inv.billed_to.customer}` : ''}.</p>
+      <p className="muted">References (not linked to any record here): lead {inv.references.lead || '—'} · work order {inv.references.work_order || '—'} · report {inv.references.report || '—'}
+        {inv.references.service ? ` · ${inv.references.service}${inv.references.subtype ? ' / ' + inv.references.subtype : ''}` : ''}{inv.references.liable ? ` · liable ${inv.references.liable}` : ''}</p>
+      {inv.advance && Number(inv.advance) > 0 && <p className="muted">Advance received when raised: {rs(inv.advance)}</p>}
+    </div>}
+    {inv.number_shared > 0 && <p className="notice">Another offline invoice carries the same number, {inv.number}.</p>}
     {inv.cancelled && <p className="notice">Cancelled by credit note: {inv.cancel_reason}</p>}
     {error && <p role="alert" className="error">{error}</p>}
     <Lines lines={inv.lines} place={inv.place_of_supply.startsWith('Inter') ? 'inter' : inv.place_of_supply.startsWith('Intra') ? 'intra' : ''}/>
@@ -163,7 +178,7 @@ function Invoice({api, id, onBack}) {
       <h3>Cancel with a credit note</h3>
       <label>Reason<span className="required"> *</span><input value={reason} required onChange={e => setReason(e.target.value)}/></label>
       <button disabled={busy === 'credit-note' || !reason.trim()}>Issue credit note</button></form>}
-    {inv.payments.length > 0 && <><h3>Payments recorded here</h3><ul>{inv.payments.map((p, i) => <li key={i}>{p.on} · {rs(p.amount)}{p.mode ? ` · ${p.mode}` : ''}{p.by ? ` · ${p.by}` : ''}</li>)}</ul></>}
+    {inv.payments.length > 0 && <><h3>Payments</h3><ul>{inv.payments.map((p, i) => <li key={i}>{p.on || '—'} · {rs(p.amount)}{p.mode ? ` · ${p.mode}` : ''}{p.by ? ` · ${p.by}` : ''}{p.recorded === 'previous system' && <small className="muted"> · recorded in the previous system</small>}</li>)}</ul></>}
     {inv.credit_notes.length > 0 && <><h3>Credit notes</h3><ul>{inv.credit_notes.map(c => <li key={c.id}>{c.number} · {c.on} · {rs(c.total)}
       {Number(c.refund_due) > 0 && ` · ${rs(c.refund_due)} to refund`} · {c.reason}
       {c.document?.local && <> · <a href={`/api/invoices/credit-notes/${c.id}/document/`} target="_blank" rel="noopener">PDF</a></>}</li>)}</ul></>}

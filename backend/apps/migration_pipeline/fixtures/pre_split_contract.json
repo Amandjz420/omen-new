@@ -415,7 +415,19 @@
         "issued_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
         "issued_by_name": "models.CharField(blank=True, max_length=200)",
         "cancelled_at": "models.DateTimeField(blank=True, null=True)",
-        "cancel_reason": "models.TextField(blank=True)"
+        "cancel_reason": "models.TextField(blank=True)",
+        "advance_amount": "models.DecimalField(blank=True, decimal_places=6, max_digits=24, null=True)",
+        "reference_lead": "models.CharField(blank=True, max_length=50)",
+        "reference_work_order": "models.CharField(blank=True, max_length=50)",
+        "reference_report": "models.CharField(blank=True, max_length=50)",
+        "billed_to_name": "models.CharField(blank=True, max_length=200)",
+        "billed_customer_name": "models.CharField(blank=True, max_length=200)",
+        "billed_branch_name": "models.CharField(blank=True, max_length=100)",
+        "billed_branch_code": "models.CharField(blank=True, max_length=100)",
+        "service": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.servicetype')",
+        "subtype": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.servicesubtype')",
+        "liable_employee": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.employee')",
+        "doer_employee": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.employee')"
       },
       "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(condition=models.Q(('local_sequence__isnull', False)), fields=('number',), name='unique_new_invoice_number')], 'indexes': []}"
     },
@@ -1562,6 +1574,15 @@
       ],
       "added_models": [],
       "reason": "Review finding G1: the report records a fingerprint of the valuation content it was generated from, checked at approval."
+    },
+    {
+      "date": "2026-09-26",
+      "migration": "0023_invoice_advance_amount_invoice_billed_branch_code_and_more",
+      "changed_models": [
+        "Invoice"
+      ],
+      "added_models": [],
+      "reason": "Review finding G4: offline invoice detail - advance, references, billed-to, service, subtype and field assessors."
     }
   ]
 }

@@ -802,3 +802,27 @@ class SourceCorrectionTests(TestCase):
         synchronize(FakeSource(self.rows('23AAACP0165G1ZX')))
         staged = SourceRow.objects.get(table='account_detail', key=source_key(2))
         self.assertFalse(staged.problems)
+
+
+class CenturyCorrectionTests(TestCase):
+    """Two-digit years on offline invoices, corrected only when the number confirms them."""
+
+    def test_a_year_confirmed_by_the_invoice_number_is_corrected(self):
+        import datetime
+        from target_core.models import Invoice
+        data = dataset({('lead_mngt', 'offline_invoice'): [
+            row('lead_mngt', 'offline_invoice', offline_invoice_id=1, invoice_no='I-0321042815',
+                invoice_date=datetime.date(21, 3, 4), total_amount=1000),
+            row('lead_mngt', 'offline_invoice', offline_invoice_id=2, invoice_no='I-0520042816',
+                invoice_date=datetime.date(21, 3, 4), total_amount=1000)]})
+        synchronize(FakeSource(data))
+        confirmed = Invoice.objects.get(number='I-0321042815')
+        self.assertEqual(confirmed.issued_date, datetime.date(2021, 3, 4))
+        staged = SourceRow.objects.get(table='offline_invoice', key=source_key(1))
+        self.assertTrue(any('year corrected from 0021 to 2021' in p for p in staged.problems))
+        # The number states May 2020, which does not confirm the date, so it is not
+        # corrected; the importer's ordinary date check then treats it as unusable.
+        unconfirmed = Invoice.objects.get(number='I-0520042816')
+        self.assertNotEqual(unconfirmed.issued_date, datetime.date(2021, 3, 4))
+        staged = SourceRow.objects.get(table='offline_invoice', key=source_key(2))
+        self.assertFalse(any('year corrected' in p for p in staged.problems))

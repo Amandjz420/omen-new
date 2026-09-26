@@ -44,6 +44,23 @@ class Invoice(Entity):
     # A cancelled invoice is reversed by a credit note and stays on record.
     cancelled_at = models.DateTimeField(null=True, blank=True)
     cancel_reason = models.TextField(blank=True)
+    # Offline invoices (legacy offline_invoice, 2020-21) were raised outside the
+    # system and recorded afterwards, so they belong to no valuation. None of their
+    # lead, work order or report numbers names a record in the system, so they are
+    # kept as references and never linked. They stored no paid or remaining
+    # amount: the balance is the total less the advance and recorded payments.
+    advance_amount = models.DecimalField(max_digits=24, decimal_places=6, null=True, blank=True)
+    reference_lead = models.CharField(max_length=50, blank=True)
+    reference_work_order = models.CharField(max_length=50, blank=True)
+    reference_report = models.CharField(max_length=50, blank=True)
+    billed_to_name = models.CharField(max_length=200, blank=True)
+    billed_customer_name = models.CharField(max_length=200, blank=True)
+    billed_branch_name = models.CharField(max_length=100, blank=True)
+    billed_branch_code = models.CharField(max_length=100, blank=True)
+    service = models.ForeignKey('target_core.ServiceType', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    subtype = models.ForeignKey('target_core.ServiceSubtype', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    liable_employee = models.ForeignKey('target_core.Employee', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    doer_employee = models.ForeignKey('target_core.Employee', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
 
     class Meta:
         app_label = "target_core"

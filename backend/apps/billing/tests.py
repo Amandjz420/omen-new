@@ -251,3 +251,51 @@ class RetryTests(Invoicing):
         self.assertEqual(post()['bad_debt'], '180.00')
         self.assertEqual(post()['bad_debt'], '180.00')
         self.assertEqual(m.FinancialOperation.objects.filter(kind='write_off').count(), 1)
+
+
+class OfflineInvoiceTests(Invoicing):
+    """Review finding G4: offline invoices must be visible and settle correctly."""
+
+    def setUp(self):
+        super().setUp()
+        import datetime
+        self.offline = m.Invoice.objects.create(origin='legacy_offline_invoice', number='I-1120251794',
+                                                issued_date=datetime.date(2020, 11, 25), billed_amount=Decimal('1000'),
+                                                advance_amount=Decimal('200'), billed_to_name='State Bank of India',
+                                                billed_customer_name='M/s Offline Traders', reference_report='R-OFF-1')
+        m.Receipt.objects.create(origin='legacy_offline_amount_received', invoice=self.offline, amount=Decimal('300'),
+                                 received_date=datetime.date(2020, 12, 1))
+
+    def offline_queue(self, due=False):
+        return self.client.get(f"/api/invoices/?state=offline{'&due=1' if due else ''}").json()
+
+    def test_codex_reproduction_offline_invoices_appear_in_their_own_queue(self):
+        body = self.offline_queue()
+        self.assertEqual(body['counts']['offline'], 1)                                  # previously invisible
+        row = body['results'][0]
+        self.assertEqual((row['number'], row['billed_to'], row['remaining']), ('I-1120251794', 'State Bank of India', '500.00'))
+
+    def test_the_balance_is_total_less_advance_and_recorded_payments(self):
+        body = self.client.get(f'/api/invoices/{self.offline.pk}/').json()
+        self.assertEqual((body['paid'], body['remaining'], body['advance']), ('500.00', '500.00', '200.00'))
+        self.assertTrue(body['offline'])
+        self.assertEqual(body['references']['report'], 'R-OFF-1')
+        self.assertEqual(body['payments'][0]['recorded'], 'previous system')
+
+    def test_a_payment_here_adds_to_the_advance_and_recorded_payments(self):
+        body = self.pay(self.offline.pk, '400').json()
+        self.assertEqual((body['paid'], body['remaining']), ('900.00', '100.00'))
+        body = self.pay(self.offline.pk, '100').json()
+        self.assertEqual((body['remaining'], body['payment_status']), ('0.00', 'Fully paid'))
+
+    def test_the_outstanding_filter(self):
+        self.assertEqual(self.offline_queue(due=True)['total'], 1)
+        self.pay(self.offline.pk, '500')
+        self.assertEqual(self.offline_queue(due=True)['total'], 0)
+        self.assertEqual(self.offline_queue()['total'], 1)
+
+    def test_a_restricted_user_cannot_see_offline_invoices(self):
+        from apps.valuations.test_forms import user_with_role
+        self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Assessor')))
+        self.assertEqual(self.offline_queue()['total'], 0)
+        self.assertEqual(self.client.get(f'/api/invoices/{self.offline.pk}/').status_code, 404)

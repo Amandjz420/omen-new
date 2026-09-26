@@ -5,6 +5,7 @@ Missing/invalid required references are quarantined with their original payload.
 """
 import hashlib
 import json
+import re
 import uuid
 from collections import Counter
 from contextlib import contextmanager
@@ -140,7 +141,7 @@ SPECS = [
  # --- Billing ---------------------------------------------------------------
  ('lead_mngt','billing_head','billing_head_id',m.ChargeType,{'name':'billing_head_name','charge_kind':'type','legacy_status':'status','legacy_deleted':'delete_status','source_sequence':'billing_head_id'},{}),
  ('lead_mngt','valuation_billing','billing_id',m.ValuationCharge,{'amount':'amount','cgst':'cgst','sgst':'sgst','igst':'igst','total_amount':'total_amount'}, {'valuation':('valuation','valuation_id',False),'charge_type':('billing_head','billing_head_id',True)}),
- ('lead_mngt','offline_invoice','offline_invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','billed_amount':'total_amount','legacy_status':'payment_status'},{}),
+ ('lead_mngt','offline_invoice','offline_invoice_id',m.Invoice,{'number':'invoice_no','issued_date':'invoice_date','billed_amount':'total_amount','legacy_status':'payment_status','advance_amount':'advance_amount','reference_lead':'lead_no','reference_work_order':'work_order_no','reference_report':'report_no','billed_to_name':'client_name','billed_customer_name':'client_customer_name','billed_branch_name':'branch_name','billed_branch_code':'branch_code'},{'service':('service_type','service_type',True),'subtype':('service_sub_type','sub_service_type',True),'liable_employee':('employee','liable_fa',True),'doer_employee':('employee','doer_fa',True)}),
  ('lead_mngt','offline_amount_received','offline_amount_received_id',m.Receipt,{'number':'invoice_no','received_date':'payment_date','amount':'amount_received','legacy_status':'payment_status','remark':'remark'}, {'invoice':('offline_invoice','offline_invoice_id',True)}),
  ('lead_mngt','invoice_follow_up','invoice_follow_up_id',m.InvoiceFollowUp,{'call_status':'call_status_id','logged_date_text':'date','logged_time_text':'time','remark':'remark','legacy_update_date':'update_date'}, {'invoice':('invoice','invoice_id',True)}),
 
@@ -169,6 +170,12 @@ PARENT_TABLES = {link[0] for spec in SPECS for link in spec[5].values()}
 # applied only while the source still holds the stated wrong value, so a fix made
 # at source is never overwritten. The original remains in the staged SourceRow
 # payload and each application is recorded as an issue on the row.
+# Two-digit years confirmed by the record's own number. 11 offline invoices carry
+# dates like 0021-03-04; the invoice number I-MMYYDD... states month and year, and
+# on all 11 agrees with 2021 and the month. The year is corrected only when the
+# number confirms both; the original remains in the staged payload.
+CENTURY_CORRECTIONS = {('lead_mngt', 'offline_invoice', 'invoice_date'): 'invoice_no'}
+
 SOURCE_CORRECTIONS = {
     ('lead_mngt', 'account_detail', '4', 'gst_no'): (
         '23AAACP0165G1ZX', '23AABFO1645E1ZS',
@@ -385,6 +392,12 @@ def synchronize(source, *, dry_run=False, progress=lambda message: None):
                             for field,column in scalars.items():
                                 f=model._meta.get_field(field)
                                 raw=row[column]
+                                witness=CENTURY_CORRECTIONS.get((schema,table,column))
+                                if witness and hasattr(raw,'year') and raw.year<100:
+                                    number=str(row.get(witness) or '')
+                                    if re.fullmatch(r'[A-Z]-\d{7,}',number) and int(number[4:6])==raw.year and int(number[2:4])==raw.month:
+                                        warnings.append(f'{column} year corrected from {raw.year:04d} to {2000+raw.year}, as stated by {witness} {number}')
+                                        raw=raw.replace(year=2000+raw.year)
                                 fix=SOURCE_CORRECTIONS.get((schema,table,str(row[keycol]),column))
                                 if fix and str(raw or '').strip()==fix[0]:
                                     raw=fix[1]

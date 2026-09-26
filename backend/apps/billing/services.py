@@ -51,7 +51,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from django.conf import settings
-from django.db.models import Q, Sum
+from django.db.models import OuterRef, Q, Sum
 from django.http import JsonResponse
 from django.utils import timezone
 
@@ -62,7 +62,7 @@ from apps.common.http import IntakeError, endpoint, find, payload
 from apps.audit.services import record, snapshot
 from apps.common.numbering import allocate, format_number
 from apps.billing.valuation import GST_RATE, PAISA, discount_id, money
-from apps.valuations.services import in_scope, scope_cases
+from apps.valuations.services import in_scope, scope_cases, scoped_employee
 from apps.valuations.verification import actor
 from apps.common.words import amount_words
 
@@ -129,8 +129,38 @@ def balances(total, paid, bad_debt):
     return remaining, excess
 
 
+OFFLINE = 'legacy_offline_invoice'
+PAYMENT_ORIGINS = ('local_invoice_payment', 'legacy_offline_amount_received')
+
+
+def is_offline(invoice):
+    return invoice.origin == OFFLINE
+
+
+def paid_of(invoice):
+    """What has been paid against an invoice. An untouched offline invoice stored
+    no paid amount, so it is the advance plus its recorded payments; once an
+    operation is applied here that figure is stored and added to."""
+    if is_offline(invoice) and invoice.legacy_paid_amount is None:
+        recorded = (invoice.receipts.filter(origin='legacy_offline_amount_received', duplicate_of__isnull=True)
+                    .aggregate(s=Sum('amount'))['s'])
+        return q(invoice.advance_amount) + q(recorded)
+    return q(invoice.legacy_paid_amount)
+
+
+def check_scope(user, invoice):
+    """An invoice on a valuation follows that case's scope. An offline invoice
+    belongs to no case, so there is no assignment to restrict by: only an
+    unrestricted user may see it. Scope was previously checked only when an
+    invoice had a valuation, so an offline one opened by id was unchecked."""
+    if invoice.valuation_id:
+        in_scope(user, invoice.valuation.case)
+    elif scoped_employee(user) is not None:
+        raise IntakeError('Invoice not found', 404)
+
+
 def invoice_json(invoice):
-    total, paid, bad = q(invoice.billed_amount), q(invoice.legacy_paid_amount), q(invoice.bad_debt_amount)
+    total, paid, bad = q(invoice.billed_amount), paid_of(invoice), q(invoice.bad_debt_amount)
     remaining, excess = balances(total, paid, bad)
     local = invoice.local_sequence is not None
     lines = [{'description': l.description, 'amount': str(q(l.net_amount)), 'cgst': str(q(l.cgst)), 'sgst': str(q(l.sgst)),
@@ -154,8 +184,22 @@ def invoice_json(invoice):
             'recorded_remaining': str(q(invoice.legacy_remaining_amount)), 'recorded_excess': str(q(invoice.excess_amount)),
             'payment_status': status, 'cancelled': invoice.cancelled_at is not None, 'cancel_reason': invoice.cancel_reason,
             'document': file_json(invoice.document),
-            'payments': [{'on': r.received_date, 'amount': str(q(r.amount)), 'by': r.payer_name, 'mode': r.mode, 'remark': r.remark}
-                         for r in invoice.receipts.filter(origin='local_invoice_payment').order_by('received_date', 'created_at')],
+            'payments': [{'on': r.received_date, 'amount': str(q(r.amount)), 'by': r.payer_name, 'mode': r.mode, 'remark': r.remark,
+                          'recorded': 'previous system' if r.origin.startswith('legacy') else 'here'}
+                         for r in invoice.receipts.filter(origin__in=PAYMENT_ORIGINS, duplicate_of__isnull=True)
+                         .order_by('received_date', 'created_at')],
+            'offline': is_offline(invoice),
+            'advance': str(q(invoice.advance_amount)) if is_offline(invoice) else None,
+            'billed_to': {'name': invoice.billed_to_name, 'customer': invoice.billed_customer_name,
+                          'branch': invoice.billed_branch_name, 'branch_code': invoice.billed_branch_code} if is_offline(invoice) else None,
+            'references': {'lead': invoice.reference_lead, 'work_order': invoice.reference_work_order,
+                           'report': invoice.reference_report,
+                           'service': invoice.service.name if invoice.service_id else '',
+                           'subtype': invoice.subtype.name if invoice.subtype_id else '',
+                           'liable': invoice.liable_employee.name if invoice.liable_employee_id else '',
+                           'doer': invoice.doer_employee.name if invoice.doer_employee_id else ''} if is_offline(invoice) else None,
+            'number_shared': (m.Invoice.objects.filter(origin=invoice.origin, number=invoice.number).exclude(pk=invoice.pk).count()
+                              if invoice.number else 0),
             'credit_notes': [{'id': c.pk, 'number': c.number, 'on': c.issued_on, 'total': str(q(c.total_amount)),
                               'refund_due': str(q(c.refund_due)), 'reason': c.reason, 'document': file_json(c.document)}
                              for c in invoice.credit_notes.order_by('created_at')]}
@@ -287,11 +331,13 @@ def attach_document(invoice, credit=None):
 
 def locked(pk, user):
     invoice = find(m.Invoice, pk)
-    if invoice.valuation_id:
-        in_scope(user, invoice.valuation.case)
+    check_scope(user, invoice)
     invoice = m.Invoice.objects.select_for_update().get(pk=invoice.pk)
     if invoice.cancelled_at:
         raise IntakeError('This invoice has been cancelled by a credit note', 409)
+    if is_offline(invoice) and invoice.legacy_paid_amount is None:
+        # Fix the derived paid amount before the first operation adds to it.
+        invoice.legacy_paid_amount = paid_of(invoice)
     return invoice
 
 
@@ -411,7 +457,7 @@ def credit_note(request, pk):
     before = snapshot(invoice)
     credit = m.CreditNote.objects.create(invoice=invoice, number=format_number('CN', today, sequence), local_sequence=sequence,
                                          issued_on=today, taxable_amount=taxable, tax_amount=tax, total_amount=total,
-                                         reason=reason[:4000], refund_due=q(invoice.legacy_paid_amount),
+                                         reason=reason[:4000], refund_due=paid_of(invoice),
                                          issued_by=account, issued_by_name=name[:200])
     invoice.cancelled_at, invoice.cancel_reason = timezone.now(), reason[:4000]
     invoice.save(update_fields=['cancelled_at', 'cancel_reason'])
@@ -423,25 +469,43 @@ def credit_note(request, pk):
 @endpoint(['GET'])
 def detail(request, pk):
     invoice = find(m.Invoice, pk)
-    if invoice.valuation_id:
-        in_scope(request.user, invoice.valuation.case)
+    check_scope(request.user, invoice)
     return JsonResponse(invoice_json(invoice))
 
 
 @endpoint(['GET'])
 def document(request, pk):
     invoice = find(m.Invoice, pk)
-    if invoice.valuation_id:
-        in_scope(request.user, invoice.valuation.case)
+    check_scope(request.user, invoice)
     return serve(invoice.document)
 
 
 @endpoint(['GET'])
 def credit_document(request, pk):
     credit = find(m.CreditNote, pk)
-    if credit.invoice.valuation_id:
-        in_scope(request.user, credit.invoice.valuation.case)
+    check_scope(request.user, credit.invoice)
     return serve(credit.document)
+
+
+def offline_queryset(user):
+    """Offline invoices with their outstanding balance, visible only to an
+    unrestricted user (see check_scope)."""
+    from django.db.models import Case, DecimalField, ExpressionWrapper, F, Subquery, Value, When
+    from django.db.models.functions import Coalesce
+    money_field = DecimalField(max_digits=24, decimal_places=6)
+    recorded = (m.Receipt.objects.filter(invoice=OuterRef('pk'), origin='legacy_offline_amount_received',
+                                         duplicate_of__isnull=True)
+                .values('invoice').annotate(s=Sum('amount')).values('s'))
+    nought = Value(ZERO, output_field=money_field)
+    paid = Case(When(legacy_paid_amount__isnull=False, then=F('legacy_paid_amount')),
+                default=Coalesce(F('advance_amount'), nought) + Coalesce(Subquery(recorded, output_field=money_field), nought),
+                output_field=money_field)
+    rows = (m.Invoice.objects.filter(origin=OFFLINE, cancelled_at__isnull=True)
+            .annotate(outstanding=ExpressionWrapper(Coalesce(F('billed_amount'), nought) - paid
+                                                    - Coalesce(F('bad_debt_amount'), nought), output_field=money_field)))
+    # Emptied after annotating, so a restricted user's empty queue can still be
+    # filtered by balance.
+    return rows.none() if scoped_employee(user) is not None else rows
 
 
 @endpoint(['GET'])
@@ -461,15 +525,26 @@ def queue(request):
     buckets = {'to_invoice': to_invoice,
                'unpaid': active.filter(legacy_remaining_amount__gt=0),
                'paid': active.filter(Q(legacy_remaining_amount__lte=0) | Q(legacy_remaining_amount__isnull=True)),
-               'cancelled': invoices.filter(cancelled_at__isnull=False)}
+               'cancelled': invoices.filter(cancelled_at__isnull=False),
+               'offline': offline_queryset(request.user)}
     rows = buckets.get(state, to_invoice)
+    if state == 'offline' and request.GET.get('due') == '1':
+        rows = rows.filter(outstanding__gt=Decimal('0.5'))
     if text:
-        if state == 'to_invoice':
+        if state == 'offline':
+            rows = rows.filter(Q(number__icontains=text) | Q(billed_to_name__icontains=text) | Q(billed_customer_name__icontains=text)
+                               | Q(reference_report__icontains=text) | Q(reference_lead__icontains=text))
+        elif state == 'to_invoice':
             rows = rows.filter(Q(report_number__icontains=text) | Q(case__lead__number__icontains=text) | Q(case__borrower__name__icontains=text))
         else:
             rows = rows.filter(Q(number__icontains=text) | Q(valuation__report_number__icontains=text) | Q(valuation__case__borrower__name__icontains=text))
     total = rows.count()
-    if state == 'to_invoice':
+    if state == 'offline':
+        items = rows.order_by('-outstanding', '-issued_date')[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]
+        results = [{'id': i.pk, 'number': i.number, 'issued_on': i.issued_date, 'billed_to': i.billed_to_name,
+                    'customer': i.billed_customer_name, 'report_number': i.reference_report,
+                    'total': str(q(i.billed_amount)), 'remaining': str(q(max(i.outstanding, ZERO)))} for i in items]
+    elif state == 'to_invoice':
         items = rows.select_related('case__lead', 'case__borrower').order_by('-valuation_date')[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]
         results = [{'valuation': v.pk, 'report_number': v.report_number, 'lead_number': v.case.lead.number,
                     'borrower': v.case.borrower.name if v.case.borrower_id else '', 'total': str(q(v.total_after_tax))} for v in items]
@@ -479,4 +554,6 @@ def queue(request):
                     'borrower': i.valuation.case.borrower.name if i.valuation_id and i.valuation.case.borrower_id else '',
                     'total': str(q(i.billed_amount)), 'remaining': str(q(i.legacy_remaining_amount))} for i in items]
     return JsonResponse({'state': state, 'total': total, 'page': page, 'page_size': PAGE_SIZE,
-                         'counts': {k: v.count() for k, v in buckets.items()}, 'results': results})
+                         'counts': {**{k: v.count() for k, v in buckets.items()},
+                                    'offline_due': buckets['offline'].filter(outstanding__gt=Decimal('0.5')).count()},
+                         'results': results})
