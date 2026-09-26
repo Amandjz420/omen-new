@@ -79,7 +79,7 @@ Standard commands from `backend/` remain:
 
 Run a domain suite with, for example, `manage.py test apps.billing` or `manage.py test apps.valuations`. Default discovery runs all domain suites. The old `manage.py test target_core` package discovery is no longer the full suite: legacy test modules only provide explicit-import compatibility.
 
-Public commands remain `sync_legacy`, `provision_accounts`, `setup_admin_accounts`, `sanitize_staged_credentials`, `transfer_sqlite_to_postgres` and `link_dispatch_items`. Their implementations now live under the appropriate domain's management package. Credential output still goes to the original project `database/.local/` location.
+Public commands remain `sync_legacy`, `provision_accounts`, `setup_admin_accounts`, `sanitize_staged_credentials`, `transfer_sqlite_to_postgres` and `link_dispatch_items`. Added since the split: `link_duplicate_receipts` (billing; run after every import, after `link_dispatch_items`) and `amend_schema_contract` (migration_pipeline; records a deliberate model or API-route change in the pre-split contract, and refuses unless the changes are exactly those named). Their implementations now live under the appropriate domain's management package. Credential output still goes to the original project `database/.local/` location.
 
 ## Compatibility imports
 

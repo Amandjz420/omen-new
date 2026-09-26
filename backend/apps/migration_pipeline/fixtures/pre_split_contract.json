@@ -490,7 +490,12 @@
         "checked_at": "models.DateTimeField(blank=True, null=True)",
         "verified_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
         "verified_at": "models.DateTimeField(blank=True, null=True)",
-        "duplicate_of": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='duplicates', to='target_core.receipt')"
+        "duplicate_of": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='duplicates', to='target_core.receipt')",
+        "request_key": "models.UUIDField(blank=True, editable=False, null=True, unique=True)",
+        "request_hash": "models.CharField(blank=True, editable=False, max_length=64)",
+        "voided_at": "models.DateTimeField(blank=True, null=True)",
+        "void_reason": "models.TextField(blank=True)",
+        "voided_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')"
       },
       "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
     },
@@ -1555,7 +1560,12 @@
     "api/work-orders/",
     "api/work-orders/<uuid:pk>/",
     "api/work-orders/<uuid:pk>/document/",
-    "api/work-orders/leads/<uuid:pk>/"
+    "api/work-orders/leads/<uuid:pk>/",
+    "api/receipts/",
+    "api/receipts/<uuid:pk>/",
+    "api/receipts/<uuid:pk>/check/",
+    "api/receipts/<uuid:pk>/verify/",
+    "api/receipts/<uuid:pk>/void/"
   ],
   "amendments": [
     {
@@ -1583,6 +1593,29 @@
       ],
       "added_models": [],
       "reason": "Review finding G4: offline invoice detail - advance, references, billed-to, service, subtype and field assessors."
+    },
+    {
+      "date": "2026-09-26",
+      "migration": "0024_receipt_request_hash_receipt_request_key_and_more",
+      "changed_models": [
+        "Receipt"
+      ],
+      "added_models": [],
+      "reason": "Receipt workflow: retry-safe creation and voiding in place of deletion."
+    },
+    {
+      "date": "2026-09-26",
+      "migration": "none",
+      "changed_models": [],
+      "added_models": [],
+      "reason": "Cash receipt workflow: maker, checker, verifier and void.",
+      "added_routes": [
+        "api/receipts/",
+        "api/receipts/<uuid:pk>/",
+        "api/receipts/<uuid:pk>/check/",
+        "api/receipts/<uuid:pk>/verify/",
+        "api/receipts/<uuid:pk>/void/"
+      ]
     }
   ]
 }

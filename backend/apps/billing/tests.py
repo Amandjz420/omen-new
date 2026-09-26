@@ -331,3 +331,122 @@ class DuplicateReceiptTests(Invoicing):
             m.Receipt.objects.create(origin='legacy_amount_received', valuation_id=self.v, amount=Decimal('500'), received_date=day)
         self.run_link()
         self.assertEqual(m.Receipt.objects.filter(origin='legacy_amount_received').exclude(duplicate_of=None).count(), 1)
+
+
+class CashReceiptTests(Invoicing):
+    """Maker, checker and verifier."""
+
+    def setUp(self):
+        super().setUp()
+        self.invoice = self.issue().json()['id']                        # total 1180.00
+
+    def make(self, operation_id=None, **overrides):
+        body = {'operation_id': str(operation_id or uuid.uuid4()), 'received_as': 2, 'invoice': self.invoice,
+                'amount': '500', 'payment_mode': 4, 'payer_name': 'State Bank of India', **overrides}
+        return self.client.post('/api/receipts/', body, content_type='application/json')
+
+    def step(self, receipt, action, **body):
+        return self.client.post(f'/api/receipts/{receipt}/{action}/', body, content_type='application/json')
+
+    def paid(self):
+        return self.client.get(f'/api/invoices/{self.invoice}/').json()
+
+    def test_a_receipt_continues_the_legacy_series(self):
+        m.Receipt.objects.create(origin='legacy_cash_receipt', number='C-09261011210')
+        body = self.make().json()
+        self.assertTrue(body['number'].endswith('11211'))
+        self.assertEqual(body['stage'], 'to_check')
+
+    def test_a_recovery_settles_its_invoice_only_when_verified(self):
+        receipt = self.make().json()['id']
+        self.assertEqual(self.paid()['paid'], '0.00')
+        self.step(receipt, 'check')
+        self.assertEqual(self.paid()['paid'], '0.00')
+        self.assertEqual(self.step(receipt, 'verify').json()['stage'], 'verified')
+        body = self.paid()
+        self.assertEqual((body['paid'], body['remaining'], body['payment_status']), ('500.00', '680.00', 'Partly paid'))
+        self.assertEqual(m.Valuation.objects.get(pk=self.v).remaining_amount, Decimal('680.00'))
+
+    def test_an_overpayment_records_the_true_excess(self):
+        """Regression: legacy verification recorded the whole receipt as the excess."""
+        receipt = self.make(amount='1500').json()['id']
+        self.step(receipt, 'check')
+        self.step(receipt, 'verify', confirm_overpayment=True)
+        body = self.paid()
+        self.assertEqual((body['remaining'], body['excess']), ('0.00', '320.00'))
+
+    def test_a_receipt_settles_its_invoice_once(self):
+        receipt = self.make().json()['id']
+        self.step(receipt, 'check')
+        self.step(receipt, 'verify')
+        self.assertEqual(self.step(receipt, 'verify').status_code, 409)
+        self.assertEqual(self.paid()['paid'], '500.00')
+
+    def test_the_steps_run_in_order(self):
+        receipt = self.make().json()['id']
+        self.assertEqual(self.step(receipt, 'verify').status_code, 409)       # not yet checked
+        self.step(receipt, 'check')
+        self.assertEqual(self.step(receipt, 'check').status_code, 409)
+
+    def test_correcting_a_checked_receipt_needs_a_new_check(self):
+        receipt = self.make().json()['id']
+        self.step(receipt, 'check')
+        body = {'received_as': 2, 'invoice': self.invoice, 'amount': '600', 'payment_mode': 4, 'payer_name': 'SBI'}
+        corrected = self.client.put(f'/api/receipts/{receipt}/', body, content_type='application/json').json()
+        self.assertEqual((corrected['stage'], corrected['amount']), ('to_check', '600.00'))
+
+    def test_creation_is_retry_safe(self):
+        op = uuid.uuid4()
+        self.make(operation_id=op)
+        self.assertTrue(self.make(operation_id=op).json()['replayed'])
+        self.assertEqual(m.Receipt.objects.filter(origin='local_cash_receipt').count(), 1)
+        self.assertEqual(self.make(operation_id=op, amount='999').status_code, 409)
+
+    def test_a_receipt_is_voided_not_deleted_and_only_before_verification(self):
+        first = self.make().json()['id']
+        self.assertEqual(self.step(first, 'void', reason='Entered twice').json()['stage'], 'voided')
+        self.assertEqual(self.step(first, 'check').status_code, 409)
+        second = self.make().json()['id']
+        self.step(second, 'check'); self.step(second, 'verify')
+        self.assertEqual(self.step(second, 'void', reason='x').status_code, 409)
+        self.assertEqual(m.Receipt.objects.filter(origin='local_cash_receipt').count(), 2)
+
+    def test_the_maker_must_give_complete_details(self):
+        self.assertEqual(self.make(invoice='').status_code, 400)               # a recovery names its invoice
+        self.assertEqual(self.make(payment_mode=2).status_code, 400)           # a cheque needs number and bank
+        self.assertEqual(self.make(payment_mode=2, cheque_draft_number='001234', cheque_draft_bank='SBI').status_code, 201)
+        self.assertEqual(self.make(amount='0').status_code, 400)
+        self.assertEqual(self.make(payer_name='').status_code, 400)
+        future = (timezone.localdate() + timezone.timedelta(days=1)).isoformat()
+        self.assertEqual(self.make(received_date=future).status_code, 400)
+
+    def test_an_advance_touches_no_invoice(self):
+        receipt = self.make(received_as=1, invoice='').json()['id']
+        self.step(receipt, 'check'); self.step(receipt, 'verify')
+        self.assertEqual(self.paid()['paid'], '0.00')
+
+    def test_a_recovery_against_a_credited_invoice_cannot_be_verified(self):
+        receipt = self.make().json()['id']
+        self.step(receipt, 'check')
+        self.client.post(f'/api/invoices/{self.invoice}/credit-note/', {'reason': 'Wrong party'}, content_type='application/json')
+        self.assertEqual(self.step(receipt, 'verify').status_code, 409)
+
+    def test_the_queue_follows_the_stages(self):
+        receipt = self.make().json()['id']
+        counts = lambda: self.client.get('/api/receipts/').json()['counts']
+        self.assertEqual((counts()['to_check'], counts()['to_verify']), (1, 0))
+        self.step(receipt, 'check')
+        self.assertEqual((counts()['to_check'], counts()['to_verify']), (0, 1))
+        self.step(receipt, 'verify')
+        self.assertEqual(counts()['verified'], 1)
+
+    def test_overpaying_an_invoice_needs_confirmation(self):
+        self.pay(self.invoice, '1180')                                         # already fully paid
+        receipt = self.make(amount='500').json()['id']
+        self.step(receipt, 'check')
+        refused = self.step(receipt, 'verify')
+        self.assertEqual(refused.status_code, 409)
+        self.assertIn('Rs 0.00 outstanding', refused.json()['error'])
+        self.assertEqual(self.client.get(f'/api/receipts/{receipt}/').json()['stage'], 'to_verify')   # nothing marked
+        self.assertEqual(self.step(receipt, 'verify', confirm_overpayment=True).status_code, 200)
+        self.assertEqual(self.paid()['excess'], '500.00')

@@ -133,6 +133,15 @@ class Receipt(Entity):
     # the same invoice, amount and date. The older copy is kept as evidence and
     # points at the receipt it duplicates, and is never counted towards a total.
     duplicate_of = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='duplicates')
+    # Receipts recorded here. request_key makes creation retry-safe. A receipt is
+    # never deleted: the legacy delete removed even a verified recovery while its
+    # invoice kept the payment, leaving money received with no receipt. An
+    # unverified receipt is voided with a reason instead.
+    request_key = models.UUIDField(null=True, blank=True, unique=True, editable=False)
+    request_hash = models.CharField(max_length=64, blank=True, editable=False)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    void_reason = models.TextField(blank=True)
+    voided_by = models.ForeignKey('target_core.LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
 
     class Meta:
         app_label = "target_core"
