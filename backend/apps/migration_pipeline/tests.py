@@ -826,3 +826,19 @@ class CenturyCorrectionTests(TestCase):
         self.assertNotEqual(unconfirmed.issued_date, datetime.date(2021, 3, 4))
         staged = SourceRow.objects.get(table='offline_invoice', key=source_key(2))
         self.assertFalse(any('year corrected' in p for p in staged.problems))
+
+
+class ReceiptVerifiedImportTests(TestCase):
+    """Review R6: imported receipts carry a verified flag that agrees with their workflow."""
+
+    def test_the_flag_follows_the_verifier_and_verify_status(self):
+        from target_core.models import Receipt
+        data = dataset({
+            ('lead_mngt', 'cash_receipt'): [row('lead_mngt', 'cash_receipt', cash_receipt_id=1, cash_receipt_no='C-0926100001', verified_by=7),
+                                            row('lead_mngt', 'cash_receipt', cash_receipt_id=2, cash_receipt_no='C-0926100002', verified_by=None)],
+            ('lead_mngt', 'amount_received'): [row('lead_mngt', 'amount_received', amount_received_id=1, verify_status=1),
+                                               row('lead_mngt', 'amount_received', amount_received_id=2, verify_status=None)]})
+        synchronize(FakeSource(data))
+        self.assertEqual({r.number: r.verified for r in Receipt.objects.filter(origin='legacy_cash_receipt')},
+                         {'C-0926100001': True, 'C-0926100002': False})
+        self.assertEqual(sorted(Receipt.objects.filter(origin='legacy_amount_received').values_list('verified', flat=True)), [False, True])

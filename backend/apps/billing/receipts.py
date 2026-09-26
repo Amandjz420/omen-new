@@ -288,8 +288,10 @@ def verify(request, pk):
             raise IntakeError(f'Invoice {invoice.number} has Rs {owed} outstanding and this receipt is Rs {q(r.amount)}. '
                               f'Confirm to record Rs {q(r.amount) - owed} as received in excess, or void the receipt.', 409)
     before = snapshot(r)
-    r.verified_by, r.verified_at = account, timezone.now()
-    r.save(update_fields=['verified_by', 'verified_at'])
+    # The Boolean is kept in step with the workflow; it had stayed False, so admin
+    # lists and filters disagreed with the stage (review R6).
+    r.verified_by, r.verified_at, r.verified = account, timezone.now(), True
+    r.save(update_fields=['verified_by', 'verified_at', 'verified'])
     record(request.user, r, before, action='verify_cash_receipt')
     if invoice is not None:
         before = snapshot(invoice)

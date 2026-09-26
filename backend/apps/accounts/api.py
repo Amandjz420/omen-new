@@ -9,10 +9,21 @@ from django.middleware.csrf import get_token
 from django.views.decorators.http import require_GET, require_POST
 
 
+def complete_onboarding(user):
+    """Record that the account holder has chosen their own password. Called only
+    from the account holder's own successful change: the password endpoint below,
+    and the admin site's change-your-own-password page (apps/accounts/admin.py)."""
+    account = getattr(user, 'legacy_account', None)
+    if account is not None and account.must_change_password:
+        account.must_change_password = False
+        account.save(update_fields=['must_change_password'])
+
+
 def onboarding_pending(user):
     """True until the account holder has chosen their own password.
 
-    Only a successful change through the password endpoint below clears it. It
+    Only the account holder's own successful change clears it: the password
+    endpoint below, or the admin site's change-your-own-password page. It
     used to clear whenever the stored hash differed from the issued one, but
     Django rewrites the hash for the same password when it upgrades the hashing
     parameters on sign-in, so signing in with the unchanged issued password
@@ -92,10 +103,7 @@ def change_password(request):
         return JsonResponse({'error': 'Choose a password you have not used here before'}, status=400)
     request.user.set_password(new)
     request.user.save(update_fields=['password'])
-    account = getattr(request.user, 'legacy_account', None)
-    if account is not None and account.must_change_password:
-        account.must_change_password = False
-        account.save(update_fields=['must_change_password'])
+    complete_onboarding(request.user)
     update_session_auth_hash(request, request.user)
     return JsonResponse({'username': request.user.username, 'password_change_required': False})
 

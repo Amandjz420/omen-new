@@ -131,6 +131,14 @@ def balances(total, paid, bad_debt):
 
 OFFLINE = 'legacy_offline_invoice'
 PAYMENT_ORIGINS = ('local_invoice_payment', 'legacy_offline_amount_received')
+CASH_ORIGINS = ('legacy_cash_receipt', 'local_cash_receipt')
+# What an invoice's payment history lists: direct payments, offline payments, and
+# cash-receipt recoveries once verified and not voided. Verified recoveries settle
+# the balance, but were missing from the history, so the two disagreed (review R5).
+# Duplicate copies (duplicate_of) are excluded by the caller.
+SETTLEMENTS = (Q(origin__in=PAYMENT_ORIGINS)
+               | (Q(origin__in=CASH_ORIGINS, received_as=2, voided_at__isnull=True)
+                  & (Q(verified_by__isnull=False) | Q(verified_at__isnull=False))))
 
 
 def is_offline(invoice):
@@ -185,8 +193,9 @@ def invoice_json(invoice):
             'payment_status': status, 'cancelled': invoice.cancelled_at is not None, 'cancel_reason': invoice.cancel_reason,
             'document': file_json(invoice.document),
             'payments': [{'on': r.received_date, 'amount': str(q(r.amount)), 'by': r.payer_name, 'mode': r.mode, 'remark': r.remark,
+                          'receipt': r.number if r.origin in CASH_ORIGINS else '',
                           'recorded': 'previous system' if r.origin.startswith('legacy') else 'here'}
-                         for r in invoice.receipts.filter(origin__in=PAYMENT_ORIGINS, duplicate_of__isnull=True)
+                         for r in invoice.receipts.filter(SETTLEMENTS, duplicate_of__isnull=True)
                          .order_by('received_date', 'created_at')],
             'offline': is_offline(invoice),
             'advance': str(q(invoice.advance_amount)) if is_offline(invoice) else None,
@@ -525,7 +534,10 @@ def queue(request):
     buckets = {'to_invoice': to_invoice,
                'unpaid': active.filter(legacy_remaining_amount__gt=0),
                'paid': active.filter(Q(legacy_remaining_amount__lte=0) | Q(legacy_remaining_amount__isnull=True)),
-               'cancelled': invoices.filter(cancelled_at__isnull=False),
+               # Offline invoices belong to no case, so they were missing here once
+               # credited (review R7); they appear for users who may see them.
+               'cancelled': m.Invoice.objects.filter(cancelled_at__isnull=False).filter(
+                   Q(valuation__case__in=cases) | (Q(origin=OFFLINE) if scoped_employee(request.user) is None else Q(pk__in=[]))),
                'offline': offline_queryset(request.user)}
     rows = buckets.get(state, to_invoice)
     if state == 'offline' and request.GET.get('due') == '1':
@@ -550,8 +562,11 @@ def queue(request):
                     'borrower': v.case.borrower.name if v.case.borrower_id else '', 'total': str(q(v.total_after_tax))} for v in items]
     else:
         items = rows.select_related('valuation__case__borrower').order_by('-issued_date', '-number')[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]
-        results = [{'id': i.pk, 'number': i.number, 'issued_on': i.issued_date, 'report_number': i.valuation.report_number if i.valuation_id else '',
-                    'borrower': i.valuation.case.borrower.name if i.valuation_id and i.valuation.case.borrower_id else '',
+        results = [{'id': i.pk, 'number': i.number, 'issued_on': i.issued_date,
+                    'report_number': i.valuation.report_number if i.valuation_id else i.reference_report,
+                    'borrower': (i.valuation.case.borrower.name if i.valuation_id and i.valuation.case.borrower_id
+                                 else i.billed_customer_name or i.billed_to_name),
+                    'offline': is_offline(i),
                     'total': str(q(i.billed_amount)), 'remaining': str(q(i.legacy_remaining_amount))} for i in items]
     return JsonResponse({'state': state, 'total': total, 'page': page, 'page_size': PAGE_SIZE,
                          'counts': {**{k: v.count() for k, v in buckets.items()},

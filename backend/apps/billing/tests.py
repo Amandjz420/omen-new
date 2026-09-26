@@ -545,3 +545,60 @@ class ReceiptContractTests(Invoicing):
         m.RoleAssignment.objects.filter(account__user=user).update(legacy_status='0')
         self.assertEqual(self.client.post('/api/receipts/', body, content_type='application/json').status_code, 404)  # previously 200
         self.assertEqual(m.Receipt.objects.filter(origin='local_cash_receipt').count(), 1)
+
+
+class FinanceConsistencyTests(Invoicing):
+    """Review R5-R7: history, verification state and credited offline invoices."""
+
+    def setUp(self):
+        super().setUp()
+        self.invoice = self.issue().json()['id']
+
+    def verified_receipt(self, amount='500'):
+        body = {'operation_id': str(uuid.uuid4()), 'received_as': 2, 'invoice': self.invoice, 'amount': amount,
+                'payment_mode': 4, 'payer_name': 'SBI'}
+        receipt = self.client.post('/api/receipts/', body, content_type='application/json').json()['id']
+        self.client.post(f'/api/receipts/{receipt}/check/', {}, content_type='application/json')
+        self.client.post(f'/api/receipts/{receipt}/verify/', {}, content_type='application/json')
+        return receipt
+
+    def history(self):
+        return self.client.get(f'/api/invoices/{self.invoice}/').json()['payments']
+
+    def test_a_verified_recovery_appears_in_the_invoice_history_once(self):
+        receipt = self.verified_receipt()
+        number = m.Receipt.objects.get(pk=receipt).number
+        self.assertEqual([p['receipt'] for p in self.history()], [number])                # previously empty
+        self.client.post(f'/api/receipts/{receipt}/verify/', {}, content_type='application/json')   # a retry
+        self.assertEqual(len(self.history()), 1)
+
+    def test_unverified_voided_and_duplicate_receipts_stay_out_of_the_history(self):
+        body = {'operation_id': str(uuid.uuid4()), 'received_as': 2, 'invoice': self.invoice, 'amount': '100',
+                'payment_mode': 4, 'payer_name': 'SBI'}
+        pending = self.client.post('/api/receipts/', body, content_type='application/json').json()['id']
+        voided = self.client.post('/api/receipts/', {**body, 'operation_id': str(uuid.uuid4())}, content_type='application/json').json()['id']
+        self.client.post(f'/api/receipts/{voided}/void/', {'reason': 'Entered twice'}, content_type='application/json')
+        kept = self.verified_receipt('200')
+        m.Receipt.objects.create(origin='legacy_cash_receipt', invoice_id=self.invoice, received_as=2, amount=Decimal('200'),
+                                 verified_at=timezone.now(), duplicate_of_id=kept)
+        self.assertEqual([p['amount'] for p in self.history()], ['200.00'])
+        self.assertTrue(pending)
+
+    def test_verification_sets_the_flag_admin_filters_on(self):
+        receipt = self.verified_receipt()
+        self.assertTrue(m.Receipt.objects.get(pk=receipt).verified)                        # previously False
+        from django.contrib.auth.models import User
+        self.client.force_login(User.objects.create_superuser('root', 'r@x.test', 'Root-Password-2026!'))
+        page = self.client.get('/admin/target_core/receipt/?verified__exact=1')
+        self.assertContains(page, m.Receipt.objects.get(pk=receipt).number)
+
+    def test_a_credited_offline_invoice_stays_findable(self):
+        offline = m.Invoice.objects.create(origin='legacy_offline_invoice', number='I-1120251794', billed_amount=Decimal('900'),
+                                           billed_to_name='State Bank of India')
+        self.client.post(f'/api/invoices/{offline.pk}/credit-note/', {'reason': 'Raised in error'}, content_type='application/json')
+        cancelled = self.client.get('/api/invoices/?state=cancelled').json()
+        self.assertIn('I-1120251794', [r['number'] for r in cancelled['results']])          # previously in neither queue
+        self.assertNotIn('I-1120251794', [r['number'] for r in self.client.get('/api/invoices/?state=offline').json()['results']])
+        from apps.valuations.test_forms import user_with_role
+        self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Assessor')))
+        self.assertEqual(self.client.get('/api/invoices/?state=cancelled').json()['total'], 0)
