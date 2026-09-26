@@ -1402,7 +1402,12 @@
         "filter_date": "models.DateField(null=True)",
         "delivered_date": "models.DateField(null=True)",
         "cancelled": "models.BooleanField(default=False)",
-        "cancel_remark": "models.TextField(blank=True)"
+        "cancel_remark": "models.TextField(blank=True)",
+        "local_sequence": "models.PositiveBigIntegerField(blank=True, editable=False, null=True, unique=True)",
+        "request_key": "models.UUIDField(blank=True, editable=False, null=True, unique=True)",
+        "request_hash": "models.CharField(blank=True, editable=False, max_length=64)",
+        "created_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.legacyaccount')",
+        "created_by_name": "models.CharField(blank=True, max_length=200)"
       },
       "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
     },
@@ -1418,7 +1423,9 @@
         "reference": "models.CharField(max_length=100)",
         "valuation": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='dispatch_items', to='target_core.valuation')",
         "lead": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
-        "resolution": "models.CharField(choices=[('exact', 'Matched a report number exactly'), ('normalized', 'Matched after correcting spacing, hyphen or prefix'), ('lead_number', 'A lead number entered where a report number belongs'), ('unresolved', 'No valuation carries this report number')], max_length=20)"
+        "resolution": "models.CharField(choices=[('chosen', 'Chosen here from the reports awaiting dispatch'), ('exact', 'Matched a report number exactly'), ('normalized', 'Matched after correcting spacing, hyphen or prefix'), ('lead_number', 'A lead number entered where a report number belongs'), ('unresolved', 'No valuation carries this report number')], max_length=20)",
+        "resend": "models.BooleanField(default=False)",
+        "resend_reason": "models.CharField(blank=True, max_length=500)"
       },
       "options": "{'abstract': False, 'constraints': [models.UniqueConstraint(fields=('dispatch', 'position'), name='dispatch_item_position')], 'indexes': []}"
     },
@@ -1565,7 +1572,13 @@
     "api/receipts/<uuid:pk>/",
     "api/receipts/<uuid:pk>/check/",
     "api/receipts/<uuid:pk>/verify/",
-    "api/receipts/<uuid:pk>/void/"
+    "api/receipts/<uuid:pk>/void/",
+    "api/dispatch/",
+    "api/dispatch/<uuid:pk>/",
+    "api/dispatch/<uuid:pk>/advance/",
+    "api/dispatch/<uuid:pk>/cancel/",
+    "api/dispatch/awaiting/",
+    "api/dispatch/reports/<uuid:pk>/"
   ],
   "amendments": [
     {
@@ -1615,6 +1628,24 @@
         "api/receipts/<uuid:pk>/check/",
         "api/receipts/<uuid:pk>/verify/",
         "api/receipts/<uuid:pk>/void/"
+      ]
+    },
+    {
+      "date": "2026-09-26",
+      "migration": "0025_dispatch_created_by_dispatch_created_by_name_and_more",
+      "changed_models": [
+        "Dispatch",
+        "DispatchItem"
+      ],
+      "added_models": [],
+      "reason": "Dispatch workflow: retry-safe creation, authorship, resends, and the chosen resolution.",
+      "added_routes": [
+        "api/dispatch/",
+        "api/dispatch/<uuid:pk>/",
+        "api/dispatch/<uuid:pk>/advance/",
+        "api/dispatch/<uuid:pk>/cancel/",
+        "api/dispatch/awaiting/",
+        "api/dispatch/reports/<uuid:pk>/"
       ]
     }
   ]

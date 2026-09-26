@@ -32,14 +32,23 @@ class Dispatch(Entity):
     cancelled = models.BooleanField(default=False)
     cancel_remark = models.TextField(blank=True)
 
+    # Dispatches made here. request_key makes creation retry-safe; local_sequence is
+    # the number's counter.
+    local_sequence = models.PositiveBigIntegerField(null=True, blank=True, unique=True, editable=False)
+    request_key = models.UUIDField(null=True, blank=True, unique=True, editable=False)
+    request_hash = models.CharField(max_length=64, blank=True, editable=False)
+    created_by = models.ForeignKey('target_core.LegacyAccount', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    created_by_name = models.CharField(max_length=200, blank=True)
+
     class Meta:
         app_label = "target_core"
 
 
 class DispatchItem(Entity):
     """One report reference within a dispatch, with its resolution recorded."""
-    EXACT, NORMALIZED, LEAD_NUMBER, UNRESOLVED = 'exact', 'normalized', 'lead_number', 'unresolved'
-    RESOLUTIONS = [(EXACT, 'Matched a report number exactly'),
+    EXACT, NORMALIZED, LEAD_NUMBER, UNRESOLVED, CHOSEN = 'exact', 'normalized', 'lead_number', 'unresolved', 'chosen'
+    RESOLUTIONS = [(CHOSEN, 'Chosen here from the reports awaiting dispatch'),
+                   (EXACT, 'Matched a report number exactly'),
                    (NORMALIZED, 'Matched after correcting spacing, hyphen or prefix'),
                    (LEAD_NUMBER, 'A lead number entered where a report number belongs'),
                    (UNRESOLVED, 'No valuation carries this report number')]
@@ -50,6 +59,10 @@ class DispatchItem(Entity):
     valuation = models.ForeignKey('Valuation', null=True, on_delete=models.PROTECT, related_name='dispatch_items')
     lead = models.ForeignKey('target_core.Lead', null=True, on_delete=models.PROTECT)
     resolution = models.CharField(max_length=20, choices=RESOLUTIONS)
+    # Set when a report already dispatched is deliberately sent again; 356 approved
+    # reports appear in more than one legacy dispatch, with nothing to say why.
+    resend = models.BooleanField(default=False)
+    resend_reason = models.CharField(max_length=500, blank=True)
 
     class Meta:
         app_label = "target_core"
