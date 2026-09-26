@@ -61,6 +61,11 @@ class DispatchItem(Entity):
     resolution = models.CharField(max_length=20, choices=RESOLUTIONS)
     # Set when a report already dispatched is deliberately sent again; 356 approved
     # reports appear in more than one legacy dispatch, with nothing to say why.
+    # The report revision this item sent. Report numbers stay the same across
+    # revisions, so without it an older revision's dispatch hid a corrected one from
+    # the awaiting queue (review N3). Empty on items from the previous system, which
+    # recorded no revision.
+    bank_report = models.ForeignKey('target_core.BankReport', null=True, blank=True, on_delete=models.PROTECT, related_name='dispatch_items')
     resend = models.BooleanField(default=False)
     resend_reason = models.CharField(max_length=500, blank=True)
 

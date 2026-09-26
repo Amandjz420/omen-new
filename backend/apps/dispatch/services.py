@@ -68,17 +68,45 @@ def head_office(user):
         raise IntakeError('Dispatch is handled by head office', 404)
 
 
+def current_reports():
+    """Bank reports that can be dispatched: finally approved, current (not superseded)
+    and with a document record. A report whose file is still in legacy storage is
+    dispatchable; its document exists, only the file has not been retrieved here.
+
+    Selected from the reports themselves. The previous filter on the valuation's
+    reverse relation also matched a valuation with no report at all, since the outer
+    join supplies nulls, so an approved valuation with no report could be dispatched
+    (review N2)."""
+    return m.BankReport.objects.filter(superseded_at__isnull=True, document__isnull=False,
+                                       valuation__verifications__final_status='Verified')
+
+
+def current_report_of(valuation):
+    return current_reports().filter(valuation=valuation).order_by('-revision').first()
+
+
 def approved_reports():
-    return m.Valuation.objects.filter(verifications__final_status='Verified',
-                                      bank_reports__superseded_at__isnull=True).distinct()
+    return m.Valuation.objects.filter(pk__in=current_reports().values('valuation'))
 
 
 def live_items():
     return m.DispatchItem.objects.filter(dispatch__cancelled=False, valuation__isnull=False)
 
 
+def dispatched_reports():
+    """Current reports already in a live dispatch. An item made here names the revision
+    it sent. An item from the previous system names none, and that system produced
+    only revision 0, so it covers revision 0 alone: a corrected revision made here
+    is never hidden by an earlier revision's dispatch (review N3)."""
+    live = live_items()
+    named = live.filter(bank_report__isnull=False).values('bank_report')
+    legacy = live.filter(bank_report__isnull=True).values('valuation')
+    return current_reports().filter(Q(pk__in=named) | Q(revision=0, valuation__in=legacy))
+
+
 def item_json(i):
     return {'reference': i.reference, 'valuation': i.valuation_id, 'resolution': i.get_resolution_display(),
+            'revision': i.bank_report.revision if i.bank_report_id else None,
             'resend': i.resend, 'resend_reason': i.resend_reason}
 
 
@@ -98,7 +126,7 @@ def dispatch_json(d):
 @endpoint(['GET'])
 def awaiting(request):
     head_office(request.user)
-    rows = approved_reports().exclude(pk__in=live_items().values('valuation'))
+    rows = approved_reports().exclude(pk__in=dispatched_reports().values('valuation'))
     text = request.GET.get('q', '').strip()
     if text:
         rows = rows.filter(Q(report_number__icontains=text) | Q(case__lead__number__icontains=text)
@@ -181,17 +209,25 @@ def create(request):
         raise IntakeError('A report is listed twice')
     resend = {str(k): str(v or '').strip() for k, v in (data.get('resend') or {}).items()}
     others = [str(x).strip() for x in (data.get('other_documents') or []) if str(x).strip()]
+    # Stored comma-separated, as in the previous system. Anything that would not fit or
+    # would be split apart is refused, never cut short: the list was truncated to 500
+    # characters while the document count still included what was lost (review N4).
+    if any(',' in x for x in others):
+        raise IntakeError('A document name cannot contain a comma; commas separate one document from the next')
     if not chosen and not others:
         raise IntakeError('Add at least one report or document to dispatch')
-    reports = []
+    reports, sent_before = [], set()
     for vid in chosen:
-        valuation = approved_reports().filter(pk=vid).first() if re.fullmatch(r'[0-9a-f-]{36}', vid) else None
-        if valuation is None:
+        valuation = m.Valuation.objects.filter(pk=vid).first() if re.fullmatch(r'[0-9a-f-]{36}', vid) else None
+        report = current_report_of(valuation) if valuation else None     # checked again here, not only in the queue
+        if report is None:
             raise IntakeError('Only an approved report with a current bank report can be dispatched')
-        if live_items().filter(valuation=valuation).exists():
+        if dispatched_reports().filter(pk=report.pk).exists():
+            # The same revision sent again. A corrected revision is not a resend.
             if not resend.get(vid):
                 raise IntakeError(f'{valuation.report_number} has already been dispatched; give a reason to send it again', 409)
-        reports.append(valuation)
+            sent_before.add(valuation.pk)
+        reports.append((valuation, report))
     try:
         mode = int(data.get('mode'))
     except (TypeError, ValueError):
@@ -223,7 +259,11 @@ def create(request):
     if cost is not None and cost < 0:
         raise IntakeError('Cost cannot be negative')
 
-    first = reports[0].case if reports else None
+    for label, joined in (('The other documents', ','.join(others)), ('The report numbers', ','.join(v.report_number for v, _ in reports))):
+        if len(joined) > 500:
+            raise IntakeError(f'{label} come to {len(joined)} characters; the limit is 500. '
+                              'Shorten the names, or send the rest in a second dispatch.')
+    first = reports[0][0].case if reports else None
     account, name = actor(request.user)
     sequence = allocate('dispatch', m.Dispatch, 'number', 'D', within=m.Dispatch.objects.exclude(number__regex=OLD_SCHEME))
     d = m.Dispatch.objects.create(
@@ -231,14 +271,15 @@ def create(request):
         client_name=(str(data.get('client_name') or '').strip() or (first.lead.office.name if first else ''))[:100],
         customer_name=(str(data.get('customer_name') or '').strip() or (first.borrower.name if first and first.borrower_id else ''))[:200],
         town=str(data.get('town') or '').strip()[:255], document_count=len(reports) + len(others),
-        report_references=','.join(v.report_number for v in reports)[:500], other_documents=','.join(others)[:500],
+        report_references=','.join(v.report_number for v, _ in reports), other_documents=','.join(others),
         mode=mode, status=status, courier=courier, other_courier=str(data.get('other_courier') or '').strip()[:500],
         consignment_number=consignment[:500], authorized_person=str(data.get('authorized_person') or '').strip()[:500],
         cost=cost, outward_date=outward, delivered_date=delivered, created_by=account, created_by_name=name[:200])
     m.DispatchItem.objects.bulk_create([
-        m.DispatchItem(dispatch=d, position=n, reference=v.report_number, valuation=v, lead=v.case.lead,
-                       resolution=m.DispatchItem.CHOSEN, resend=bool(resend.get(str(v.pk))), resend_reason=resend.get(str(v.pk), '')[:500])
-        for n, v in enumerate(reports)])
+        m.DispatchItem(dispatch=d, position=n, reference=v.report_number, valuation=v, lead=v.case.lead, bank_report=r,
+                       resolution=m.DispatchItem.CHOSEN, resend=v.pk in sent_before,
+                       resend_reason=resend.get(str(v.pk), '')[:500] if v.pk in sent_before else '')
+        for n, (v, r) in enumerate(reports)])
     record(request.user, d, action='create_dispatch')
     return JsonResponse(dispatch_json(d), status=201)
 

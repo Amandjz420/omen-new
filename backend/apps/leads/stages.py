@@ -26,8 +26,11 @@ def case_stages(case):
     verification = m.ValuationVerification.objects.filter(valuation=v).first() if v else None
     report = (m.BankReport.objects.filter(valuation=v, superseded_at__isnull=True).order_by('-revision').first() if v else None)
     invoice = m.Invoice.objects.filter(valuation=v, cancelled_at__isnull=True).order_by('-created_at').first() if v else None
-    item = (m.DispatchItem.objects.filter(valuation=v, dispatch__cancelled=False).select_related('dispatch')
-            .order_by('-dispatch__outward_date').first() if v else None)
+    # The dispatch of the current revision; an item from the previous system names no
+    # revision and can only have sent revision 0.
+    items = (m.DispatchItem.objects.filter(valuation=v, dispatch__cancelled=False).select_related('dispatch')
+             .order_by('-dispatch__outward_date') if v and report else m.DispatchItem.objects.none())
+    item = items.filter(bank_report=report).first() or (items.filter(bank_report__isnull=True).first() if report and report.revision == 0 else None)
     checked = sum(1 for t in TRACKS if verification and getattr(verification, f'{t}_status') == 'Verified')
     status = v.legacy_status if v else ''
     owed = (invoice.legacy_remaining_amount or 0) if invoice else None

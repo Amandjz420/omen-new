@@ -99,3 +99,80 @@ class DispatchTests(Approval):
         from apps.valuations.test_forms import user_with_role
         self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Assessor')))
         self.assertEqual(self.client.get('/api/dispatch/awaiting/').status_code, 404)
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class DispatchableReportTests(DispatchTests):
+    """Review N2: only an actual current, approved report with a document is dispatchable."""
+
+    def assert_not_dispatchable(self):
+        self.assertEqual(self.awaiting()['total'], 0)
+        self.assertEqual(self.send().status_code, 400)
+
+    def test_an_approved_valuation_with_no_report_is_not_dispatchable(self):
+        m.BankReport.objects.filter(valuation_id=self.v).delete()
+        self.assert_not_dispatchable()                                      # previously awaiting, and 201
+
+    def test_a_superseded_report_alone_is_not_dispatchable(self):
+        m.BankReport.objects.filter(valuation_id=self.v).update(superseded_at=timezone.now())
+        self.assert_not_dispatchable()
+
+    def test_a_report_without_a_document_is_not_dispatchable(self):
+        m.BankReport.objects.filter(valuation_id=self.v).update(document=None)
+        self.assert_not_dispatchable()
+
+    def test_a_report_held_in_legacy_storage_is_dispatchable(self):
+        m.Document.objects.filter(pk__in=m.BankReport.objects.filter(valuation_id=self.v).values('document')).update(storage_provider='legacy_lead_s3')
+        self.assertEqual(self.awaiting()['total'], 1)
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class RevisionDispatchTests(DispatchTests):
+    """Review N3: a corrected revision awaits dispatch; the earlier one keeps its history."""
+
+    def test_codex_reproduction_a_corrected_revision_awaits_dispatch(self):
+        first = self.send().json()
+        self.assertEqual(first['items'][0]['revision'], 0)
+        self.final_revert()
+        self.resubmit_and_verify()
+        self.generate()
+        self.approve()
+        self.assertEqual([r['valuation'] for r in self.awaiting()['results']], [str(self.v)])   # previously empty
+        second = self.send()                                                 # a new revision, not a resend
+        self.assertEqual(second.status_code, 201, second.content)
+        self.assertEqual((second.json()['items'][0]['revision'], second.json()['items'][0]['resend']), (1, False))
+        history = self.client.get(f'/api/dispatch/reports/{self.v}/').json()['dispatches']
+        self.assertEqual(len(history), 2)
+        self.assertEqual(m.DispatchItem.objects.get(dispatch_id=first['id']).bank_report.revision, 0)   # history intact
+        self.assertEqual(self.awaiting()['total'], 0)
+
+    def test_the_same_revision_sent_again_is_a_resend(self):
+        self.send()
+        self.assertEqual(self.send().status_code, 409)
+        self.assertTrue(self.send(resend={str(self.v): 'Bank lost it'}).json()['items'][0]['resend'])
+
+    def test_a_legacy_dispatch_covers_revision_0_only(self):
+        legacy = m.Dispatch.objects.create(number='D-0926100001')
+        m.DispatchItem.objects.create(dispatch=legacy, position=0, reference='R-1', valuation_id=self.v, resolution='exact')
+        self.assertEqual(self.awaiting()['total'], 0)                        # it could only have sent revision 0
+        m.BankReport.objects.filter(valuation_id=self.v).update(revision=1)
+        self.assertEqual(self.awaiting()['total'], 1)                        # but not a later one
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class DocumentListTests(DispatchTests):
+    """Review N4: document names are kept exactly, or the dispatch is refused whole."""
+
+    def test_a_list_too_long_to_store_is_refused_before_anything_is_created(self):
+        response = self.send(other_documents=['A' * 300, 'B' * 300])
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('limit is 500', response.json()['error'])
+        self.assertEqual(m.Dispatch.objects.count(), 0)                      # previously created, with a name cut short
+
+    def test_a_name_with_a_comma_is_refused(self):
+        self.assertEqual(self.send(other_documents=['Sale deed, certified copy']).status_code, 400)
+
+    def test_names_that_fit_are_kept_exactly(self):
+        names = ['Sale deed certified copy', 'Map ' + 'x' * 200]
+        body = self.send(other_documents=names).json()
+        self.assertEqual((body['other_documents'], body['document_count']), (names, 3))

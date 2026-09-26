@@ -63,9 +63,18 @@ class StageTests(Form, TestCase):
     def test_a_delivered_dispatch_completes_the_track(self):
         v = m.Valuation.objects.create(case=self.case, legacy_status='Submit')
         m.Invoice.objects.create(valuation=v, origin='local_invoice', number='I-2', legacy_remaining_amount=Decimal('0'))
+        report = m.BankReport.objects.create(valuation=v, revision=0)
         d = m.Dispatch.objects.create(number='D-1', status=3, outward_date=datetime.date(2026, 9, 1))
-        m.DispatchItem.objects.create(dispatch=d, position=0, reference='R-1', valuation=v, resolution='chosen')
+        m.DispatchItem.objects.create(dispatch=d, position=0, reference='R-1', valuation=v, bank_report=report, resolution='chosen')
         self.assertEqual(set(state for state, _ in self.stages().values()), {'done'})
+
+    def test_a_dispatch_counts_only_for_the_current_revision(self):
+        v = m.Valuation.objects.create(case=self.case, legacy_status='Submit')
+        old = m.BankReport.objects.create(valuation=v, revision=0, superseded_at=datetime.datetime(2026, 9, 2, tzinfo=datetime.timezone.utc))
+        m.BankReport.objects.create(valuation=v, revision=1)
+        d = m.Dispatch.objects.create(number='D-2', status=3, outward_date=datetime.date(2026, 9, 1))
+        m.DispatchItem.objects.create(dispatch=d, position=0, reference='R-1', valuation=v, bank_report=old, resolution='chosen')
+        self.assertNotEqual(self.stages()['dispatch'][0], 'done')          # revision 1 has not been sent
 
     def test_a_restricted_user_sees_only_their_own_cases(self):
         me, other = m.Employee.objects.create(name='Assessor'), m.Employee.objects.create(name='Other')

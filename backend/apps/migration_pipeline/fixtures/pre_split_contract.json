@@ -1424,6 +1424,7 @@
         "valuation": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='dispatch_items', to='target_core.valuation')",
         "lead": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.lead')",
         "resolution": "models.CharField(choices=[('chosen', 'Chosen here from the reports awaiting dispatch'), ('exact', 'Matched a report number exactly'), ('normalized', 'Matched after correcting spacing, hyphen or prefix'), ('lead_number', 'A lead number entered where a report number belongs'), ('unresolved', 'No valuation carries this report number')], max_length=20)",
+        "bank_report": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='dispatch_items', to='target_core.bankreport')",
         "resend": "models.BooleanField(default=False)",
         "resend_reason": "models.CharField(blank=True, max_length=500)"
       },
@@ -1658,6 +1659,15 @@
       "added_routes": [
         "api/leads/<uuid:pk>/stages/"
       ]
+    },
+    {
+      "date": "2026-09-27",
+      "migration": "0026_dispatchitem_bank_report",
+      "changed_models": [
+        "DispatchItem"
+      ],
+      "added_models": [],
+      "reason": "Review N3: a dispatch item records the report revision it sent."
     }
   ]
 }

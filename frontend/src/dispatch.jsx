@@ -93,7 +93,8 @@ function SendForm({api, reports, resend, onBack, onSent}) {
       <label>Cost<input inputMode="decimal" value={form.cost} onChange={e => set('cost', e.target.value)}/></label>
       <label>Town<input value={form.town} onChange={e => set('town', e.target.value)}/></label>
     </div>
-    <label>Other documents (comma-separated)<input value={form.others} onChange={e => set('others', e.target.value)}/></label>
+    <label>Other documents<input value={form.others} maxLength={500} onChange={e => set('others', e.target.value)}/>
+      <small className="muted">Separate documents with commas, up to 500 characters in all.</small></label>
     <p className="actions"><button disabled={busy}>{busy ? 'Saving…' : 'Create dispatch'}</button></p>
   </form></section>;
 }
@@ -117,7 +118,7 @@ function DispatchPage({api, id, onBack, onResend}) {
     <p>{d.client_name}{d.customer_name ? ` · ${d.customer_name}` : ''}{d.town ? ` · ${d.town}` : ''} · {d.document_count} document{d.document_count === 1 ? '' : 's'}</p>
     {d.cancelled && <p className="notice">Cancelled: {d.cancel_remark}</p>}
     {error && <p role="alert" className="error">{error}</p>}
-    <h3>Reports</h3><ul>{d.items.map((i, n) => <li key={n}>{i.reference}{i.resend ? ` · sent again: ${i.resend_reason}` : ''}
+    <h3>Reports</h3><ul>{d.items.map((i, n) => <li key={n}>{i.reference}{i.revision ? `, revision ${i.revision}` : ''}{i.resend ? `, sent again: ${i.resend_reason}` : ''}
       {d.status === 3 && i.valuation && <> · <button className="link" onClick={() => onResend({valuation: i.valuation, report_number: i.reference})}>Send again</button></>}</li>)}</ul>
     {d.other_documents.length > 0 && <p className="muted">Other documents: {d.other_documents.join(', ')}</p>}
     {d.next_statuses.length > 0 && <div className="panel inset"><h3>Update</h3><div className="form-grid">
