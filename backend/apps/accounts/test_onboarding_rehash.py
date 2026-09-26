@@ -75,3 +75,14 @@ class AdminPasswordPageTests(TestCase):
         self.assertEqual(response.status_code, 302, response.content[:300])
         self.account.refresh_from_db()
         self.assertTrue(self.account.must_change_password)
+
+    def test_the_issued_password_cannot_be_kept_by_changing_it_to_itself(self):
+        """Review N1: the admin form accepted the current password as the new one."""
+        self.client.force_login(self.user)
+        response = self.client.post('/admin/password_change/', {'old_password': ISSUED, 'new_password1': ISSUED,
+                                                                'new_password2': ISSUED})
+        self.assertEqual(response.status_code, 200)                         # the form is shown again, with the error
+        self.assertContains(response, 'not used here before')
+        self.account.refresh_from_db()
+        self.assertTrue(self.account.must_change_password)                  # previously False
+        self.assertRedirects(self.client.get('/admin/'), '/admin/password_change/', fetch_redirect_response=False)
