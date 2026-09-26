@@ -1,0 +1,17 @@
+/* The blue band of the previous Omen Assessors site, carried over as the header. */
+.header { background: var(--mantine-color-omen-6); border-bottom: 0; color: white; }
+.wordmark { display: inline-flex; flex-direction: column; line-height: 1; font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif; color: white; font-weight: 700; }
+.omen { font-size: 22px; letter-spacing: .2em; }
+.assessors { font-size: 9px; letter-spacing: .42em; margin-top: 5px; }
+.wordmark[data-size='lg'] .omen { font-size: 40px; }
+.wordmark[data-size='lg'] .assessors { font-size: 15px; margin-top: 10px; }
+.user { color: white; font-size: 14px; font-weight: 600; padding: 8px 10px; border-radius: var(--mantine-radius-sm); }
+.user:hover, .user:focus-visible { background: rgba(255, 255, 255, .14); }
+.user:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+.navlink { border-radius: var(--mantine-radius-sm); font-weight: 500; }
+.navlink[data-active] { font-weight: 650; }
+.main { background: var(--mantine-color-body); min-height: 100dvh; }
+.tabbar { display: grid; grid-template-columns: repeat(4, 1fr); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.tab { display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--mantine-color-gray-7); min-height: 48px; }
+.tab[aria-current='page'] { color: var(--mantine-color-omen-7); box-shadow: inset 0 3px 0 var(--mantine-color-omen-6); }
+.tab:focus-visible { outline: 2px solid var(--mantine-color-omen-6); outline-offset: -2px; }

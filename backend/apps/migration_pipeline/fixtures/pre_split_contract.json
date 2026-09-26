@@ -1578,7 +1578,8 @@
     "api/dispatch/<uuid:pk>/advance/",
     "api/dispatch/<uuid:pk>/cancel/",
     "api/dispatch/awaiting/",
-    "api/dispatch/reports/<uuid:pk>/"
+    "api/dispatch/reports/<uuid:pk>/",
+    "api/leads/<uuid:pk>/stages/"
   ],
   "amendments": [
     {
@@ -1646,6 +1647,16 @@
         "api/dispatch/<uuid:pk>/cancel/",
         "api/dispatch/awaiting/",
         "api/dispatch/reports/<uuid:pk>/"
+      ]
+    },
+    {
+      "date": "2026-09-27",
+      "migration": "none",
+      "changed_models": [],
+      "added_models": [],
+      "reason": "Read-only stage track for each case on the lead page.",
+      "added_routes": [
+        "api/leads/<uuid:pk>/stages/"
       ]
     }
   ]
