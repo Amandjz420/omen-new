@@ -299,3 +299,35 @@ class OfflineInvoiceTests(Invoicing):
         self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Assessor')))
         self.assertEqual(self.offline_queue()['total'], 0)
         self.assertEqual(self.client.get(f'/api/invoices/{self.offline.pk}/').status_code, 404)
+
+
+class DuplicateReceiptTests(Invoicing):
+    """amount_received entries copied into cash receipts must count once."""
+
+    def run_link(self):
+        from django.core.management import call_command
+        call_command('link_duplicate_receipts', verbosity=0)
+
+    def test_a_copied_entry_is_linked_to_its_cash_receipt(self):
+        import datetime
+        invoice = m.Invoice.objects.create(origin='legacy_invoice', number='I-0322010001', valuation_id=self.v)
+        day = datetime.date(2022, 3, 1)
+        receipt = m.Receipt.objects.create(origin='legacy_cash_receipt', invoice=invoice, amount=Decimal('500'), received_date=day)
+        copy = m.Receipt.objects.create(origin='legacy_amount_received', valuation_id=self.v, amount=Decimal('500'), received_date=day)
+        other = m.Receipt.objects.create(origin='legacy_amount_received', valuation_id=self.v, amount=Decimal('999'), received_date=day)
+        self.run_link()
+        copy.refresh_from_db(); other.refresh_from_db()
+        self.assertEqual(copy.duplicate_of_id, receipt.pk)
+        self.assertIsNone(other.duplicate_of_id)                           # no match: reported, not guessed
+        self.run_link()                                                    # idempotent
+        self.assertEqual(m.Receipt.objects.exclude(duplicate_of=None).count(), 1)
+
+    def test_one_cash_receipt_absorbs_only_one_entry(self):
+        import datetime
+        invoice = m.Invoice.objects.create(origin='legacy_invoice', number='I-0322010002', valuation_id=self.v)
+        day = datetime.date(2022, 3, 2)
+        m.Receipt.objects.create(origin='legacy_cash_receipt', invoice=invoice, amount=Decimal('500'), received_date=day)
+        for _ in range(2):
+            m.Receipt.objects.create(origin='legacy_amount_received', valuation_id=self.v, amount=Decimal('500'), received_date=day)
+        self.run_link()
+        self.assertEqual(m.Receipt.objects.filter(origin='legacy_amount_received').exclude(duplicate_of=None).count(), 1)

@@ -196,3 +196,14 @@ no longer applies to this migration.
 Still outstanding before lead workflows: a business permission policy (R2 leaves
 accounts deliberately without access), and a decision on the two shared generic
 logins.
+
+## After every import
+
+Run the two linking commands, in this order, after `sync_legacy`. Both are
+idempotent and never unlink.
+
+1. `manage.py link_dispatch_items` links dispatch items to the valuations they name.
+2. `manage.py link_duplicate_receipts` marks the 1,518 legacy amount-received
+   entries that were copied into cash receipts when cash receipts replaced them in
+   2022, so each payment counts once. Totals never count a receipt with
+   `duplicate_of` set.
