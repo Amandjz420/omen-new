@@ -50,8 +50,13 @@ ORIGINS = ('legacy_cash_receipt', 'local_cash_receipt')
 RECEIVED_AS = dict(m.Receipt.RECEIVED_AS)
 MODES = dict(m.Receipt.MODES)
 INSTRUMENT = (2, 3)                     # cheque, draft
-FIELDS = ('received_as', 'invoice', 'amount', 'received_date', 'payment_mode', 'cheque_draft_number',
-          'cheque_draft_bank', 'issue_date', 'in_favour_of', 'payer_name', 'mobile', 'remark', 'description')
+# The write contract: exactly the fields a maker or checker may send, for creation
+# and correction alike. The screen builds its request from this same list; it
+# previously sent the arrival date, which was missing here, and on correction
+# spread response-only fields into the request, so both were refused (review R1).
+FIELDS = ('received_as', 'invoice', 'amount', 'received_date', 'amount_received_on', 'payment_mode',
+          'cheque_draft_number', 'cheque_draft_bank', 'issue_date', 'in_favour_of', 'payer_name', 'mobile',
+          'remark', 'description')
 PAGE_SIZE = 25
 
 
@@ -62,7 +67,11 @@ def visible(user):
         return rows
     if who is NOBODY:
         return rows.none()
-    return rows.filter(Q(invoice__valuation__case__lead__assigned_employee=who) | Q(borrower__lead__assigned_employee=who))
+    # A recovery is scoped only through its current invoice; any other receipt only
+    # through its borrower. A recovery moved to another invoice once stayed visible
+    # through its old borrower while showing the new invoice (review R2).
+    return rows.filter(Q(received_as=2, invoice__valuation__case__lead__assigned_employee=who)
+                       | (~Q(received_as=2) & Q(borrower__lead__assigned_employee=who)))
 
 
 VERIFIED = Q(verified_by__isnull=False) | Q(verified_at__isnull=False)
@@ -153,9 +162,17 @@ def clean(data, user, existing=None):
               'remark': str(data.get('remark') or '')[:2000], 'description': str(data.get('description') or '')[:500]}
     if not values['payer_name']:
         raise IntakeError('Enter who paid')
-    if invoice and invoice.valuation_id:
-        values['valuation'], values['office'] = invoice.valuation, invoice.valuation.case.lead.office
-        values['borrower'] = invoice.valuation.case.borrower
+    # Every link derived from the invoice is recomputed, never left over. A recovery
+    # takes its valuation, office and borrower from its current invoice, or none for
+    # an offline invoice; an advance or other receipt has no invoice or valuation,
+    # and keeps the office and borrower it was recorded against.
+    if invoice is not None:
+        case = invoice.valuation.case if invoice.valuation_id else None
+        values['valuation'] = invoice.valuation if case else None
+        values['office'] = case.lead.office if case else invoice.office
+        values['borrower'] = case.borrower if case else None
+    else:
+        values['valuation'] = None
     return values
 
 
@@ -199,6 +216,10 @@ def create(request):
     digest = fingerprint(data)
     done = m.Receipt.objects.filter(request_key=key).first()
     if done is not None:
+        # Access is checked now, not as it was when the receipt was created: a replay
+        # once returned the receipt after the user's grant was removed (review R3).
+        if not visible(request.user).filter(pk=done.pk).exists():
+            raise IntakeError('Receipt not found', 404)
         if done.request_hash != digest:
             raise IntakeError('This operation_id was already used for a different receipt', 409)
         return JsonResponse({**receipt_json(done), 'replayed': True})

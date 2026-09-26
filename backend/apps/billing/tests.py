@@ -450,3 +450,98 @@ class CashReceiptTests(Invoicing):
         self.assertEqual(self.client.get(f'/api/receipts/{receipt}/').json()['stage'], 'to_verify')   # nothing marked
         self.assertEqual(self.step(receipt, 'verify', confirm_overpayment=True).status_code, 200)
         self.assertEqual(self.paid()['excess'], '500.00')
+
+
+class ReceiptContractTests(Invoicing):
+    """Review R1-R3: the receipt screen's real requests, reassignment and replay scope."""
+
+    def setUp(self):
+        super().setUp()
+        import re
+        from pathlib import Path
+        from django.conf import settings
+        jsx = (Path(settings.BASE_DIR).parent / 'frontend' / 'src' / 'receipts.jsx').read_text()
+        self.write_fields = re.findall(r"'([a-z_]+)'", re.search(r'WRITE_FIELDS = \[(.*?)\];', jsx, re.S).group(1))
+        self.invoice = self.issue().json()['id']
+
+    def react_create(self, **overrides):
+        """Exactly what blank() and the form submit send."""
+        form = {k: '' for k in self.write_fields}
+        form.update({'received_as': 2, 'invoice': self.invoice, 'amount': '500', 'received_date': str(timezone.localdate()),
+                     'payment_mode': 4, 'payer_name': 'State Bank of India', **overrides})
+        return self.client.post('/api/receipts/', {'operation_id': str(uuid.uuid4()), **form}, content_type='application/json')
+
+    def react_correct(self, receipt, **changes):
+        """writable(GET response), with the invoice id, as the correction form sends."""
+        current = self.client.get(f'/api/receipts/{receipt}/').json()
+        fields = {k: ('' if current.get(k) is None else current.get(k)) for k in self.write_fields}
+        fields['invoice'] = current['invoice']['id'] if current.get('invoice') else ''
+        fields.update(changes)
+        return self.client.put(f'/api/receipts/{receipt}/', fields, content_type='application/json')
+
+    def assessor(self, source_id='157'):
+        from apps.valuations.test_forms import user_with_role
+        employee = m.Employee.objects.create(name=f'Assessor {uuid.uuid4().hex[:4]}')
+        return user_with_role(source_id, employee), employee
+
+    def test_the_screen_and_the_backend_agree_on_the_write_fields(self):
+        from apps.billing.receipts import FIELDS
+        self.assertEqual(self.write_fields, list(FIELDS))
+
+    def test_the_screens_create_request_is_accepted_with_and_without_an_arrival_date(self):
+        self.assertEqual(self.react_create().status_code, 201)                               # previously 400
+        self.assertEqual(self.react_create(amount_received_on=str(timezone.localdate())).status_code, 201)
+
+    def test_the_screens_correction_request_is_accepted(self):
+        receipt = self.react_create().json()['id']
+        response = self.react_correct(receipt, amount='650')
+        self.assertEqual(response.status_code, 200, response.content)                         # previously 400
+        self.assertEqual(response.json()['amount'], '650.00')
+
+    def _owned_receipt(self):
+        """A recovery on an invoice whose lead is assigned to an assessor."""
+        user, employee = self.assessor()
+        m.Lead.objects.filter(pk=m.Valuation.objects.get(pk=self.v).case.lead_id).update(assigned_employee=employee)
+        receipt = self.react_create().json()['id']
+        return receipt, user
+
+    def test_moving_to_an_offline_invoice_clears_the_old_links_and_access(self):
+        receipt, old = self._owned_receipt()
+        offline = m.Invoice.objects.create(origin='legacy_offline_invoice', number='I-1120251794', billed_amount=Decimal('900'))
+        self.assertEqual(self.react_correct(receipt, invoice=str(offline.pk)).status_code, 200)
+        stored = m.Receipt.objects.get(pk=receipt)
+        self.assertEqual((stored.valuation_id, stored.borrower_id), (None, None))               # previously kept
+        self.client.force_login(old)
+        self.assertEqual(self.client.get(f'/api/receipts/{receipt}/').status_code, 404)        # previously 200
+
+    def test_moving_to_other_keeps_the_borrower_but_exposes_no_invoice(self):
+        receipt, old = self._owned_receipt()
+        self.assertEqual(self.react_correct(receipt, received_as=3, invoice='').status_code, 200)
+        self.client.force_login(old)
+        body = self.client.get(f'/api/receipts/{receipt}/').json()
+        self.assertIsNone(body['invoice'])                                                      # the same party's money
+
+    def test_moving_to_another_online_invoice_follows_its_assessor(self):
+        receipt, old = self._owned_receipt()
+        new_user, new_employee = self.assessor()
+        case = self.lead_with_case(assigned=new_employee)
+        other = m.Invoice.objects.create(origin='legacy_invoice', number='I-0926250099', billed_amount=Decimal('900'),
+                                         valuation=m.Valuation.objects.create(case=case, legacy_status='Submit'))
+        self.assertEqual(self.react_correct(receipt, invoice=str(other.pk)).status_code, 200)
+        self.client.force_login(old)
+        self.assertEqual(self.client.get(f'/api/receipts/{receipt}/').status_code, 404)
+        self.client.force_login(new_user)
+        self.assertEqual(self.client.get(f'/api/receipts/{receipt}/').status_code, 200)
+
+    def test_a_replay_after_access_is_removed_discloses_nothing(self):
+        user, employee = self.assessor()
+        m.Lead.objects.filter(pk=m.Valuation.objects.get(pk=self.v).case.lead_id).update(assigned_employee=employee)
+        self.client.force_login(user)
+        body = {'operation_id': str(uuid.uuid4()), **{k: '' for k in self.write_fields},
+                'received_as': 2, 'invoice': self.invoice, 'amount': '500', 'payment_mode': 4, 'payer_name': 'SBI'}
+        self.assertEqual(self.client.post('/api/receipts/', body, content_type='application/json').status_code, 201)
+        replay = self.client.post('/api/receipts/', body, content_type='application/json')
+        self.assertTrue(replay.json()['replayed'])                                              # an authorised retry
+        m.RoleAssignment.objects.filter(account__user=user).update(legacy_status='0')
+        self.assertEqual(self.client.post('/api/receipts/', body, content_type='application/json').status_code, 404)  # previously 200
+        self.assertEqual(m.Receipt.objects.filter(origin='local_cash_receipt').count(), 1)

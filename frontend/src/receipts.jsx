@@ -5,6 +5,11 @@ const AS = [[2, 'Recovery against an invoice'], [1, 'Advance'], [3, 'Other']];
 const MODES = [[4, 'Netbanking'], [5, 'UPI'], [1, 'Cash'], [2, 'Cheque'], [3, 'Draft']];
 const rs = v => `₹ ${Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const today = () => new Date().toISOString().slice(0, 10);
+// The fields a receipt form may send, for creation and correction alike. It must
+// match FIELDS in backend/apps/billing/receipts.py; a backend test compares them.
+export const WRITE_FIELDS = ['received_as', 'invoice', 'amount', 'received_date', 'amount_received_on', 'payment_mode',
+  'cheque_draft_number', 'cheque_draft_bank', 'issue_date', 'in_favour_of', 'payer_name', 'mobile', 'remark', 'description'];
+const writable = form => Object.fromEntries(WRITE_FIELDS.map(k => [k, form[k] ?? '']));
 const blank = () => ({operation_id: crypto.randomUUID(), received_as: 2, invoice: '', amount: '', received_date: today(),
   amount_received_on: '', payment_mode: 4, cheque_draft_number: '', cheque_draft_bank: '', issue_date: '', in_favour_of: '',
   payer_name: '', mobile: '', remark: '', description: ''});
@@ -75,7 +80,10 @@ function ReceiptForm({api, id, initial, onBack, onSaved}) {
     e.preventDefault(); setBusy(true); setError('');
     try {
       // The operation ID stays the same if this fails, so resubmitting is a safe retry.
-      const body = JSON.stringify({...form, invoice: recovery ? form.invoice : ''});
+      // Only the write fields are sent, plus the operation ID when creating: never
+      // fields copied from a previous response.
+      const fields = {...writable(form), invoice: recovery ? form.invoice : ''};
+      const body = JSON.stringify(id ? fields : {operation_id: form.operation_id, ...fields});
       const r = await api(id ? `receipts/${id}/` : 'receipts/', {method: id ? 'PUT' : 'POST', body});
       onSaved(r.id);
     } catch (err) {setError(err.message);} finally {setBusy(false);}
@@ -126,7 +134,7 @@ function Receipt({api, id, onBack}) {
   }
   if (!r) return <section className="panel">{error ? <p role="alert" className="error">{error}</p> : <p>Loading…</p>}</section>;
   if (editing) return <ReceiptForm api={api} id={id} onBack={() => setEditing(false)} onSaved={() => {setEditing(false); load();}}
-    initial={{...r, invoice: r.invoice?.id || '', invoiceInfo: r.invoice, operation_id: crypto.randomUUID()}}/>;
+    initial={{...writable(r), invoice: r.invoice?.id || '', invoiceInfo: r.invoice}}/>;
   const open = ['to_check', 'to_verify'].includes(r.stage);
   return <section className="panel">
     <button className="link" onClick={onBack}>← Back to receipts</button>

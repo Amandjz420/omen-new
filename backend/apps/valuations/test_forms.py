@@ -201,15 +201,22 @@ class ValuationFormTests(Form, TestCase):
 
 def user_with_role(source_id, employee):
     """A signed-in-capable user holding one LEAD role, identified by its legacy id."""
+    import uuid
     lead_project = m.LegacyProject.objects.get_or_create(name='LEAD')[0]
-    role = m.RoleDefinition.objects.create(name=f'role {source_id}', project=lead_project,
-                                           legacy_status='1', legacy_deleted='0')
-    batch = m.ImportBatch.objects.create()
-    m.SourceIdentity.objects.create(batch=batch, environment='main', schema='uam_user', table='usertype',
-                                    key=source_key(source_id), target_model='target_core.RoleDefinition',
-                                    target_id=role.pk)
-    user = User.objects.create_user(f'u{source_id}', password='x', is_staff=True)
-    account = m.LegacyAccount.objects.create(name='A', login_id=f'u{source_id}', user=user, employee=employee,
+    # One role per legacy id, reused, so a test may create several users holding it.
+    identity = m.SourceIdentity.objects.filter(environment='main', schema='uam_user', table='usertype',
+                                               key=source_key(source_id)).first()
+    if identity:
+        role = m.RoleDefinition.objects.get(pk=identity.target_id)
+    else:
+        role = m.RoleDefinition.objects.create(name=f'role {source_id}', project=lead_project,
+                                               legacy_status='1', legacy_deleted='0')
+        m.SourceIdentity.objects.create(batch=m.ImportBatch.objects.create(), environment='main', schema='uam_user',
+                                        table='usertype', key=source_key(source_id),
+                                        target_model='target_core.RoleDefinition', target_id=role.pk)
+    login = f'u{source_id}-{uuid.uuid4().hex[:6]}'
+    user = User.objects.create_user(login, password='x', is_staff=True)
+    account = m.LegacyAccount.objects.create(name='A', login_id=login, user=user, employee=employee,
                                              legacy_status='1', must_change_password=False)
     m.RoleAssignment.objects.create(account=account, role=role, project=lead_project,
                                     legacy_status='1', legacy_deleted='0')
