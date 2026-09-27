@@ -98,6 +98,29 @@ def scope_cases(user, cases):
     return cases.filter(lead__assigned_employee=who)
 
 
+def scope_leads(user, leads):
+    """Leads a user may see: all when unrestricted; otherwise those assigned to them.
+    The same rule as scope_cases, for endpoints that start from a lead. Lead list,
+    detail, notes, intake and work orders once skipped it, so a restricted assessor
+    could read and annotate other assessors' leads (review BF1)."""
+    who = scoped_employee(user)
+    if who is None:
+        return leads
+    if who is NOBODY:
+        return leads.none()
+    return leads.filter(assigned_employee=who)
+
+
+def require_lead(user, lead):
+    """Stop unless the user may see this lead. The answer matches a missing lead,
+    so a lead outside the user's scope is not revealed to exist."""
+    from apps.common.http import IntakeError
+    from target_core import models as _m
+    if lead is None or not scope_leads(user, _m.Lead.objects.filter(pk=lead.pk)).exists():
+        raise IntakeError('Lead not found', 404)
+    return lead
+
+
 def in_scope(user, case):
     # 404 rather than 403, so a scoped user cannot probe which cases exist.
     if not scope_cases(user, m.Case.objects.filter(pk=case.pk)).exists():

@@ -94,3 +94,16 @@ test('reports: a report with its totals, groups and drill-down', async ({page}, 
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   await page.screenshot({path: `test-results/shots/report-${info.project.name}.png`, fullPage: true});
 });
+
+test('on plain http, where browsers withhold crypto.randomUUID, IDs still work', async ({page}) => {
+  // Review BF2. Localhost is a secure context, so the feature is removed before any script runs.
+  await page.addInitScript(() => { delete Crypto.prototype.randomUUID; });
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/');
+  await expect(page.getByRole('heading', {name: 'My work'})).toBeVisible();
+  const ids = await page.evaluate(() => Array.from({length: 50}, () => crypto.randomUUID()));
+  expect(new Set(ids).size).toBe(50);
+  for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  expect(errors).toEqual([]);
+});

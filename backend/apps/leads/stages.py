@@ -14,7 +14,7 @@ from django.views.decorators.http import require_GET
 from target_core import models as m
 from apps.accounts.api import staff_api
 from apps.reports.pdf import rupees
-from apps.valuations.services import scope_cases
+from apps.valuations.services import scope_cases, scope_leads
 
 TRACKS = ('legal', 'technical', 'social', 'general')
 
@@ -74,7 +74,7 @@ def case_stages(case):
 @require_GET
 @staff_api
 def lead_stages(request, pk):
-    lead = m.Lead.objects.filter(pk=pk).first()
+    lead = scope_leads(request.user, m.Lead.objects.filter(pk=pk)).first()      # not found, rather than an empty list
     if lead is None:
         return JsonResponse({'error': 'Lead not found'}, status=404)
     cases = (scope_cases(request.user, m.Case.objects.filter(lead=lead))

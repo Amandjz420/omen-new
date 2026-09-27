@@ -29,6 +29,7 @@ payment completion.
 import hashlib
 import json
 import uuid
+from apps.valuations.services import require_lead
 from pathlib import Path
 
 from django.conf import settings
@@ -112,7 +113,7 @@ def close_if_complete(lead, actor):
 
 @endpoint(['GET'])
 def lead_work_orders(request, pk):
-    return JsonResponse(lead_state(find(m.Lead, pk)))
+    return JsonResponse(lead_state(require_lead(request.user, find(m.Lead, pk))))
 
 
 @endpoint(['POST'])
@@ -124,12 +125,15 @@ def create_work_order(request):
         raise IntakeError('request_id must be a UUID, reused when retrying the same order')
     digest = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
     prior = m.WorkOrder.objects.filter(request_key=key).first()
+    if prior is not None:
+        require_lead(request.user, prior.lead)                  # a replay is checked now, as in review R3
     if prior:
         if prior.request_hash != digest:
             raise IntakeError('This request ID was already used for a different work order', 409)
         return JsonResponse({**order_json(prior), 'replayed': True, 'lead_state': lead_state(prior.lead)})
 
     borrower = find(m.Borrower, data.get('borrower'))
+    require_lead(request.user, borrower.lead)
     # Lock the borrower and its lead so concurrent requests for the same borrower
     # serialise; the partial unique constraint is the final backstop.
     borrower = m.Borrower.objects.select_for_update().get(pk=borrower.pk)
@@ -166,12 +170,14 @@ def create_work_order(request):
 @endpoint(['GET'])
 def work_order_detail(request, pk):
     order = find(m.WorkOrder, pk)
+    require_lead(request.user, order.lead)
     return JsonResponse({**order_json(order), 'lead_state': lead_state(order.lead)})
 
 
 @endpoint(['GET'])
 def work_order_document(request, pk):
     order = find(m.WorkOrder, pk)
+    require_lead(request.user, order.lead)
     document = order.document
     if document is None:
         raise IntakeError('This work order has no document', 404)

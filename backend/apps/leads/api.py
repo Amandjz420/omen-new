@@ -1,4 +1,5 @@
 from django.db.models import Q
+from apps.valuations.services import scope_leads
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
 from target_core.models import Lead, LeadNote, SourceIdentity
@@ -20,7 +21,7 @@ def lead_json(obj,references):
 @require_GET
 @staff_api
 def leads(request):
-    qs = Lead.objects.select_related('office__bank').order_by('-received_date', '-id')
+    qs = scope_leads(request.user, Lead.objects.select_related('office__bank')).order_by('-received_date', '-id')
     q = request.GET.get('q', '').strip()
     if q:
         ids=SourceIdentity.objects.filter(target_model=Lead._meta.label,environment='main',key=source_key(q)).values('target_id')
@@ -33,7 +34,8 @@ def leads(request):
 @require_http_methods(['GET', 'POST'])
 @staff_api
 def lead_detail(request, pk):
-    obj = Lead.objects.select_related('office__bank', 'contact').filter(pk=pk).first()
+    # Scoped before anything is read or written, including a note (review BF1).
+    obj = scope_leads(request.user, Lead.objects.select_related('office__bank', 'contact')).filter(pk=pk).first()
     if obj is None:
         return JsonResponse({'error': 'Lead not found'}, status=404)
     if request.method == 'POST':

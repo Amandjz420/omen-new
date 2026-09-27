@@ -38,10 +38,25 @@ describe('drafts', () => {
 });
 
 describe('uuid', () => {
-  it('makes a version-4 UUID without crypto.randomUUID, as on a phone over plain http', () => {
+  const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  it('works when the page loads without crypto.randomUUID, as on a phone over plain http', async () => {
+    // Removed before the module loads: the path that once recursed (review BF2).
     const original = crypto.randomUUID;
-    Object.defineProperty(crypto, 'randomUUID', {value: undefined, configurable: true});
-    expect(uuid()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-    Object.defineProperty(crypto, 'randomUUID', {value: original, configurable: true});
+    Object.defineProperty(crypto, 'randomUUID', {value: undefined, configurable: true, writable: true});
+    try {
+      vi.resetModules();
+      const {uuid: fresh} = await import('./uuid.js?http-phone');
+      const ids = new Set(Array.from({length: 200}, () => crypto.randomUUID()));  // the screens call this directly
+      expect(ids.size).toBe(200);
+      [...ids].forEach(id => expect(id).toMatch(V4));
+      expect(fresh()).toMatch(V4);
+    } finally {
+      Object.defineProperty(crypto, 'randomUUID', {value: original, configurable: true, writable: true});
+    }
+  });
+
+  it('uses the browser\'s own function where it exists', () => {
+    expect(uuid()).toMatch(V4);
   });
 });

@@ -41,7 +41,7 @@ from django.utils import timezone
 from target_core import models as m
 from apps.common.http import IntakeError, endpoint
 from apps.migration_pipeline.services import source_key
-from apps.valuations.services import scope_cases, scoped_employee
+from apps.valuations.services import scope_cases, scope_leads, scoped_employee
 
 ZERO = Decimal('0')
 PAGE_SIZE = 50
@@ -169,8 +169,7 @@ def leads(user, f):
     """Leads, dated by the date they were received. Deleted leads are left out; the
     legacy lead queries had no such filter and counted them."""
     qs = m.Lead.objects.exclude(legacy_deleted='1')
-    if scoped_employee(user) is not None:
-        qs = qs.filter(pk__in=scope_cases(user, m.Case.objects.all()).values('lead'))
+    qs = scope_leads(user, qs)
     qs = common_filters(qs, f, date='received_date', prefix='')
     from django.db.models import Count
     qs = qs.annotate(borrower_count=Count('borrower', distinct=True, filter=~Q(borrower__legacy_deleted='1')))

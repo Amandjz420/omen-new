@@ -80,4 +80,5 @@ class StageTests(Form, TestCase):
         me, other = m.Employee.objects.create(name='Assessor'), m.Employee.objects.create(name='Other')
         theirs = self.lead_with_case(assigned=other)
         self.client.force_login(user_with_role('157', me))
-        self.assertEqual(self.client.get(f'/api/leads/{theirs.lead_id}/stages/').json()['cases'], [])
+        # Not found, as for a lead that does not exist, rather than an empty list (review BF1).
+        self.assertEqual(self.client.get(f'/api/leads/{theirs.lead_id}/stages/').status_code, 404)

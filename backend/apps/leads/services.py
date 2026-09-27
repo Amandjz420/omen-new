@@ -1,4 +1,5 @@
 """Admin-only lead intake. Business role policy is deliberately deferred."""
+from apps.valuations.services import require_lead
 from apps.common.http import IntakeError, endpoint, payload, find
 from apps.audit.services import snapshot, record
 from apps.common.validation import validated
@@ -149,7 +150,7 @@ def lead_result(lead):
 
 @endpoint(['GET', 'PATCH'])
 def lead_detail(request, pk):
-    lead = find(m.Lead, pk)
+    lead = require_lead(request.user, find(m.Lead, pk))
     if request.method == 'PATCH':
         editable(lead)
         before = snapshot(lead)
@@ -174,7 +175,7 @@ def lead_detail(request, pk):
 
 @endpoint(['POST'])
 def lead_children(request, pk, kind):
-    lead = find(m.Lead, pk)
+    lead = require_lead(request.user, find(m.Lead, pk))
     editable(lead)
     if kind in ('services', 'borrowers'):
         model, fields = (m.RequestedService, SERVICE_FIELDS) if kind == 'services' else (m.Borrower, BORROWER_FIELDS)
