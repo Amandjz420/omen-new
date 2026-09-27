@@ -32,7 +32,7 @@ describe('the lead page after an intake change', () => {
     renderApp(<Routes><Route path="/leads/:id" element={<LeadDetail/>}/></Routes>, {route: `/leads/${L}`});
     expect(await screen.findByText('In process')).toBeTruthy();
     saved = true;
-    fireEvent.click(screen.getByRole('button', {name: 'Save intake change'}));
+    fireEvent.click(await screen.findByRole('button', {name: 'Save intake change'}));   // the workspace loads with the lead
     await waitFor(() => expect(screen.getByText('Cancelled')).toBeTruthy());
     expect(counts.lead).toBe(2);
     expect(counts.stages).toBe(2);

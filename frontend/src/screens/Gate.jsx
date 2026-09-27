@@ -36,7 +36,7 @@ function SignIn({loadError}) {
   return <Frame><form onSubmit={submit}><Stack>
     <Title order={1}>Sign in</Title>
     <Text size="sm" c="dimmed">Use the username and password issued to you.</Text>
-    {(error || (loadError && loadError.status === 0)) && <Alert color="red" variant="light" role="alert">{(error || loadError).message}</Alert>}
+    {(error || (loadError && [0, 401].includes(loadError.status))) && <Alert color={error ? 'red' : 'yellow'} variant="light" role="alert">{(error || loadError).message}</Alert>}
     <TextInput name="username" label="Username" autoComplete="username" required autoFocus/>
     <PasswordInput name="password" label="Password" autoComplete="current-password" required/>
     <Button type="submit" loading={busy}>Sign in</Button>

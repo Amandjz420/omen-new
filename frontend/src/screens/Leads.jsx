@@ -2,13 +2,15 @@ import {Anchor, Button, Group, Pagination, Paper, Select, Stack, Table, Text, Te
 import {useDebouncedValue} from '@mantine/hooks';
 import {notifications} from '@mantine/notifications';
 import {keepPreviousData, useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
-import {useEffect, useState} from 'react';
+import {lazy, Suspense, useEffect, useState} from 'react';
 import {Link, useParams, useSearchParams} from 'react-router';
 import {PageHeader} from '../components/PageHeader.jsx';
 import {StageTrack} from '../components/StageTrack.jsx';
 import {EmptyState, ErrorState, LoadingState} from '../components/States.jsx';
 import {StatusBadge} from '../components/StatusBadge.jsx';
-import {LeadWorkspace} from '../workorders.jsx';
+// Loaded when a lead is opened: it brings in the intake screens, which would
+// otherwise be bundled into every page load.
+const LeadWorkspace = lazy(() => import('../workorders.jsx').then(module => ({default: module.LeadWorkspace})));
 import {api, post} from '../lib/api.js';
 import {count, date, dateTime} from '../lib/format.js';
 
@@ -96,7 +98,8 @@ export function LeadDetail() {
           </Paper>)}</Stack>}
     </section>
 
-    <section className="legacy-screen"><LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead}/></section>
+    <section className="legacy-screen"><Suspense fallback={<LoadingState label="Loading work orders"/>}>
+      <LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead}/></Suspense></section>
 
     <section>
       <Title order={2} mb={4}>Follow-up notes</Title>

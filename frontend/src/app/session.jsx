@@ -1,6 +1,6 @@
 import {createContext, useCallback, useContext, useEffect, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
-import {api, post} from '../lib/api.js';
+import {api, post, SIGNED_OUT} from '../lib/api.js';
 
 const SessionContext = createContext(null);
 
@@ -16,6 +16,17 @@ export function SessionProvider({children}) {
   useEffect(() => {
     api('session/').then(apply).catch(e => {setLoadError(e); setSession(null);});
   }, []);
+
+  // Any request answered "sign in to continue" means the session has ended.
+  useEffect(() => {
+    const ended = () => {
+      queryClient.clear();
+      setLoadError(Object.assign(new Error('Your session has ended. Sign in again to continue.'), {status: 401}));
+      setSession(null);
+    };
+    globalThis.addEventListener(SIGNED_OUT, ended);
+    return () => globalThis.removeEventListener(SIGNED_OUT, ended);
+  }, [queryClient]);
 
   const signIn = useCallback(async (username, password) => {
     apply(await post('login/', {username, password}));
