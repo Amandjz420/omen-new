@@ -9,3 +9,6 @@ if (!window.matchMedia) {
 }
 if (!window.ResizeObserver) window.ResizeObserver = class {observe() {} unobserve() {} disconnect() {}};
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+// Auto-growing textareas listen for web fonts loading so they can resize; jsdom has
+// no document.fonts, which every browser provides.
+if (!document.fonts) document.fonts = {addEventListener() {}, removeEventListener() {}, ready: Promise.resolve()};

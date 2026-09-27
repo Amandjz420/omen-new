@@ -60,10 +60,14 @@ export function WorkOrders({api, leadId, onChange}) {
 
 // Intake and work orders for one lead. Issuing an order can close the lead and
 // lock intake, so intake reloads whenever an order is issued.
-export function LeadWorkspace({api, leadId}) {
+// onChanged tells the page hosting this workspace that the lead changed, so what it
+// shows outside (the lead's header, its stage track, lists and counts) is refreshed.
+// Both panels report their saves; they were once lost here, so a work order issued
+// on the lead page left its header and stage track stale (review BF5).
+export function LeadWorkspace({api, leadId, onChanged}) {
   const [version, setVersion] = useState(0);
   return <>
-    <IntakeLead key={`${leadId}-${version}`} api={api} leadId={leadId}/>
-    <WorkOrders api={api} leadId={leadId} onChange={() => setVersion(v => v + 1)}/>
+    <IntakeLead key={`${leadId}-${version}`} api={api} leadId={leadId} onChange={onChanged}/>
+    <WorkOrders api={api} leadId={leadId} onChange={() => {setVersion(v => v + 1); onChanged?.();}}/>
   </>;
 }

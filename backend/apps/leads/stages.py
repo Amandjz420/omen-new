@@ -1,13 +1,22 @@
 """Where each of a lead's cases stands, stage by stage.
 
-The stages are a true sequence: intake, work order, valuation, verification, bank
-report, final approval, invoice, payment and dispatch. Each is worked out from the
-records themselves. Imported cases do not always carry every intermediate record,
-so a stage that is done implies the stages before it are done too. A cancelled or
-held valuation stops the track visibly instead of showing work as waiting.
+The stages are intake, work order, valuation, verification, bank report, final
+approval, invoice, payment and dispatch. Each is worked out from its own current
+records and nothing else. They were once treated as a strict sequence, so a
+completed later stage marked every earlier one done; but they are not one: a
+report can be dispatched before it is paid for, and an invoice can predate
+approval or outlive a reversion. On the real data 42 standing invoices sit on
+valuations that are not approved, and the old rule showed their checks and
+approval as done (review BF3). No inference is needed: every valuation has its
+work order linked, and every approved valuation has all four checks recorded.
+
+A held or cancelled valuation stops the track; a sent-back one is current. An
+invoice issued before the current approval says so. The current stage is the
+first that is not done, unless the work is stopped.
 
 Read-only. A user restricted to their own leads sees only the cases in their scope.
 """
+
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
@@ -35,31 +44,30 @@ def case_stages(case):
     status = v.legacy_status if v else ''
     owed = (invoice.legacy_remaining_amount or 0) if invoice else None
 
+    approved = bool(verification and verification.final_status == 'Verified')
+    stopped = status in ('Hold', 'Cancel')
     rows = [
         ('intake', 'Intake', True, 'Received' if lead.received_date else ''),
-        ('work_order', 'Work order', order is not None, order.number if order else ''),
+        ('work_order', 'Work order', bool((v and v.work_order_id) or order), (v.work_order.number if v and v.work_order_id else order.number if order else '')),
         ('valuation', 'Valuation', status == 'Submit',
          {'Pending': 'Being filled in', 'Revert': 'Sent back for correction', 'Submit': 'Submitted'}.get(status, '')),
         ('verification', 'Verification', checked == 4, f'{checked} of 4 checks' if v and checked < 4 else ''),
         ('bank_report', 'Bank report', report is not None, f'Revision {report.revision}' if report and report.revision else ''),
-        ('approval', 'Approval', bool(verification and verification.final_status == 'Verified'), ''),
-        ('invoice', 'Invoice', invoice is not None, invoice.number if invoice else ''),
+        ('approval', 'Approval', approved, 'Withdrawn for correction' if status == 'Revert' and not approved and report is None and invoice else ''),
+        ('invoice', 'Invoice', invoice is not None,
+         (f'{invoice.number}, issued before the current approval' if not approved else invoice.number) if invoice else ''),
         ('payment', 'Payment', invoice is not None and owed <= 0,
          f'₹{rupees(owed)} outstanding' if invoice is not None and owed > 0 else ('Paid' if invoice is not None else '')),
         ('dispatch', 'Dispatch', bool(item and item.dispatch.status == 3),
          {1: 'Lying at head office', 2: 'In transit', 3: 'Delivered'}.get(item.dispatch.status, '') if item else ''),
     ]
-    done = [r[2] for r in rows]
-    last = max((i for i, d in enumerate(done) if d), default=-1)
-    done = [d or i <= last for i, d in enumerate(done)]                  # a later stage implies the earlier ones
-    stopped = status in ('Hold', 'Cancel')
     out, current_given = [], False
-    for i, (key, label, _, detail) in enumerate(rows):
-        if done[i]:
-            state = 'done'
-        elif key == 'valuation' and stopped:
+    for key, label, done, detail in rows:
+        if key == 'valuation' and stopped:
             state, detail = 'stopped', 'On hold' if status == 'Hold' else 'Cancelled'
-        elif stopped and i > 2:
+        elif done:
+            state = 'done'
+        elif stopped:
             state = 'skipped' if status == 'Cancel' else 'waiting'
         elif not current_given:
             state, current_given = 'current', True

@@ -43,16 +43,69 @@ class StageTests(Form, TestCase):
         v = m.Valuation.objects.create(case=self.case, legacy_status='Submit')
         m.Invoice.objects.create(valuation=v, origin='local_invoice', number='I-1', legacy_remaining_amount=Decimal('680'))
         s = self.stages()
-        self.assertEqual(s['invoice'], ('done', 'I-1'))
-        self.assertEqual(s['payment'], ('current', '₹680 outstanding'))
+        self.assertEqual(s['invoice'], ('done', 'I-1, issued before the current approval'))   # this valuation is not approved
+        self.assertEqual(s['payment'][1], '₹680 outstanding')
+        self.assertNotEqual(s['payment'][0], 'done')              # earlier stages are unfinished, so it is not current
 
-    def test_a_later_stage_implies_the_earlier_ones(self):
-        """Imported cases do not always carry every intermediate record."""
-        v = m.Valuation.objects.create(case=self.case, legacy_status='Submit')
-        m.ValuationVerification.objects.create(valuation=v, final_status='Verified')
+    def valued(self, status):
+        """A valuation on its work order, as every real valuation has one."""
+        order = m.WorkOrder.objects.create(lead=self.case.lead, borrower=self.case.borrower, number=f'O-{m.WorkOrder.objects.count() + 1}')
+        return m.Valuation.objects.create(case=self.case, legacy_status=status, work_order=order)
+
+    def approved_case(self, owed='0', delivered=True):
+        """A case through every stage on its own records: submitted, all four checks,
+        a current report, approval, an invoice and, if asked, delivery."""
+        v = self.valued('Submit')
+        m.ValuationVerification.objects.create(valuation=v, legal_status='Verified', technical_status='Verified',
+                                               social_status='Verified', general_status='Verified', final_status='Verified')
+        report = m.BankReport.objects.create(valuation=v, revision=0)
+        invoice = m.Invoice.objects.create(valuation=v, origin='local_invoice', number='I-3', legacy_remaining_amount=Decimal(owed))
+        if delivered:
+            d = m.Dispatch.objects.create(number='D-3', status=3, outward_date=datetime.date(2026, 9, 1))
+            m.DispatchItem.objects.create(dispatch=d, position=0, reference='R-1', valuation=v, bank_report=report, resolution='chosen')
+        return v, invoice
+
+    def test_delivery_does_not_mean_payment(self):
+        """Review BF3: a delivered report with an unpaid invoice showed payment done."""
+        self.approved_case(owed='1180')
         s = self.stages()
-        self.assertEqual([s[k][0] for k in ('work_order', 'valuation', 'verification', 'bank_report', 'approval')], ['done'] * 5)
-        self.assertEqual(s['invoice'][0], 'current')
+        self.assertEqual(s['dispatch'][0], 'done')
+        self.assertEqual(s['payment'], ('current', '₹1,180 outstanding'))            # previously done
+
+    def test_an_invoice_before_approval_does_not_approve_the_work(self):
+        v = self.valued('Submit')
+        m.ValuationVerification.objects.create(valuation=v, legal_status='Verified')
+        m.Invoice.objects.create(valuation=v, origin='local_invoice', number='I-4', legacy_remaining_amount=Decimal('500'))
+        s = self.stages()
+        self.assertEqual(s['verification'], ('current', '1 of 4 checks'))
+        self.assertEqual(s['approval'][0], 'waiting')
+        self.assertEqual(s['invoice'], ('done', 'I-4, issued before the current approval'))
+
+    def test_a_reverted_valuation_is_not_shown_as_verified_or_approved(self):
+        """Review BF3: after a final revert, an existing invoice made the earlier stages look done."""
+        v, _ = self.approved_case(delivered=False)
+        m.Valuation.objects.filter(pk=v.pk).update(legacy_status='Revert')
+        m.ValuationVerification.objects.filter(valuation=v).update(legal_status='', technical_status='', social_status='',
+                                                                   general_status='', final_status='')
+        m.BankReport.objects.filter(valuation=v).update(superseded_at=datetime.datetime(2026, 9, 2, tzinfo=datetime.timezone.utc))
+        s = self.stages()
+        self.assertEqual(s['valuation'], ('current', 'Sent back for correction'))
+        self.assertEqual(s['verification'], ('waiting', '0 of 4 checks'))            # previously done
+        self.assertEqual([s[k][0] for k in ('bank_report', 'approval')], ['waiting', 'waiting'])
+        self.assertEqual(s['invoice'][0], 'done')                                    # a historical fact, labelled
+        self.assertIn('before the current approval', s['invoice'][1])
+
+    def test_a_reverted_valuation_put_on_hold_is_stopped(self):
+        v, _ = self.approved_case(delivered=False)
+        m.Valuation.objects.filter(pk=v.pk).update(legacy_status='Hold')
+        m.ValuationVerification.objects.filter(valuation=v).update(final_status='')
+        s = self.stages()
+        self.assertEqual(s['valuation'], ('stopped', 'On hold'))                      # previously done
+        self.assertNotIn('current', [state for state, _ in s.values()])
+
+    def test_only_one_stage_is_current(self):
+        self.valued('Pending')
+        self.assertEqual([state for state, _ in self.stages().values()].count('current'), 1)
 
     def test_a_cancelled_valuation_stops_the_track(self):
         m.Valuation.objects.create(case=self.case, legacy_status='Cancel')
@@ -60,12 +113,8 @@ class StageTests(Form, TestCase):
         self.assertEqual(s['valuation'], ('stopped', 'Cancelled'))
         self.assertEqual({s[k][0] for k in ('verification', 'invoice', 'dispatch')}, {'skipped'})
 
-    def test_a_delivered_dispatch_completes_the_track(self):
-        v = m.Valuation.objects.create(case=self.case, legacy_status='Submit')
-        m.Invoice.objects.create(valuation=v, origin='local_invoice', number='I-2', legacy_remaining_amount=Decimal('0'))
-        report = m.BankReport.objects.create(valuation=v, revision=0)
-        d = m.Dispatch.objects.create(number='D-1', status=3, outward_date=datetime.date(2026, 9, 1))
-        m.DispatchItem.objects.create(dispatch=d, position=0, reference='R-1', valuation=v, bank_report=report, resolution='chosen')
+    def test_a_case_complete_on_its_own_records_is_complete(self):
+        self.approved_case()
         self.assertEqual(set(state for state, _ in self.stages().values()), {'done'})
 
     def test_a_dispatch_counts_only_for_the_current_revision(self):

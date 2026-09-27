@@ -65,6 +65,11 @@ export function LeadDetail() {
     onSuccess: data => {client.setQueryData(['lead', id], data); setNote(''); notifications.show({message: 'Note saved'});},
     onError: e => notifications.show({color: 'red', title: 'The note was not saved', message: e.message}),
   });
+  // After a change inside the workspace: this lead, its stage track (a nested key),
+  // the lead list and the dashboard counts are all refetched.
+  const refreshLead = () => {
+    for (const queryKey of [['lead', id], ['leads'], ['home'], ['mis']]) client.invalidateQueries({queryKey});
+  };
   if (lead.isError) return <ErrorState error={lead.error} onRetry={lead.refetch}/>;
   if (!lead.data) return <LoadingState label="Loading the lead"/>;
   const d = lead.data;
@@ -91,7 +96,7 @@ export function LeadDetail() {
           </Paper>)}</Stack>}
     </section>
 
-    <section className="legacy-screen"><LeadWorkspace key={d.id} api={api} leadId={d.id}/></section>
+    <section className="legacy-screen"><LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead}/></section>
 
     <section>
       <Title order={2} mb={4}>Follow-up notes</Title>
