@@ -157,6 +157,67 @@ def bank_reports(user, f):
     return rows
 
 
+LEAD_STATUS = {'1': 'New lead', '2': 'In process', '3': 'Cancelled', '4': 'Closed'}
+VALUATION_STATUS = {'Pending': 'Being filled in', 'Submit': 'Submitted', 'Revert': 'Sent back', 'Hold': 'On hold', 'Cancel': 'Cancelled'}
+
+
+def leads(user, f):
+    """Leads, dated by the date they were received. Deleted leads are left out; the
+    legacy lead queries had no such filter and counted them."""
+    qs = m.Lead.objects.exclude(legacy_deleted='1')
+    if scoped_employee(user) is not None:
+        qs = qs.filter(pk__in=scope_cases(user, m.Case.objects.all()).values('lead'))
+    qs = common_filters(qs, f, date='received_date', prefix='')
+    from django.db.models import Count
+    qs = qs.annotate(borrower_count=Count('borrower', distinct=True, filter=~Q(borrower__legacy_deleted='1')))
+    return [{'id': r['pk'], 'lead': r['number'], 'received': r['received_date'], 'status_code': r['legacy_status'],
+             'status': LEAD_STATUS.get(r['legacy_status'], 'Other'), 'office': r['office__name'], 'branch': r['office__branch_name'],
+             'office_id': r['office_id'], 'orderer': r['contact__name'], 'orderer_phone': r['contact__phone'],
+             'assessor': r['assigned_employee__name'], 'assessor_id': r['assigned_employee_id'], 'borrowers': r['borrower_count'],
+             'division': r['contact__division__name'], 'division_id': r['contact__division_id']}
+            for r in qs.values('pk', 'number', 'received_date', 'legacy_status', 'office__name', 'office__branch_name', 'office_id',
+                               'contact__name', 'contact__phone', 'assigned_employee__name', 'assigned_employee_id', 'borrower_count',
+                               'contact__division__name', 'contact__division_id')]
+
+
+def valuations(user, f, cancelled=False):
+    """Valuations, dated by the valuation date; cancelled ones by the date they were
+    cancelled. The legacy cancelled-valuations report grouped by client while
+    listing valuations, so it showed one per client: 277 of 700."""
+    qs = m.Valuation.objects.all()
+    if cancelled:
+        qs = qs.filter(legacy_status='Cancel')
+    if scoped_employee(user) is not None:
+        qs = qs.filter(case__in=scope_cases(user, m.Case.objects.all()))
+    qs = common_filters(qs, f, date='status_reason_date' if cancelled else 'valuation_date', prefix='case__')
+    return [{'id': r['pk'], 'report': r['report_number'], 'status_code': r['legacy_status'],
+             'status': VALUATION_STATUS.get(r['legacy_status'], r['legacy_status'] or 'Not started'),
+             'valued': r['valuation_date'], 'cancelled_on': r['status_reason_date'], 'reason': r['status_reason'],
+             'lead': r['case__lead__number'], 'work_order': r['work_order__number'], 'borrower': r['case__borrower__name'],
+             'office': r['case__lead__office__name'], 'branch': r['case__lead__office__branch_name'], 'office_id': r['case__lead__office_id'],
+             'ifsc': r['case__lead__office__ifsc'], 'service': r['case__service__name'], 'service_id': r['case__service_id'],
+             'subtype': r['case__subtype__name'], 'district': r['case__asset_district'], 'state': r['case__asset_state'],
+             'doer': r['assessor__name'] or (r['assessor_name'] or '').strip(), 'doer_id': r['assessor_id'],
+             'assessor': r['case__lead__assigned_employee__name'], 'assessor_id': r['case__lead__assigned_employee_id'],
+             'division': r['case__lead__contact__division__name'], 'division_id': r['case__lead__contact__division_id']}
+            for r in qs.values('pk', 'report_number', 'legacy_status', 'valuation_date', 'status_reason_date', 'status_reason',
+                               'case__lead__number', 'work_order__number', 'case__borrower__name', 'case__lead__office__name',
+                               'case__lead__office__branch_name', 'case__lead__office_id', 'case__lead__office__ifsc',
+                               'case__service__name', 'case__service_id', 'case__subtype__name', 'case__asset_district',
+                               'case__asset_state', 'assessor__name', 'assessor_name', 'assessor_id',
+                               'case__lead__assigned_employee__name', 'case__lead__assigned_employee_id',
+                               'case__lead__contact__division__name', 'case__lead__contact__division_id')]
+
+
+def month(field):
+    return lambda r: (r[field].strftime('%Y-%m') if r.get(field) else '', r[field].strftime('%B %Y') if r.get(field) else 'Date unknown')
+
+
+def status_of(labels):
+    order = {k: str(i) for i, k in enumerate(labels)}
+    return lambda r: (order.get(r['status_code'], '9'), r['status'])
+
+
 # --- the reports -------------------------------------------------------------
 
 def by(field, label_field=None, blank='Not recorded'):
@@ -192,12 +253,12 @@ report('invoices', number='4', title='Invoices', section='Billing',
 report('outstanding', number='3', title='Outstanding', section='Recovery',
        description='Invoices with money still owed, on work that was not cancelled.',
        date_label='Invoice date', rows=lambda u, f: invoices(u, f, outstanding=True), groups=INVOICE_GROUPS, default_group='client',
-       measures=MONEY, columns=INVOICE_COLUMNS)
+       sort='outstanding', measures=MONEY, columns=INVOICE_COLUMNS)
 report('pending-recovery', number='3.7', title='Pending recovery', section='Recovery',
        description='Money still owed, by how long it has been owed. Each invoice falls into exactly one band.',
        date_label='Invoice date', rows=lambda u, f: invoices(u, f, outstanding=True),
        groups=OrderedDict([('age', ('Days since invoice', lambda r: age_band(r['issued'], timezone.localdate()))), *INVOICE_GROUPS.items()]),
-       default_group='age', measures=MONEY, columns=INVOICE_COLUMNS)
+       default_group='age', sort='outstanding', measures=MONEY, columns=INVOICE_COLUMNS)
 report('total-amount', number='(total)', title='Total amount', section='Billing',
        description='Invoiced, received and still owed, across all standing invoices.',
        date_label='Invoice date', rows=lambda u, f: invoices(u, f),
@@ -215,6 +276,71 @@ report('billing-by-assessor', number='7', title='Billing by liable field assesso
        measures=[('reports', 'Bank reports', 'count'), ('billed', 'Invoiced', 'money')],
        columns=[('report', 'Report', 'text'), ('office', 'Client', 'text'), ('borrower', 'Client customer', 'text'),
                 ('invoice', 'Invoice', 'text'), ('issued', 'Invoice date', 'date'), ('billed', 'Invoiced', 'money')])
+
+
+LEAD_GROUPS = OrderedDict([
+    ('status', ('Lead status', status_of(LEAD_STATUS))),
+    ('month', ('Month received', month('received'))),
+    ('client', ('Client', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
+    ('assessor', ('Field assessor', by('assessor_id', 'assessor', 'Not assigned'))),
+    ('division', ('Division', by('division_id', 'division', 'No division'))),
+])
+LEAD_MEASURES = [('leads', 'Leads', 'count'), ('new', 'New', 'count', lambda r: r['status_code'] == '1'),
+                 ('in_process', 'In process', 'count', lambda r: r['status_code'] == '2'),
+                 ('cancelled', 'Cancelled', 'count', lambda r: r['status_code'] == '3'),
+                 ('closed', 'Closed', 'count', lambda r: r['status_code'] == '4'), ('borrowers', 'Borrowers', 'number')]
+LEAD_COLUMNS = [('lead', 'Lead', 'text'), ('received', 'Received', 'date'), ('status', 'Status', 'text'), ('office', 'Client', 'text'),
+                ('orderer', 'Orderer', 'text'), ('orderer_phone', 'Orderer phone', 'text'), ('assessor', 'Field assessor', 'text'),
+                ('borrowers', 'Borrowers', 'number')]
+
+VALUATION_GROUPS = OrderedDict([
+    ('doer', ('Valued by', by('doer_id', 'doer', 'Not recorded'))),
+    ('status', ('Valuation status', status_of(VALUATION_STATUS))),
+    ('month', ('Month valued', month('valued'))),
+    ('service', ('Service rendered', by('service_id', 'service'))),
+    ('client', ('Client', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
+    ('area', ('Area', lambda r: ((r['district'] or '').lower(), ', '.join(x for x in (r['district'], r['state']) if x) or 'Area not recorded'))),
+])
+VALUATION_MEASURES = [('valuations', 'Valuations', 'count'),
+                      ('pending', 'Being filled in', 'count', lambda r: r['status_code'] == 'Pending'),
+                      ('submitted', 'Submitted', 'count', lambda r: r['status_code'] == 'Submit'),
+                      ('reverted', 'Sent back', 'count', lambda r: r['status_code'] == 'Revert'),
+                      ('held', 'On hold', 'count', lambda r: r['status_code'] == 'Hold'),
+                      ('cancelled', 'Cancelled', 'count', lambda r: r['status_code'] == 'Cancel')]
+VALUATION_COLUMNS = [('report', 'Report', 'text'), ('lead', 'Lead', 'text'), ('valued', 'Valued', 'date'), ('status', 'Status', 'text'),
+                     ('office', 'Client', 'text'), ('borrower', 'Client customer', 'text'), ('service', 'Service', 'text'),
+                     ('doer', 'Valued by', 'text')]
+
+report('leads', number='1', title='Month-wise leads', section='Work',
+       description='Leads received, by status. Deleted leads are not counted.', date_label='Received',
+       rows=leads, groups=LEAD_GROUPS, default_group='status', measures=LEAD_MEASURES[:1] + LEAD_MEASURES[5:], columns=LEAD_COLUMNS)
+report('lead-mis', number='6', title='Lead MIS by client', section='Work',
+       description='Leads each client sent, and where they stand.', date_label='Received',
+       rows=leads, groups=OrderedDict([('client', LEAD_GROUPS['client']), *[(k, v) for k, v in LEAD_GROUPS.items() if k != 'client']]),
+       default_group='client', measures=LEAD_MEASURES, columns=LEAD_COLUMNS)
+report('valuations', number='2', title='Month-wise valuations', section='Work',
+       description='Valuations by status.', date_label='Valuation date',
+       rows=valuations, groups=OrderedDict([('status', VALUATION_GROUPS['status']), *[(k, v) for k, v in VALUATION_GROUPS.items() if k != 'status']]),
+       default_group='status', measures=VALUATION_MEASURES[:1], columns=VALUATION_COLUMNS)
+report('doer-wise', number='4', title='Doer-wise valuations', section='Work',
+       description='Valuations each person carried out, and where they stand.', date_label='Valuation date',
+       rows=valuations, groups=VALUATION_GROUPS, default_group='doer', measures=VALUATION_MEASURES, columns=VALUATION_COLUMNS)
+report('service-rendered', number='5', title='Service rendered', section='Work',
+       description='Invoices by the service rendered, counted once per invoice.', date_label='Invoice date',
+       rows=lambda u, f: invoices(u, f),
+       groups=OrderedDict([('service', INVOICE_GROUPS['service']),
+                           ('subtype', ('Service and type', lambda r: (f"{r['service_id']}:{r['subtype'] or ''}", ', '.join(x for x in (r['service'], r['subtype']) if x) or 'Not recorded'))),
+                           *[(k, v) for k, v in INVOICE_GROUPS.items() if k != 'service']]),
+       default_group='service', measures=[('invoices', 'Invoices', 'count'), ('billed', 'Invoiced', 'money')], columns=INVOICE_COLUMNS)
+report('cancelled-valuations', number='9', title='Cancelled valuations', section='Work',
+       description='Every cancelled valuation, with the reason given.', date_label='Cancelled on',
+       rows=lambda u, f: valuations(u, f, cancelled=True),
+       groups=OrderedDict([('client', VALUATION_GROUPS['client']), ('doer', VALUATION_GROUPS['doer']),
+                           ('month', ('Month cancelled', month('cancelled_on'))), ('area', VALUATION_GROUPS['area'])]),
+       default_group='client', measures=[('cancelled', 'Cancelled', 'count')],
+       columns=[('lead', 'Lead', 'text'), ('work_order', 'Work order', 'text'), ('report', 'Report', 'text'), ('office', 'Client', 'text'),
+                ('ifsc', 'IFSC', 'text'), ('borrower', 'Client customer', 'text'), ('doer', 'Valued by', 'text'),
+                ('cancelled_on', 'Cancelled on', 'date'), ('reason', 'Reason', 'text')])
 
 
 # --- the engine --------------------------------------------------------------
@@ -241,19 +367,25 @@ def run(spec, user, f, group):
         group = spec['default_group']
     label, key_of = groups[group]
     rows = spec['rows'](user, f)
-    buckets, totals = OrderedDict(), {k: ZERO if kind == 'money' else 0 for k, _, kind in spec['measures']}
+    buckets, totals = OrderedDict(), {x[0]: ZERO if x[2] == 'money' else 0 for x in spec['measures']}
     for r in rows:
         k, name = key_of(r)
-        b = buckets.setdefault(k, {'key': k, 'label': name, 'values': {m_: ZERO if kind == 'money' else 0 for m_, _, kind in spec['measures']}, 'rows': []})
+        b = buckets.setdefault(k, {'key': k, 'label': name, 'values': {x[0]: ZERO if x[2] == 'money' else 0 for x in spec['measures']}, 'rows': []})
         b['rows'].append(r)
-        for m_, _, kind in spec['measures']:
-            v = 1 if kind == 'count' else r.get(m_, ZERO)
+        for measure in spec['measures']:
+            m_, kind = measure[0], measure[2]
+            when = measure[3] if len(measure) > 3 else None
+            v = (1 if (when is None or when(r)) else 0) if kind == 'count' else r.get(m_, ZERO)
             b['values'][m_] += v
             totals[m_] += v
-    ordered = sorted(buckets.values(), key=lambda b: (b['label'] in ('Not recorded', 'Not assigned', 'No division', 'Date unknown', 'Area not recorded'),
-                                                     b['key'] if group in ('age', 'month') else '',
-                                                     -(b['values'].get('billed') or b['values'].get('outstanding') or 0) if group not in ('age', 'month') else 0,
-                                                     b['label']))
+    # Sequences keep their natural order (status stages, months, age bands); anything
+    # else runs largest first, by the report's leading money measure or, failing
+    # that, its first count. Unrecorded values always come last.
+    natural = group in ('age', 'month', 'status')
+    money_first = spec.get('sort') or next((x[0] for x in spec['measures'] if x[2] == 'money'), spec['measures'][0][0])
+    unknown = ('Not recorded', 'Not assigned', 'No division', 'Date unknown', 'Area not recorded')
+    ordered = sorted(buckets.values(), key=lambda b: (b['label'] in unknown, b['key'] if natural else '',
+                                                     0 if natural else -b['values'][money_first], b['label']))
     return group, label, ordered, totals
 
 
@@ -270,7 +402,7 @@ def meta(spec):
             'description': spec['description'], 'date_label': spec['date_label'],
             # 'groupings' are the choices; a result's 'groups' are the grouped figures.
             'groupings': [{'key': k, 'label': v[0]} for k, v in spec['groups'].items()], 'default_group': spec['default_group'],
-            'measures': [{'key': k, 'label': l, 'kind': kind} for k, l, kind in spec['measures']],
+            'measures': [{'key': x[0], 'label': x[1], 'kind': x[2]} for x in spec['measures']],
             'columns': [{'key': k, 'label': l, 'kind': kind} for k, l, kind in spec['columns']]}
 
 

@@ -44,6 +44,10 @@ class Command(BaseCommand):
         self.billing_by_client()
         self.billing_by_assessor()
         self.pending_recovery()
+        self.lead_reports()
+        self.valuation_reports()
+        self.service_rendered()
+        self.cancelled_valuations()
         self.stdout.write(self.style.SUCCESS('All reports reconcile.') if not self.failed
                           else self.style.ERROR(f'{self.failed} check(s) did not reconcile.'))
 
@@ -122,3 +126,81 @@ class Command(BaseCommand):
         self.compare('invoices outstanding', len(days), t['invoices'])
         self.stdout.write(f'  legacy bands {legacy} (sum {sum(legacy.values())}; {double} counted twice at a boundary)')
         self.stdout.write(f'  our bands    {ours} (sum {sum(ours.values())}; each invoice once)')
+
+    def held(self, table):
+        return m.SourceRow.objects.filter(schema='lead_mngt', table=table, outcome='quarantined').count()
+
+    def mapped(self, schema, table):
+        return {k: str(v) for k, v in m.SourceIdentity.objects.filter(environment='main', schema=schema, table=table)
+                .values_list('key', 'target_id')}
+
+    def lead_reports(self):
+        self.stdout.write('\nMonth-wise leads and Lead MIS (legacy counted deleted leads)')
+        deleted = self.one('SELECT COUNT(*) FROM lead WHERE delete_status = 1')[0]
+        self.cur.execute('SELECT lead_status, COUNT(*) FROM lead WHERE delete_status <> 1 OR delete_status IS NULL GROUP BY lead_status')
+        legacy = {str(k): n for k, n in self.cur.fetchall()}
+        _, _, groups, t = engine('leads', 'status')
+        codes = {'New lead': '1', 'In process': '2', 'Cancelled': '3', 'Closed': '4'}
+        ours = {codes.get(g['label'], g['label']): g['values']['leads'] for g in groups}
+        # Quarantined leads count only if they were live; leads recorded here are added.
+        held = sum(1 for r in m.SourceRow.objects.filter(schema='lead_mngt', table='lead', outcome='quarantined')
+                   if str(r.payload.get('delete_status')) != '1')
+        local = m.Lead.objects.exclude(legacy_deleted='1').filter(local_sequence__isnull=False)
+        self.compare('leads, deleted ones left out', sum(legacy.values()) - held + local.count(), t['leads'],
+                     f'the legacy report also counted {deleted} deleted leads'
+                     + (f'; {local.count()} recorded here' if local.exists() else '') + (f'; {held} quarantined' if held else ''))
+        for lead in local.values('legacy_status'):
+            legacy[lead['legacy_status']] = legacy.get(lead['legacy_status'], 0) + 1
+        differ = [k for k in set(legacy) | set(ours) if legacy.get(k, 0) != ours.get(k, 0)]
+        self.compare('statuses whose count differs', 0, len(differ))
+        self.cur.execute('SELECT client_id, COUNT(*) FROM lead WHERE (delete_status <> 1 OR delete_status IS NULL) AND client_id IS NOT NULL GROUP BY client_id')
+        legacy_clients = dict(self.cur.fetchall())
+        office = self.mapped('lead_mngt', 'client')
+        _, _, groups, _ = engine('lead-mis', 'client')
+        ours = {g['key']: g['values']['leads'] for g in groups}
+        mismatched = [c for c, n in legacy_clients.items() if ours.get(office.get(source_key(c)), 0) != n]
+        self.compare('clients whose lead count differs', 0, len(mismatched), f'of {len(legacy_clients)} clients')
+
+    def valuation_reports(self):
+        self.stdout.write('\nMonth-wise and doer-wise valuations')
+        self.cur.execute('SELECT valuation_status, COUNT(*) FROM valuation GROUP BY valuation_status')
+        legacy = dict(self.cur.fetchall())
+        held = self.held('valuation')
+        _, _, _, t = engine('doer-wise')
+        self.compare('valuations', sum(legacy.values()) - held, t['valuations'], f'({held} quarantined on import)' if held else '')
+        for code, key in (('Submit', 'submitted'), ('Pending', 'pending'), ('Revert', 'reverted'), ('Hold', 'held')):
+            self.compare(f'  of which {code}', legacy.get(code, 0), t[key])
+        self.cur.execute('SELECT valuation_done_by, COUNT(*) FROM valuation WHERE valuation_done_by IS NOT NULL GROUP BY valuation_done_by')
+        legacy_doers = dict(self.cur.fetchall())
+        for r in m.SourceRow.objects.filter(schema='lead_mngt', table='valuation', outcome='quarantined'):
+            doer = r.payload.get('valuation_done_by')
+            if doer in legacy_doers:
+                legacy_doers[doer] -= 1                             # a quarantined valuation is not reported
+        employee = self.mapped('uam_user', 'employee')
+        _, _, groups, _ = engine('doer-wise', 'doer')
+        ours = {g['key']: g['values']['valuations'] for g in groups}
+        mismatched = [d for d, n in legacy_doers.items() if ours.get(employee.get(source_key(d)), 0) != n]
+        self.compare('people whose valuation count differs', 0, len(mismatched), f'of {len(legacy_doers)} people')
+
+    def service_rendered(self):
+        self.stdout.write('\nService rendered (legacy defect: counted across charge lines)')
+        joined = self.one("""SELECT COUNT(i.invoice_id), SUM(i.total_invoice_amount) FROM valuation v
+                             JOIN valuation_billing vb ON vb.valuation_id = v.valuation_id JOIN invoice i ON i.valuation_id = v.valuation_id""")
+        once = self.one('SELECT COUNT(*), SUM(total_invoice_amount) FROM invoice')
+        _, _, _, t = engine('service-rendered')
+        held_billed = self.one("SELECT COALESCE(SUM(total_invoice_amount),0) FROM invoice WHERE invoice_id IN (%s)" % (','.join(
+            k.split('"')[3] for k in self.quarantined_invoices()) or 'NULL'))[0]
+        self.compare('invoices, counted once', once[0] - len(self.quarantined_invoices()), t['invoices'],
+                     f'the legacy query counted {joined[0]:,}')
+        self.compare('invoiced, counted once', round(once[1] - held_billed), round(t['billed']),
+                     f'the legacy query summed Rs {round(joined[1]):,}')
+
+    def cancelled_valuations(self):
+        self.stdout.write('\nCancelled valuations (legacy defect: one per client)')
+        total = self.one("SELECT COUNT(*) FROM valuation WHERE valuation_status = 'Cancel'")[0]
+        shown = self.one("""SELECT COUNT(*) FROM (SELECT l.client_id FROM valuation v JOIN lead_order lo ON v.lead_order_id = lo.lead_order_id
+                            JOIN lead l ON l.lead_id = lo.lead_id WHERE v.valuation_status = 'Cancel' GROUP BY l.client_id) x""")[0]
+        held = m.SourceRow.objects.filter(schema='lead_mngt', table='valuation', outcome='quarantined', payload__valuation_status='Cancel').count()
+        _, _, _, t = engine('cancelled-valuations')
+        self.compare('cancelled valuations listed', total - held, t['cancelled'],
+                     f'the legacy report showed {shown}' + (f'; {held} quarantined' if held else ''))
