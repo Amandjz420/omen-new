@@ -321,7 +321,9 @@
         "media_type": "models.CharField(blank=True, max_length=150)",
         "size_bytes": "models.PositiveBigIntegerField(null=True)",
         "checksum": "models.CharField(blank=True, max_length=64)",
-        "content_verified": "models.BooleanField(default=False)"
+        "content_verified": "models.BooleanField(default=False)",
+        "legacy_location": "models.CharField(blank=True, editable=False, max_length=600)",
+        "legacy_checked_at": "models.DateTimeField(blank=True, editable=False, null=True)"
       },
       "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
     },
@@ -1584,7 +1586,8 @@
     "api/leads/<uuid:pk>/stages/",
     "api/mis/",
     "api/mis/<str:key>/",
-    "api/mis/<str:key>/export/"
+    "api/mis/<str:key>/export/",
+    "api/receipts/<uuid:pk>/document/"
   ],
   "amendments": [
     {
@@ -1692,6 +1695,25 @@
         "api/mis/",
         "api/mis/<str:key>/",
         "api/mis/<str:key>/export/"
+      ]
+    },
+    {
+      "date": "2026-09-28",
+      "migration": "0028_document_legacy_checked_at_document_legacy_location",
+      "changed_models": [
+        "Document"
+      ],
+      "added_models": [],
+      "reason": "Verified locations of previous-system files, recorded by locate_legacy_files."
+    },
+    {
+      "date": "2026-09-28",
+      "migration": "none",
+      "changed_models": [],
+      "added_models": [],
+      "reason": "A receipt's scanned document, visible to those who may see the receipt.",
+      "added_routes": [
+        "api/receipts/<uuid:pk>/document/"
       ]
     }
   ]

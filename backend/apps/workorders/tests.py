@@ -181,12 +181,21 @@ class WorkOrderTests(TestCase):
         self.assertFalse(by_name['Empty']['eligible'])
         self.assertTrue(by_name['Empty']['reasons'])
 
-    def test_an_imported_letter_reports_that_it_is_not_yet_retrieved(self):
-        doc = m.Document.objects.create(storage_provider='legacy_lead_s3', storage_key='x.pdf')
+    def test_an_imported_letter_opens_from_the_bucket_once_connected(self):
+        import datetime, os
+        from unittest import mock
+        doc = m.Document.objects.create(storage_provider='legacy_lead_s3', storage_key='order/x.pdf', original_name='x.pdf',
+                                        legacy_location='LeadUpload/order/x.pdf', legacy_checked_at=datetime.datetime.now(datetime.timezone.utc))
         order = m.WorkOrder.objects.create(lead=self.lead, borrower=self.borrower(), number='O-1', document=doc)
-        response = self.client.get(f'/api/work-orders/{order.pk}/document/')
-        self.assertEqual(response.status_code, 404)
-        self.assertIn('legacy storage', response.json()['error'])
+        # Not connected on this server: said plainly.
+        self.assertEqual(self.client.get(f'/api/work-orders/{order.pk}/document/').status_code, 503)
+        aws = {'AWS_S3_BUCKET_NAME': 'b', 'AWS_DEFAULT_REGION': 'ap-south-1', 'AWS_ACCESS_KEY_ID': 'k', 'AWS_SECRET_ACCESS_KEY': 's'}
+        with mock.patch.dict(os.environ, aws):
+            response = self.client.get(f'/api/work-orders/{order.pk}/document/')
+            self.assertEqual(response.status_code, 302)
+            self.assertIn('/LeadUpload/order/x.pdf?', response['Location'])
+            m.Document.objects.filter(pk=doc.pk).update(legacy_location='')                 # located, and not found
+            self.assertEqual(self.client.get(f'/api/work-orders/{order.pk}/document/').status_code, 404)
 
     def test_signed_out_users_are_refused(self):
         self.client.logout()

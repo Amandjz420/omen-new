@@ -151,6 +151,9 @@ function Receipt({api, id, onBack}) {
     {r.stage === 'voided' && <p className="notice">Voided{r.voided_by ? ` by ${r.voided_by}` : ''}: {r.void_reason}</p>}
     {r.absorbs_legacy_entries > 0 && <p className="muted">This receipt also appears in the previous system's amount-received records; that copy is not counted.</p>}
     {r.remark && <p className="muted">Remark: {r.remark}</p>}
+    {r.document && (r.document.available
+      ? <p><a href={`/api/receipts/${id}/document/`} target="_blank" rel="noopener">View the receipt document</a></p>
+      : <p className="muted">The receipt's document could not be found in storage.</p>)}
     {error && <p role="alert" className="error">{error}</p>}
     {open && <p className="actions">
       {r.stage === 'to_check' && <button disabled={!!busy} onClick={() => act('check')}>Check</button>}

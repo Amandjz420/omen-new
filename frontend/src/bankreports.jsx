@@ -74,9 +74,9 @@ function ReportForm({api, id, onBack}) {
     {data.report?.stale && <p className="notice">The valuation has changed since this report was generated, so it no longer matches. Regenerate it before approval.</p>}
     {data.template_error && <p className="error">{data.template_error}</p>}
     {data.template && <p className="muted">Using the report template with {data.template.lines} lines.</p>}
-    {data.report?.document && <p>{data.report.document.local
+    {data.report?.document && <p>{data.report.document.available
       ? <a href={`/api/bank-reports/${id}/document/`} target="_blank" rel="noopener">View the report (PDF)</a>
-      : <span className="muted">The report is held in legacy storage and has not been retrieved yet.</span>}
+      : <span className="muted">The report's file could not be found in storage.</span>}
       {data.report.generated_at && <small className="muted"> · generated {new Date(data.report.generated_at).toLocaleString('en-IN')}{data.report.generated_by ? ` by ${data.report.generated_by}` : ''}</small>}</p>}
     {error && <p role="alert" className="error">{error}</p>}
     <form onSubmit={generate}>

@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/receipts/<uuid:pk>/check/', receipt_endpoints.check),
     path('api/receipts/<uuid:pk>/verify/', receipt_endpoints.verify),
     path('api/receipts/<uuid:pk>/void/', receipt_endpoints.void),
+    path('api/receipts/<uuid:pk>/document/', receipt_endpoints.document),
     path('api/invoices/', endpoint_1.queue),
     path('api/invoices/valuations/<uuid:pk>/', endpoint_1.for_valuation),
     path('api/invoices/credit-notes/<uuid:pk>/document/', endpoint_1.credit_document),

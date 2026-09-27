@@ -42,6 +42,7 @@ from apps.audit.services import record, snapshot
 from apps.billing.services import (ZERO, balances, check_scope, invoice_json, locked, paid_of, q, settle)
 from apps.billing.valuation import money
 from apps.common.http import IntakeError, endpoint, find, payload
+from apps.documents.storage import file_json, serve
 from apps.common.numbering import allocate, format_number
 from apps.valuations.services import NOBODY, scoped_employee
 from apps.valuations.verification import actor
@@ -96,6 +97,7 @@ def receipt_json(r):
             if steps[a] and steps[a] == steps[b]]
     invoice = r.invoice
     return {'id': r.pk, 'number': r.number, 'origin': 'local' if r.origin == 'local_cash_receipt' else 'legacy',
+            'document': file_json(r.document) if r.document_id else None,
             'stage': stage_of(r), 'received_as': r.received_as, 'received_as_label': RECEIVED_AS.get(r.received_as, ''),
             'amount': str(q(r.amount)), 'received_date': r.received_date, 'amount_received_on': r.amount_received_on,
             'payment_mode': r.payment_mode, 'payment_mode_label': MODES.get(r.payment_mode, r.mode or ''),
@@ -327,3 +329,13 @@ def void(request, pk):
     r.save(update_fields=['voided_at', 'void_reason', 'voided_by'])
     record(request.user, r, before, action='void_cash_receipt')
     return JsonResponse(receipt_json(r))
+
+
+@endpoint(['GET'])
+def document(request, pk):
+    """A receipt's scanned document. 9,641 legacy receipts carry one, which no screen
+    could open. Visible to exactly those who may see the receipt."""
+    r = visible(request.user).filter(pk=pk).select_related('document').first()
+    if r is None or r.document_id is None:
+        raise IntakeError('Document not found', 404)
+    return serve(r.document)

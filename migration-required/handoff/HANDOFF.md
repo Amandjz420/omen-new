@@ -199,7 +199,7 @@ logins.
 
 ## After every import
 
-Run the two linking commands, in this order, after `sync_legacy`. Both are
+Run these commands, in this order, after `sync_legacy`. All are
 idempotent and never unlink.
 
 1. `manage.py link_dispatch_items` links dispatch items to the valuations they name.
@@ -207,3 +207,9 @@ idempotent and never unlink.
    entries that were copied into cash receipts when cash receipts replaced them in
    2022, so each payment counts once. Totals never count a receipt with
    `duplicate_of` set.
+3. `manage.py locate_legacy_files` records where each of the previous system's files
+   is: in the S3 bucket (credentials in the repository's git-ignored `.env`) or in
+   the local copy of the user-management uploads (`OMEN Source Code/uamuplaod`,
+   or `OMEN_UAM_ROOT`). On 28 September 2026 it located all 150,686: 143,973 in
+   the bucket as stored, 6,663 with a doubled slash collapsed, and 50 in the local
+   folder. Screens open a file only once it has been located.

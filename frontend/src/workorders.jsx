@@ -47,9 +47,9 @@ export function WorkOrders({api, leadId, onChange}) {
         <td>{b.name}</td><td>{b.cases}</td>
         <td>{b.work_order ? <><strong>{b.work_order.number}</strong>{b.work_order.issued_at && <><br/><small>{when(b.work_order.issued_at)}{b.work_order.issued_by ? ` · ${b.work_order.issued_by}` : ''}</small></>}</> : <span className="muted">Not issued</span>}</td>
         <td>{b.work_order
-          ? (b.work_order.origin === 'local'
+          ? (b.work_order.document_available
               ? <a href={`/api/work-orders/${b.work_order.id}/document/`} target="_blank" rel="noopener">View letter</a>
-              : <small className="muted">Letter in legacy storage, not yet retrieved</small>)
+              : <small className="muted">{b.work_order.document ? 'Letter not found in storage' : 'No letter'}</small>)
           : b.eligible
             ? <button disabled={busy === b.id} onClick={() => issue(b)}>{busy === b.id ? 'Issuing…' : 'Issue work order'}</button>
             : <small className="muted">{b.reasons.join('; ')}</small>}</td>

@@ -30,6 +30,7 @@ import hashlib
 import json
 import uuid
 from apps.valuations.services import require_lead
+from apps.documents.storage import available
 from pathlib import Path
 
 from django.conf import settings
@@ -77,6 +78,7 @@ def order_json(order):
             'borrower_name': order.borrower.name,
             'issued_at': order.issued_at, 'issued_by': order.issued_by.get_username() if order.issued_by else None,
             'document': order.document_id is not None,
+            'document_available': available(order.document) if order.document_id else False,
             'origin': 'local' if order.local_sequence else 'imported'}
 
 
@@ -181,11 +183,6 @@ def work_order_document(request, pk):
     document = order.document
     if document is None:
         raise IntakeError('This work order has no document', 404)
-    if document.storage_provider != 'local':
-        # Imported orders' letters live in the legacy S3 bucket, not yet retrieved.
-        raise IntakeError('This letter is held in legacy storage and has not been retrieved yet', 404)
-    path = Path(settings.MEDIA_ROOT) / document.storage_key
-    if not path.resolve().is_relative_to(Path(settings.MEDIA_ROOT).resolve()) or not path.exists():
-        raise IntakeError('The document file is missing', 404)
-    return FileResponse(path.open('rb'), content_type='application/pdf',
-                        filename=document.original_name, as_attachment=False)
+    # Letters issued here and imported ones in the previous system's bucket alike.
+    from apps.documents.storage import serve
+    return serve(document)

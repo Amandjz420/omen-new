@@ -52,8 +52,8 @@ function Review({api, id, onBack}) {
     <button className="link" onClick={onBack}>← Back to approvals</button>
     <h2>{data.report_number}{data.report?.revision ? ` · Revision ${data.report.revision}` : ''}</h2>
     <p>{data.lead_number} · {data.borrower} · <span className="status">{data.approved ? `Approved by ${data.approved_by}` : data.status}</span></p>
-    {doc && (doc.local ? <p><a href={`/api/bank-reports/${id}/document/`} target="_blank" rel="noopener">Read the bank report (PDF)</a></p>
-      : <p className="muted">The bank report is held in legacy storage and has not been retrieved yet.</p>)}
+    {doc && (doc.available ? <p><a href={`/api/bank-reports/${id}/document/`} target="_blank" rel="noopener">Read the bank report (PDF)</a></p>
+      : <p className="muted">The bank report's file could not be found in storage.</p>)}
     {error && <p role="alert" className="error">{error}</p>}
     {data.approval_blockers.length === 0
       ? <p><button disabled={busy === 'approve'} onClick={() => act('approve', {}, 'Give final approval? This issues the report to the bank.')}>

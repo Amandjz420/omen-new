@@ -19,6 +19,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from django.conf import settings
+from apps.documents.storage import read_bytes
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -176,15 +177,17 @@ def photo_flowables(valuation, full):
     for p in m.ValuationAttachment.objects.filter(valuation=valuation).select_related('document').order_by('attachment_type', 'created_at'):
         code = int(p.attachment_type) if (p.attachment_type or '').isdigit() else None
         caption = Paragraph(f'<b>{t(PHOTO_LABELS.get(code, "Photo"))}</b> {t(p.name)}', SMALL)
-        doc = p.document
-        path = Path(settings.MEDIA_ROOT) / doc.storage_key if doc and doc.storage_provider == 'local' else None
-        if path and path.exists():
+        # Photographs stored here and in the previous system's bucket alike; a legacy
+        # photo was once a placeholder, so a regenerated report reached the bank
+        # without its pictures.
+        data = read_bytes(p.document)
+        if data:
             try:
-                cells.append([Image(str(path), width=full / 2 - 6 * mm, height=(full / 2 - 6 * mm) * .75, kind='proportional'), caption])
+                cells.append([Image(io.BytesIO(data), width=full / 2 - 6 * mm, height=(full / 2 - 6 * mm) * .75, kind='proportional'), caption])
                 continue
             except Exception:
                 pass
-        cells.append([Paragraph('Photograph held in legacy storage', SMALL), caption])
+        cells.append([Paragraph('Photograph could not be retrieved', SMALL), caption])
     for i in range(0, len(cells), 2):
         pair = cells[i:i + 2] + ([['', '']] if len(cells[i:i + 2]) == 1 else [])
         out.append(Table([[pair[0][0], pair[1][0]], [pair[0][1], pair[1][1]]], colWidths=[full / 2] * 2))

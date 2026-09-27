@@ -168,9 +168,9 @@ function Documents({q, selected, readOnly, files}) {
     {error && <p role="alert" className="error">{error}</p>}
     {chosen.map(o => {const file = byOption[o.id]; return <div key={o.id} className="document-row">
       <span>{o.label}</span>
-      {file ? (file.local
-        ? <a href={`/api/valuations/${files.id}/documents/${file.id}/file/`} target="_blank" rel="noopener">{file.name}</a>
-        : <small className="muted">{file.name || 'Document'} (legacy storage)</small>) : <small className="muted">No document</small>}
+      {file ? (file.available
+        ? <a href={`/api/valuations/${files.id}/documents/${file.id}/file/`} target="_blank" rel="noopener">{file.name || 'Document'}</a>
+        : <small className="muted">{file.name || 'Document'} (file not found)</small>) : <small className="muted">No document</small>}
       {!readOnly && <>
         <label className="link">{file ? 'Replace' : 'Attach'}<input type="file" hidden disabled={files.dirty || busy === o.id}
           accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp" onChange={e => e.target.files[0] && attach(o.id, e.target.files[0])}/></label>
@@ -303,8 +303,9 @@ function Photos({api, id}) {
         onChange={e => e.target.files[0] && upload(e.target.files[0])}/></label>
     </div>}
     <div className="photo-grid">{data.photos.map(p => <figure key={p.id}>
-      {p.file?.local ? <img src={`/api/valuations/${id}/photos/${p.id}/file/`} alt={`${p.type_label} photo`} loading="lazy"/>
-        : <div className="photo-placeholder">Held in legacy storage</div>}
+      {p.file?.available ? <a href={`/api/valuations/${id}/photos/${p.id}/file/`} target="_blank" rel="noopener">
+          <img src={`/api/valuations/${id}/photos/${p.id}/file/`} alt={`${p.type_label} photo`} loading="lazy" decoding="async"/></a>
+        : <div className="photo-placeholder">Photo not found</div>}
       <figcaption><strong>{p.type_label}</strong>{p.caption && <small> · {p.caption}</small>}
         {data.editable && <button className="link" onClick={() => remove(p)}>Remove</button>}</figcaption>
     </figure>)}</div>

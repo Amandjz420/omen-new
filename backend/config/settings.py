@@ -1,8 +1,27 @@
 import os
+import sys
 import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+def _load_env(path):
+    """Read KEY=VALUE lines from the repository's .env into the environment, never
+    overriding a variable already set. The .env is git-ignored and holds the
+    credentials for the legacy S3 bucket."""
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            key, value = line.split('=', 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+# Not during a test run: tests must never reach real storage. Those that need the
+# bucket set their own fake credentials.
+if sys.argv[1:2] != ['test']:
+    _load_env(Path(__file__).resolve().parent.parent.parent / '.env')
+
 DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 if not SECRET_KEY:
@@ -56,6 +75,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 # Documents this system generates, such as work orders. Local until object
 # storage is configured; gitignored, never served statically.
 MEDIA_ROOT = Path(os.environ.get('OMEN_MEDIA_ROOT', BASE_DIR.parent / 'storage'))
+# Files uploaded through the previous user-management system (uam_user.upload):
+# a local copy of its upload folder. Its S3 folder holds only 80 older files.
+LEGACY_UAM_ROOT = Path(os.environ.get('OMEN_UAM_ROOT', BASE_DIR.parent.parent / 'uamuplaod'))
 WSGI_APPLICATION = 'config.wsgi.application'
 # PostgreSQL is the application database. Credentials come from the environment
 # in deployment, or from database/.local/postgres.json locally (gitignored, mode

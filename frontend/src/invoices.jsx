@@ -142,8 +142,8 @@ function Invoice({api, id, onBack}) {
     <button className="link" onClick={onBack}>← Back to invoices</button>
     <h2>{inv.number}{inv.cancelled ? ' · Cancelled' : ''}</h2>
     <p>{inv.report_number} · {inv.borrower} · issued {inv.issued_on || '—'}{inv.due_on ? ` · due ${inv.due_on}` : ''} · <span className="status">{inv.payment_status}</span></p>
-    {inv.document && (inv.document.local ? <p><a href={`/api/invoices/${id}/document/`} target="_blank" rel="noopener">View the invoice (PDF)</a></p>
-      : <p className="muted">The invoice document is held in legacy storage and has not been retrieved yet.</p>)}
+    {inv.document && (inv.document.available ? <p><a href={`/api/invoices/${id}/document/`} target="_blank" rel="noopener">View the invoice (PDF)</a></p>
+      : <p className="muted">The invoice's file could not be found in storage.</p>)}
     {inv.offline && <div className="notice">
       <p>Offline invoice, recorded from outside the system. Billed to <strong>{inv.billed_to.name}</strong>{inv.billed_to.branch ? `, ${inv.billed_to.branch}` : ''}{inv.billed_to.customer ? ` · customer ${inv.billed_to.customer}` : ''}.</p>
       <p className="muted">References (not linked to any record here): lead {inv.references.lead || '—'} · work order {inv.references.work_order || '—'} · report {inv.references.report || '—'}
@@ -181,6 +181,6 @@ function Invoice({api, id, onBack}) {
     {inv.payments.length > 0 && <><h3>Payments</h3><ul>{inv.payments.map((p, i) => <li key={i}>{p.on || '—'} · {rs(p.amount)}{p.mode ? ` · ${p.mode}` : ''}{p.by ? ` · ${p.by}` : ''}{p.recorded === 'previous system' && <small className="muted"> · recorded in the previous system</small>}</li>)}</ul></>}
     {inv.credit_notes.length > 0 && <><h3>Credit notes</h3><ul>{inv.credit_notes.map(c => <li key={c.id}>{c.number} · {c.on} · {rs(c.total)}
       {Number(c.refund_due) > 0 && ` · ${rs(c.refund_due)} to refund`} · {c.reason}
-      {c.document?.local && <> · <a href={`/api/invoices/credit-notes/${c.id}/document/`} target="_blank" rel="noopener">PDF</a></>}</li>)}</ul></>}
+      {c.document?.available && <> · <a href={`/api/invoices/credit-notes/${c.id}/document/`} target="_blank" rel="noopener">PDF</a></>}</li>)}</ul></>}
   </section>;
 }

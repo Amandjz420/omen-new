@@ -107,3 +107,26 @@ test('on plain http, where browsers withhold crypto.randomUUID, IDs still work',
   for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(errors).toEqual([]);
 });
+
+test('a receipt opens its scanned document, or says it cannot be found', async ({page}) => {
+  const R = 'a1b2c3d4-0000-4000-8000-000000000001';
+  const receipt = available => ({id: R, number: 'C-0121210007', amount: '4130.00', origin: 'legacy', received_as: 2, received_as_label: 'Recovery',
+    payment_mode_label: 'Cash', payer_name: 'State Bank of India', received_date: '2021-01-21', stage: 'verified', stage_label: 'Verified',
+    remark: '', invoice: null, maker: '', checker: '', verifier: '', same_person: [], can: {}, voided: false,
+    document: {id: 'd1', name: '7.jpg', available}});
+  let available = true;
+  await page.route('**/api/receipts/**', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname === `/api/receipts/${R}/`) return route.fulfill({contentType: 'application/json', body: JSON.stringify(receipt(available))});
+    return route.fulfill({contentType: 'application/json', body: JSON.stringify({state: 'to_check', total: 1, page: 1, page_size: 25,
+      counts: {to_check: 1, to_verify: 0, verified: 0, voided: 0}, results: [{id: R, number: 'C-0121210007', amount: '4130.00',
+      received_as: 'Recovery', payer: 'State Bank of India', received_date: '2021-01-21', stage: 'Verified'}]})});
+  });
+  for (const state of [true, false]) {
+    available = state;
+    await page.goto('/receipts');
+    await page.getByRole('button', {name: /Open|C-0121210007/}).first().click();
+    if (state) await expect(page.getByRole('link', {name: 'View the receipt document'})).toHaveAttribute('href', `/api/receipts/${R}/document/`);
+    else await expect(page.getByText("The receipt's document could not be found in storage.")).toBeVisible();
+  }
+});

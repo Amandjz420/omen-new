@@ -15,6 +15,13 @@ class Document(Entity):
     size_bytes = models.PositiveBigIntegerField(null=True)
     checksum = models.CharField(max_length=64, blank=True)
     content_verified = models.BooleanField(default=False)
+    # Where a previous-system file was found, recorded by manage.py
+    # locate_legacy_files: the exact object key in the bucket, or a path in the local
+    # copy of the user-management uploads. Some stored keys carry a doubled slash that
+    # the bucket keeps and others one it does not, so the location is verified, never
+    # guessed. Empty with legacy_checked_at set means the file was not found.
+    legacy_location = models.CharField(max_length=600, blank=True, editable=False)
+    legacy_checked_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         app_label = "target_core"

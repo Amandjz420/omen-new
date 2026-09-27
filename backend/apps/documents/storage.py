@@ -18,6 +18,7 @@ import zipfile
 from pathlib import Path
 
 from django.conf import settings
+from django.http import HttpResponseRedirect
 from django.http import FileResponse
 
 from target_core import models as m
@@ -93,17 +94,92 @@ def store(upload, purpose, folder):
     return document
 
 
+# Where the previous system's files live, verified against the bucket and the
+# local folder by manage.py locate_legacy_files, which records each document's
+# exact location:
+#   * Lead documents: the S3 bucket, under LeadUpload/ plus the stored key. The
+#     bucket holds both forms of a doubled slash: 143,973 keys exist as stored,
+#     including some with "//", and 6,663 only with it collapsed. Neither rule alone
+#     works, so the location is recorded, not guessed.
+#   * User-management uploads: the local copy of its upload folder, else the
+#     bucket's UAMUpload/ folder, which holds only 80 older files.
+PREFIX = {'legacy_lead_s3': 'LeadUpload/', 'legacy_uam_local': 'UAMUpload/'}
+LOCAL_MARK = 'local:'
+
+
+def s3_key(document):
+    """The object key to request: the verified location, or before files have been
+    located, the stored key as it is, which is right for most."""
+    if document.storage_provider not in PREFIX:
+        return None
+    if document.legacy_location and not document.legacy_location.startswith(LOCAL_MARK):
+        return document.legacy_location
+    if document.legacy_checked_at:
+        return None                                      # located, and not in the bucket
+    return PREFIX[document.storage_provider] + document.storage_key.lstrip('/')
+
+
+def contained(root, key):
+    root = Path(root).resolve()
+    path = (root / key).resolve()
+    return path if path.is_relative_to(root) and path.is_file() else None
+
+
+def local_path(document):
+    if document.storage_provider == 'local':
+        return contained(settings.MEDIA_ROOT, document.storage_key)
+    if document.storage_provider == 'legacy_uam_local':
+        return contained(settings.LEGACY_UAM_ROOT, document.storage_key)
+    return None
+
+
+def available(document):
+    """Whether this server can hand the file over: stored here, in the local copy of
+    the previous system's uploads, or in the bucket with its credentials configured.
+    Once located, a file found in neither place is not available."""
+    from . import s3
+    if document is None:
+        return False
+    if document.storage_provider == 'local':
+        return True
+    if document.storage_provider == 'legacy_uam_local' and local_path(document) is not None:
+        return True
+    return s3_key(document) is not None and s3.configured()
+
+
+def kind_of(document, name):
+    return (Path(name).suffix.lstrip('.') or (document.media_type or '').split('/')[-1]).lower()
+
+
+def media_type(document, name):
+    import mimetypes
+    # Imported types are sometimes incomplete ("image"), which browsers reject.
+    stored = document.media_type if '/' in (document.media_type or '') else ''
+    return stored or mimetypes.guess_type(name)[0] or 'application/octet-stream'
+
+
 def serve(document):
+    from . import s3
     if document is None:
         raise IntakeError('File not found', 404)
-    if document.storage_provider != 'local':
-        raise IntakeError('This file is held in legacy storage and has not been retrieved yet', 404)
-    root = Path(settings.MEDIA_ROOT).resolve()
-    path = (root / document.storage_key).resolve()
-    if not path.is_relative_to(root) or not path.exists():
+    path = local_path(document)
+    if path is None and document.storage_provider != 'local' and s3_key(document):
+        # A file from the previous system's bucket. Access was checked by the caller;
+        # the browser is sent a link valid for five minutes, and the credentials stay
+        # here. The file is served from Amazon's domain, not this one, so a hostile
+        # legacy upload cannot run script against the application.
+        if not s3.configured():
+            raise IntakeError("Files from the previous system are not connected on this server", 503)
+        name = document.original_name or Path(document.storage_key).name
+        url = s3.presign(s3_key(document), filename=name, content_type=media_type(document, name),
+                         attachment=kind_of(document, name) not in INLINE)
+        response = HttpResponseRedirect(url)
+        response['Cache-Control'] = 'no-store'
+        return response
+    if path is None:
         raise IntakeError('The file is missing', 404)
-    kind = path.suffix.lstrip('.')
-    response = FileResponse(path.open('rb'), content_type=document.media_type or 'application/octet-stream',
+    kind = path.suffix.lstrip('.').lower()
+    response = FileResponse(path.open('rb'), content_type=media_type(document, path.name),
                             filename=document.original_name or path.name, as_attachment=kind not in INLINE)
     # Never let a browser reinterpret an upload as something executable.
     response['X-Content-Type-Options'] = 'nosniff'
@@ -111,8 +187,29 @@ def serve(document):
     return response
 
 
+def read_bytes(document, limit=20 * 1024 * 1024):
+    """A file's content, for embedding in a generated PDF; None if it cannot be had."""
+    from . import s3
+    import urllib.request
+    if document is None:
+        return None
+    path = local_path(document)
+    if path is not None:
+        return path.read_bytes() if path.stat().st_size <= limit else None
+    if s3_key(document) and s3.configured():
+        try:
+            with urllib.request.urlopen(s3.presign(s3_key(document)), timeout=20) as r:
+                data = r.read(limit + 1)
+            return data if len(data) <= limit else None
+        except Exception:
+            return None
+    return None
+
+
 def file_json(document):
     if document is None:
         return None
+    # 'available': this server can hand the file over. 'local': it was stored here.
     return {'id': document.pk, 'name': document.original_name, 'type': document.media_type,
-            'size': document.size_bytes, 'local': document.storage_provider == 'local'}
+            'size': document.size_bytes, 'local': document.storage_provider == 'local',
+            'available': available(document)}
