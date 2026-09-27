@@ -26,23 +26,31 @@ def workbook(spec, f, group_label, groups, totals):
         summary.cell(row=i, column=1, value=text).font = Font(bold=(i == 1), size=13 if i == 1 else 10)
     start = len(lines) + 2
     measures = spec['measures']
-    header = [group_label] + [l for _, l, _ in measures]
+    header = [group_label] + [x[1] for x in measures]
     for c, text in enumerate(header, 1):
         cell = summary.cell(row=start, column=c, value=text)
         cell.font, cell.fill = Font(bold=True, color='FFFFFF'), HEAD
     for r, g in enumerate(groups, start + 1):
         summary.cell(row=r, column=1, value=g['label'])
-        for c, (k, _, kind) in enumerate(measures, 2):
-            cell = summary.cell(row=r, column=c, value=float(g['values'][k]) if kind == 'money' else g['values'][k])
+        for c, measure in enumerate(measures, 2):
+            k, kind = measure[0], measure[2]
+            v = g['values'][k]
+            cell = summary.cell(row=r, column=c, value=float(v) if kind in ('money', 'percent') and v is not None else v)
             if kind == 'money':
                 cell.number_format = INDIAN
+            elif kind == 'percent':
+                cell.number_format = '0.0"%"'
     last = start + len(groups) + 1
     summary.cell(row=last, column=1, value='Total').font = Font(bold=True)
-    for c, (k, _, kind) in enumerate(measures, 2):
-        cell = summary.cell(row=last, column=c, value=float(totals[k]) if kind == 'money' else totals[k])
+    for c, measure in enumerate(measures, 2):
+        k, kind = measure[0], measure[2]
+        v = totals[k]
+        cell = summary.cell(row=last, column=c, value=float(v) if kind in ('money', 'percent') and v is not None else v)
         cell.font = Font(bold=True)
         if kind == 'money':
             cell.number_format = INDIAN
+        elif kind == 'percent':
+            cell.number_format = '0.0"%"'
     widths(summary, [36] + [16] * len(measures))
 
     detail = wb.create_sheet('Details')
@@ -60,6 +68,8 @@ def workbook(spec, f, group_label, groups, totals):
                 cell = detail.cell(row=r, column=c, value=float(v) if isinstance(v, Decimal) else v)
                 if kind == 'money':
                     cell.number_format = INDIAN
+                elif kind == 'percent':
+                    cell.number_format = '0.0"%"'
                 elif kind == 'date' and v:
                     cell.number_format = 'DD-MMM-YYYY'
             r += 1

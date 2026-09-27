@@ -142,8 +142,12 @@ def bank_reports(user, f):
     rows = []
     for r in qs.values('pk', 'valuation_id', 'valuation__report_number', 'legacy_liable_fa', 'valuation__liable_employee_id',
                        'valuation__liable_employee__name', 'valuation__case__lead__office__name', 'valuation__case__borrower__name'):
-        fa = ((str(r['valuation__liable_employee_id']), r['valuation__liable_employee__name'])
-              if r['valuation__liable_employee_id'] else resolve(r['legacy_liable_fa']))
+        # The bank report names who is liable, and it is the document of record: the
+        # one the bank received. The valuation's own field is the fallback, for
+        # reports generated here, which do not store one. Where the two disagree the
+        # legacy reports followed the bank report.
+        fa = resolve(r['legacy_liable_fa']) or ((str(r['valuation__liable_employee_id']), r['valuation__liable_employee__name'])
+                                                if r['valuation__liable_employee_id'] else None)
         if fa is None:
             continue
         inv = standing.get(r['valuation_id'])
@@ -343,6 +347,107 @@ report('cancelled-valuations', number='9', title='Cancelled valuations', section
                 ('cancelled_on', 'Cancelled on', 'date'), ('reason', 'Reason', 'text')])
 
 
+def offline_invoices(user, f):
+    """Offline invoices (2020-21), dated by invoice date, with their balance: the
+    total less the advance and recorded payments. Visible only to a user who may
+    see offline invoices. The legacy offline billing query grouped by a table it
+    did not select from and failed every time it ran."""
+    from apps.billing.services import offline_queryset
+    qs = offline_queryset(user)
+    if f['from']:
+        qs = qs.filter(issued_date__gte=f['from'])
+    if f['to']:
+        qs = qs.filter(issued_date__lte=f['to'])
+    if f['q']:
+        qs = qs.filter(Q(number__icontains=f['q']) | Q(billed_to_name__icontains=f['q']) | Q(billed_customer_name__icontains=f['q'])
+                       | Q(reference_report__icontains=f['q']) | Q(reference_lead__icontains=f['q']))
+    rows = []
+    for r in qs.values('pk', 'number', 'issued_date', 'billed_amount', 'bad_debt_amount', 'outstanding', 'billed_to_name',
+                       'billed_branch_name', 'billed_customer_name', 'reference_report', 'reference_lead', 'service__name', 'service_id',
+                       'liable_employee__name', 'liable_employee_id', 'doer_employee__name', 'doer_employee_id'):
+        billed, owed = money(r['billed_amount']), money(r['outstanding'])
+        rows.append({'id': r['pk'], 'invoice': r['number'], 'issued': r['issued_date'], 'billed': billed,
+                     'paid': billed - money(r['bad_debt_amount']) - owed, 'written_off': money(r['bad_debt_amount']),
+                     'outstanding': max(owed, ZERO), 'client': (r['billed_to_name'] or '').strip(), 'branch': r['billed_branch_name'],
+                     'borrower': r['billed_customer_name'], 'report': r['reference_report'], 'lead': r['reference_lead'],
+                     'service': r['service__name'], 'service_id': r['service_id'], 'liable': r['liable_employee__name'],
+                     'liable_id': r['liable_employee_id'], 'doer': r['doer_employee__name'], 'doer_id': r['doer_employee_id']})
+    return rows
+
+
+def targets(user, f):
+    """Each field assessor's target for a financial year, against what they
+    achieved: standing invoices issued within that year on valuations they were
+    liable for, as the legacy targets report counted them.
+
+    One assessor holds two targets for one year. The legacy report grouped by year
+    and assessor, so both rows joined the same invoices and that assessor's
+    achievement was counted twice. Here the most recent target applies, the other
+    is shown as superseded, and achievement is counted once."""
+    qs = m.EmployeeTarget.objects.select_related('employee').filter(legacy_status__in=('1', ''))
+    who = scoped_employee(user)
+    if who is not None:
+        qs = qs.filter(employee=who) if who is not None and hasattr(who, 'pk') else qs.none()
+    if f['from']:
+        qs = qs.filter(period_end__gte=f['from'])
+    if f['to']:
+        qs = qs.filter(period_start__lte=f['to'])
+    import json
+    source_id = {str(t): int(json.loads(k)[0][1]) for k, t in m.SourceIdentity.objects.filter(
+        environment='main', schema='lead_mngt', table='employee_target').values_list('key', 'target_id')}
+
+    def recency(t):
+        # Numbers, not text ("12" is newer than "9"); a target set here is newer than any import.
+        return (1, t.created_at) if str(t.pk) not in source_id else (0, source_id[str(t.pk)])
+    latest = {}
+    for t in qs:
+        key = (t.employee_id, t.financial_year)
+        if key not in latest or recency(t) > latest[key][0]:
+            latest[key] = (recency(t), t)
+    achieved = {}
+    for r in bank_reports(user, {**f, 'from': None, 'to': None, 'q': ''}):
+        if r['issued']:
+            achieved.setdefault(r['liable_id'], []).append((r['issued'], r['billed']))
+    rows = []
+    for (employee_id, year), (_, t) in latest.items():
+        inside = [(d, b) for d, b in achieved.get(str(employee_id), []) if t.period_start <= d <= t.period_end] if t.period_start else []
+        amount = sum((b for _, b in inside), ZERO)
+        rows.append({'id': t.pk, 'employee': t.employee.name, 'employee_id': str(employee_id),
+                     'year': f"{t.period_start:%Y}-{t.period_end:%y}" if t.period_start else year, 'year_key': year,
+                     'target_cases': t.target_cases or 0, 'achieved_cases': len(inside), 'target_amount': money(t.target_amount),
+                     'achieved_amount': money(amount),
+                     'share': (amount * 100 / t.target_amount).quantize(Decimal('0.1')) if t.target_amount else None,
+                     'superseded': sum(1 for x in qs if (x.employee_id, x.financial_year) == (employee_id, year)) - 1})
+    return rows
+
+
+report('offline-billing', number='10', title='Offline billing', section='Billing',
+       description='Invoices raised outside the system in 2020-21, with what is still owed.', date_label='Invoice date',
+       rows=offline_invoices,
+       groups=OrderedDict([('client', ('Billed to', lambda r: (r['client'].lower(), ', '.join(x for x in (r['client'], r['branch']) if x) or 'Not recorded'))),
+                           ('customer', ('Client customer', lambda r: ((r['borrower'] or '').strip().lower(), (r['borrower'] or '').strip() or 'Not recorded'))),
+                           ('liable', ('Liable field assessor', by('liable_id', 'liable', 'Not recorded'))),
+                           ('doer', ('Valued by', by('doer_id', 'doer', 'Not recorded'))),
+                           ('service', ('Service rendered', by('service_id', 'service'))),
+                           ('month', ('Month', month('issued')))]),
+       default_group='client', sort='outstanding', measures=MONEY,
+       columns=[('invoice', 'Invoice', 'text'), ('issued', 'Date', 'date'), ('client', 'Billed to', 'text'), ('borrower', 'Client customer', 'text'),
+                ('report', 'Report reference', 'text'), ('liable', 'Liable field assessor', 'text'),
+                ('billed', 'Invoiced', 'money'), ('paid', 'Received', 'money'), ('outstanding', 'Outstanding', 'money')])
+report('fa-targets', number='11', title="Field assessors' financial targets", section='Billing',
+       description='Each field assessor\'s target for the year against what they achieved, counting invoices on valuations they were liable for.',
+       date_label='Financial year', rows=targets,
+       groups=OrderedDict([('year', ('Financial year', lambda r: (r['year'], r['year']))),
+                           ('employee', ('Field assessor', by('employee_id', 'employee')))]),
+       default_group='year', sort='target_amount',
+       measures=[('target_cases', 'Target cases', 'number'), ('achieved_cases', 'Cases achieved', 'number'),
+                 ('target_amount', 'Target amount', 'money'), ('achieved_amount', 'Amount achieved', 'money'),
+                 ('share', 'Achieved', 'percent', ('achieved_amount', 'target_amount'))],
+       columns=[('employee', 'Field assessor', 'text'), ('year', 'Financial year', 'text'), ('target_cases', 'Target cases', 'number'),
+                ('achieved_cases', 'Cases achieved', 'number'), ('target_amount', 'Target amount', 'money'),
+                ('achieved_amount', 'Amount achieved', 'money'), ('share', 'Achieved', 'percent'), ('superseded', 'Superseded targets', 'number')])
+
+
 # --- the engine --------------------------------------------------------------
 
 def filters_from(request):
@@ -374,14 +479,21 @@ def run(spec, user, f, group):
         b['rows'].append(r)
         for measure in spec['measures']:
             m_, kind = measure[0], measure[2]
+            if kind == 'percent':
+                continue                                          # derived once the group is totalled
             when = measure[3] if len(measure) > 3 else None
             v = (1 if (when is None or when(r)) else 0) if kind == 'count' else r.get(m_, ZERO)
             b['values'][m_] += v
             totals[m_] += v
+    for measure in spec['measures']:
+        if measure[2] == 'percent':
+            num, den = measure[3]
+            for values in [b['values'] for b in buckets.values()] + [totals]:
+                values[measure[0]] = (Decimal(values[num]) * 100 / Decimal(values[den])).quantize(Decimal('0.1')) if values[den] else None
     # Sequences keep their natural order (status stages, months, age bands); anything
     # else runs largest first, by the report's leading money measure or, failing
     # that, its first count. Unrecorded values always come last.
-    natural = group in ('age', 'month', 'status')
+    natural = group in ('age', 'month', 'status', 'year')
     money_first = spec.get('sort') or next((x[0] for x in spec['measures'] if x[2] == 'money'), spec['measures'][0][0])
     unknown = ('Not recorded', 'Not assigned', 'No division', 'Date unknown', 'Area not recorded')
     ordered = sorted(buckets.values(), key=lambda b: (b['label'] in unknown, b['key'] if natural else '',

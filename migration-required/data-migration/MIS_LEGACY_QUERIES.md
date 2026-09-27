@@ -27,6 +27,19 @@ Run on 2026-09-27 against omen-full-database-20260916 (the legacy MariaDB).
    syntax error whenever a name is searched.
 5. On report_home.jsp, 3.6 "Outstanding Client Wise Billing MIS" links to the same
    address as 3.5, the service-rendered report.
+6. Service rendered joins charge lines too: it counted 71,592 invoices and summed
+   Rs 34,80,77,928, against 11,926 invoices and Rs 5,79,79,672.
+7. The lead reports have no deleted-lead filter and counted 757 deleted leads.
+8. Pending recovery bands (0-60, 60-90, 90-120, over 120 days) use BETWEEN, so an
+   invoice exactly 60 or 90 days old falls into two bands.
+9. Offline billing selects from offline_invoice alone and groups by l.client_id, a
+   table it never joins. It fails every time: "Unknown column 'l.client_id' in
+   'GROUP BY'". Rs 14,01,827 owed on offline invoices was never reported.
+10. The targets report groups by year and assessor; one assessor holds two targets
+    for 2021-22, and both rows join the same invoices, doubling that achievement.
+
+The new MIS reconciles with every legacy query that was correct, and differs from
+the others by exactly these defects: manage.py reconcile_mis --settings=config.full_database.
 
 ## Extracted queries
 

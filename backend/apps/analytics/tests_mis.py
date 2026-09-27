@@ -121,7 +121,8 @@ class MisTests(MisFixture, TestCase):
     def test_the_catalogue_and_an_unknown_report(self):
         keys = [r['key'] for r in self.client.get('/api/mis/').json()['reports']]
         self.assertEqual(keys, ['invoices', 'outstanding', 'pending-recovery', 'total-amount', 'billing-by-client', 'billing-by-assessor',
-                                'leads', 'lead-mis', 'valuations', 'doer-wise', 'service-rendered', 'cancelled-valuations'])
+                                'leads', 'lead-mis', 'valuations', 'doer-wise', 'service-rendered', 'cancelled-valuations',
+                                'offline-billing', 'fa-targets'])
         self.assertEqual(self.get('no-such-report').status_code, 404)
 
 
@@ -189,3 +190,93 @@ class WorkReportTests(MisFixture, TestCase):
             inv = self.invoice(billed, remaining=owed)
             m.Lead.objects.filter(pk=inv.valuation.case.lead_id).update(office=office)
         self.assertEqual([g['label'] for g in self.get('outstanding', group='client').json()['groups']][:2], ['Large', 'Small'])
+
+
+class LastReportTests(MisFixture, TestCase):
+    """Offline billing (10) and field assessors' targets (11)."""
+
+    def offline(self, billed, advance='0', paid=(), days_ago=30, client='State Bank of India'):
+        inv = m.Invoice.objects.create(origin='legacy_offline_invoice', number=f'I-OFF{m.Invoice.objects.count()}',
+                                       issued_date=self.today - datetime.timedelta(days=days_ago), billed_amount=Decimal(billed),
+                                       advance_amount=Decimal(advance), billed_to_name=client)
+        for amount in paid:
+            m.Receipt.objects.create(origin='legacy_offline_amount_received', invoice=inv, amount=Decimal(amount))
+        return inv
+
+    def target(self, employee, amount, cases=10, year=2026, source_id=None):
+        t = m.EmployeeTarget.objects.create(employee=employee, financial_year=str(year), period_start=datetime.date(year, 4, 1),
+                                            period_end=datetime.date(year + 1, 3, 31), target_cases=cases, target_amount=Decimal(amount),
+                                            legacy_status='1')
+        if source_id:
+            m.SourceIdentity.objects.create(batch=m.ImportBatch.objects.create(), environment='main', schema='lead_mngt',
+                                            table='employee_target', key=source_key(source_id), target_model='target_core.EmployeeTarget', target_id=t.pk)
+        return t
+
+    def liable(self, employee, billed, on):
+        inv = self.invoice(billed)
+        m.Invoice.objects.filter(pk=inv.pk).update(issued_date=on)
+        m.Valuation.objects.filter(pk=inv.valuation_id).update(liable_employee=employee)
+        return inv
+
+    def test_offline_billing_shows_what_is_still_owed(self):
+        """Regression: the legacy query grouped by a table it did not select, and always failed."""
+        self.offline('1000', advance='200', paid=['300'])
+        self.offline('500', paid=['500'], client='Canara Bank')
+        t = self.get('offline-billing').json()['totals']
+        self.assertEqual((t['invoices'], t['billed'], t['paid'], t['outstanding']), (2, '1500.00', '1000.00', '500.00'))
+        self.assertEqual(self.get('offline-billing').json()['groups'][0]['label'], 'State Bank of India')   # largest debt first
+
+    def test_offline_billing_is_hidden_from_a_restricted_user(self):
+        self.offline('1000')
+        self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Assessor')))
+        self.assertEqual(self.get('offline-billing').json()['totals']['invoices'], 0)
+
+    def test_achievement_counts_invoices_within_the_financial_year(self):
+        fa = m.Employee.objects.create(name='Noopur')
+        self.target(fa, '100000', cases=4)
+        self.liable(fa, '20000', datetime.date(2026, 5, 1))
+        self.liable(fa, '30000', datetime.date(2027, 3, 31))
+        self.liable(fa, '99999', datetime.date(2026, 3, 31))                 # the year before
+        row = self.get('fa-targets').json()['groups'][0]['values']
+        self.assertEqual((row['achieved_cases'], row['achieved_amount'], row['share']), (2, '50000.00', '50.00'))
+
+    def test_a_duplicated_target_counts_achievement_once(self):
+        """Regression: the legacy grouping joined both targets to the same invoices."""
+        fa = m.Employee.objects.create(name='Noopur')
+        self.target(fa, '100000', source_id='9')
+        self.target(fa, '200000', source_id='12')                            # the more recent; 12 is newer than 9
+        self.liable(fa, '50000', datetime.date(2026, 6, 1))
+        body = self.get('fa-targets', group='employee').json()
+        self.assertEqual((body['totals']['target_amount'], body['totals']['achieved_amount'], body['totals']['share']),
+                         ('200000.00', '50000.00', '25.00'))
+        detail = self.get('fa-targets', group='employee', within=body['groups'][0]['key']).json()['detail']
+        self.assertEqual(detail['rows'][0]['superseded'], 1)
+
+    def test_a_target_set_here_supersedes_an_imported_one(self):
+        fa = m.Employee.objects.create(name='Noopur')
+        self.target(fa, '100000', source_id='40')
+        self.target(fa, '300000')
+        self.assertEqual(self.get('fa-targets').json()['totals']['target_amount'], '300000.00')
+
+    def test_percentages_are_worked_out_from_totals_not_added_up(self):
+        a, b = m.Employee.objects.create(name='A'), m.Employee.objects.create(name='B')
+        self.target(a, '100000')
+        self.target(b, '300000')
+        self.liable(a, '100000', datetime.date(2026, 6, 1))                   # A: 100%; B: 0%
+        self.assertEqual(self.get('fa-targets').json()['totals']['share'], '25.00')   # not 100 + 0
+
+    def test_the_bank_report_decides_who_is_liable(self):
+        """Where the report and the valuation disagree, the report is the document of record."""
+        on_report, on_valuation = m.Employee.objects.create(name='On report'), m.Employee.objects.create(name='On valuation')
+        m.SourceIdentity.objects.create(batch=m.ImportBatch.objects.create(), environment='main', schema='uam_user',
+                                        table='employee', key=source_key('82'), target_model='target_core.Employee', target_id=on_report.pk)
+        inv = self.liable(on_valuation, '5151', datetime.date(2026, 6, 1))
+        m.BankReport.objects.filter(valuation=inv.valuation).update(legacy_liable_fa='82')
+        self.assertEqual([g['label'] for g in self.get('billing-by-assessor').json()['groups']], ['On report'])
+
+    def test_percentages_export_as_percentages(self):
+        fa = m.Employee.objects.create(name='Noopur')
+        self.target(fa, '100000')
+        wb = load_workbook(io.BytesIO(self.client.get('/api/mis/fa-targets/export/').content))
+        formats = {c.number_format for row in wb['Summary'].iter_rows() for c in row}
+        self.assertIn('0.0"%"', formats)

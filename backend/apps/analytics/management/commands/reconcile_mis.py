@@ -48,6 +48,8 @@ class Command(BaseCommand):
         self.valuation_reports()
         self.service_rendered()
         self.cancelled_valuations()
+        self.offline_billing()
+        self.targets()
         self.stdout.write(self.style.SUCCESS('All reports reconcile.') if not self.failed
                           else self.style.ERROR(f'{self.failed} check(s) did not reconcile.'))
 
@@ -112,6 +114,14 @@ class Command(BaseCommand):
         _, _, groups, t = engine('billing-by-assessor')
         self.compare('bank reports with a liable assessor', sum(legacy.values()) - held, t['reports'],
                      f'({held} quarantined bank report excluded on import)' if held else '')
+        for r in m.SourceRow.objects.filter(schema='lead_mngt', table='valuation_bank_report', outcome='quarantined'):
+            fa = r.payload.get('liable_fa')
+            if str(fa) in {str(k) for k in legacy}:
+                legacy = {k: v - (1 if str(k) == str(fa) else 0) for k, v in legacy.items()}
+        employee = self.mapped('uam_user', 'employee')
+        ours = {g['key']: g['values']['reports'] for g in groups}
+        differ = [k for k, n in legacy.items() if ours.get(employee.get(source_key(k)), 0) != n]
+        self.compare('assessors whose report count differs', 0, len(differ), f'of {len(legacy)} assessors')
 
     def pending_recovery(self):
         self.stdout.write('\nPending recovery (legacy bands overlapped at 60 and 90 days)')
@@ -204,3 +214,39 @@ class Command(BaseCommand):
         _, _, _, t = engine('cancelled-valuations')
         self.compare('cancelled valuations listed', total - held, t['cancelled'],
                      f'the legacy report showed {shown}' + (f'; {held} quarantined' if held else ''))
+
+    def offline_billing(self):
+        self.stdout.write('\nOffline billing (the legacy query failed every time: it grouped by a table it did not select)')
+        try:
+            self.cur.execute('SELECT of.offline_invoice_id FROM offline_invoice of GROUP BY l.client_id')
+            self.stdout.write('  the legacy query ran')
+        except Exception as exc:
+            self.stdout.write(f'  the legacy query fails: {str(exc)[:70]}')
+        n, total = self.one('SELECT COUNT(*), SUM(total_amount) FROM offline_invoice')
+        owed = self.one("""SELECT SUM(GREATEST(o.total_amount - COALESCE(o.advance_amount,0) - COALESCE((SELECT SUM(a.amount_received)
+                           FROM offline_amount_received a WHERE a.offline_invoice_id = o.offline_invoice_id),0), 0)) FROM offline_invoice o""")[0]
+        held = self.held('offline_invoice')
+        _, _, _, t = engine('offline-billing')
+        self.compare('offline invoices', n - held, t['invoices'])
+        self.compare('invoiced', round(total), round(t['billed']))
+        self.compare('still owed', round(owed), round(t['outstanding']))
+
+    def targets(self):
+        self.stdout.write("\nField assessors' targets (legacy doubled achievement where an assessor held two targets in a year)")
+        self.cur.execute("""SELECT et.emp_id, et.fin_year, COUNT(i.invoice_id), COALESCE(SUM(i.total_invoice_amount), 0)
+                            FROM employee_target et LEFT JOIN valuation_bank_report vbr ON vbr.liable_fa = et.emp_id
+                            LEFT JOIN invoice i ON i.valuation_id = vbr.valuation_id AND i.invoice_date >= et.fy_start_date
+                                 AND i.invoice_date <= et.fy_end_date
+                            WHERE et.target_id IN (SELECT MAX(target_id) FROM employee_target GROUP BY emp_id, fin_year)
+                            GROUP BY et.target_id""")
+        legacy = {(str(e), str(y)): (int(c), Decimal(a)) for e, y, c, a in self.cur.fetchall()}
+        self.cur.execute('SELECT emp_id, fin_year FROM employee_target GROUP BY emp_id, fin_year HAVING COUNT(*) > 1')
+        doubled = self.cur.fetchall()
+        employee = self.mapped('uam_user', 'employee')
+        from apps.analytics.mis import targets
+        f = filters_from(Query())
+        ours = {(r['employee_id'], r['year_key']): (r['achieved_cases'], r['achieved_amount']) for r in targets(Everyone(), f)}
+        differ = [k for k, (c, a) in legacy.items() if ours.get((employee.get(source_key(k[0])), k[1])) != (c, a.quantize(Decimal('0.01')))]
+        self.compare('assessor-years whose achievement differs', 0, len(differ), f'of {len(legacy)}; duplicated targets: {len(doubled)}')
+        for k in differ[:5]:
+            self.stdout.write(f'    {k}: legacy {legacy[k]}, ours {ours.get((employee.get(source_key(k[0])), k[1]))}')

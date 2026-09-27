@@ -49,9 +49,12 @@ export function ReportView() {
 
   if (data.isError) return <ErrorState error={data.error} onRetry={data.refetch}/>;
   if (!data.data) return <LoadingState label="Running the report"/>;
-  const r = data.data, lead = r.measures.find(x => x.kind === 'money') ?? r.measures[0];
+  const r = data.data, lead = r.measures.find(x => x.kind === 'money') ?? r.measures.find(x => x.kind !== 'percent') ?? r.measures[0];
   const top = Math.max(1, ...r.groups.map(g => Number(g.values[lead.key])));
-  const cell = (m, v) => (m.kind === 'money' ? <Money value={v}/> : <span className="num">{count(v)}</span>);
+  // Money in rupees; percentages to one place, or a dash where there is no target to measure against.
+  const cell = (m, v) => (m.kind === 'money' ? <Money value={v}/>
+    : m.kind === 'percent' ? <span className="num">{v === null || v === undefined ? '—' : `${Number(v).toLocaleString('en-IN', {minimumFractionDigits: 1, maximumFractionDigits: 1})}%`}</span>
+    : <span className="num">{count(v)}</span>);
   const range = [get('from') ? dayjs(get('from')).toDate() : null, get('to') ? dayjs(get('to')).toDate() : null];
 
   return <Stack gap="lg">
@@ -98,9 +101,9 @@ export function ReportView() {
       <Title order={2} mb="sm">{r.detail.label}</Title>
       <Table.ScrollContainer minWidth={900}>
         <Table striped>
-          <Table.Thead><Table.Tr>{r.columns.map(c => <Table.Th key={c.key} ta={c.kind === 'money' ? 'right' : undefined}>{c.label}</Table.Th>)}</Table.Tr></Table.Thead>
-          <Table.Tbody>{r.detail.rows.map((row, i) => <Table.Tr key={i}>{r.columns.map(c => <Table.Td key={c.key} ta={c.kind === 'money' ? 'right' : undefined}>
-            {c.kind === 'money' ? <Money value={row[c.key]}/> : c.kind === 'date' ? date(row[c.key]) : row[c.key] || '—'}</Table.Td>)}</Table.Tr>)}</Table.Tbody>
+          <Table.Thead><Table.Tr>{r.columns.map(c => <Table.Th key={c.key} ta={['money', 'number', 'percent'].includes(c.kind) ? 'right' : undefined}>{c.label}</Table.Th>)}</Table.Tr></Table.Thead>
+          <Table.Tbody>{r.detail.rows.map((row, i) => <Table.Tr key={i}>{r.columns.map(c => <Table.Td key={c.key} ta={['money', 'number', 'percent'].includes(c.kind) ? 'right' : undefined}>
+            {['money', 'number', 'percent'].includes(c.kind) ? cell(c, row[c.key]) : c.kind === 'date' ? date(row[c.key]) : row[c.key] || '—'}</Table.Td>)}</Table.Tr>)}</Table.Tbody>
         </Table>
       </Table.ScrollContainer>
       {r.detail.total > r.detail.page_size && <Group justify="space-between" mt="sm">
