@@ -1,0 +1,7 @@
+.card { display: block; color: inherit; text-decoration: none; }
+.card:hover { border-color: var(--mantine-color-omen-4); }
+.card:focus-visible { outline: 2px solid var(--mantine-color-omen-6); outline-offset: 2px; }
+/* A quiet bar under each group's name, scaled to the largest amount, for a glance at proportion. */
+.bar { height: 4px; margin-top: 6px; background: var(--mantine-color-gray-2); border-radius: 2px; max-width: 240px; }
+.bar span { display: block; height: 4px; background: var(--mantine-color-omen-6); border-radius: 2px; }
+.chosen { background: var(--mantine-color-omen-0); }

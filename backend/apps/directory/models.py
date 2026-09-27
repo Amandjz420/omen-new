@@ -60,6 +60,9 @@ class ContactDesignation(NamedEntity):
 class Contact(NamedEntity):
     office = models.ForeignKey('target_core.ClientOffice', on_delete=models.PROTECT)
     designation = models.ForeignKey('target_core.ContactDesignation', null=True, on_delete=models.PROTECT)
+    # The orderer's division (legacy orderer_reg.division_id), which the invoice MIS
+    # groups by. 2,045 of 2,049 imported orderers carry one.
+    division = models.ForeignKey('target_core.LeadDivision', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     phone = models.CharField(max_length=80, blank=True)
     alternate_phone = models.CharField(max_length=80, blank=True)
 

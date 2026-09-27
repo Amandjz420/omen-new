@@ -21,6 +21,7 @@ import {LeadDetail, Leads} from './screens/Leads.jsx';
 import {Offices} from './screens/Offices.jsx';
 import {ImportHistory, MigrationStatus} from './screens/System.jsx';
 import {NotFound} from './screens/NotFound.jsx';
+import {ReportList, ReportView} from './screens/Reports.jsx';
 import {LegacyScreen} from './screens/LegacyScreen.jsx';
 
 import {LoadingState} from './components/States.jsx';
@@ -68,6 +69,8 @@ export function App() {
                   <Route path="invoices" element={legacy('Invoices', 'Tax invoices, payments, write-offs and credit notes.', Invoices)}/>
                   <Route path="receipts" element={legacy('Receipts', 'Money received, made, checked and verified before it counts.', Receipts)}/>
                   <Route path="dispatch" element={legacy('Dispatch', 'Send approved reports and track them to delivery.', Dispatch)}/>
+                  <Route path="reports" element={<ReportList/>}/>
+                  <Route path="reports/:key" element={<ReportView/>}/>
                   <Route path="system/migration" element={<MigrationStatus/>}/>
                   <Route path="system/imports" element={<ImportHistory/>}/>
                   <Route path="*" element={<NotFound/>}/>

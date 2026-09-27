@@ -70,3 +70,27 @@ test('navigation: sidebar on desktop, bottom bar and menu on a phone', async ({p
   await page.goBack();                                                    // the back button works
   await expect(page.getByRole('heading', {name: 'My work'})).toBeVisible();
 });
+
+test('reports: a report with its totals, groups and drill-down', async ({page}, info) => {
+  await page.route('**/api/mis/**', route => {
+    const url = new URL(route.request().url());
+    const detail = url.searchParams.has('within') ? {detail: {group: 'a', label: 'State Bank of India, Itarsi', total: 1, page: 1, page_size: 50,
+      rows: [{invoice: 'I-0926250011', outstanding: '850000.00'}]}} : {};
+    route.fulfill({contentType: 'application/json', body: JSON.stringify({key: 'outstanding', number: '3', title: 'Outstanding', section: 'Recovery',
+      description: 'Invoices with money still owed, on work that was not cancelled.', date_label: 'Invoice date',
+      groupings: [{key: 'client', label: 'Client'}, {key: 'area', label: 'Area'}], default_group: 'client', group: 'client', group_label: 'Client',
+      measures: [{key: 'invoices', label: 'Invoices', kind: 'count'}, {key: 'outstanding', label: 'Outstanding', kind: 'money'}],
+      columns: [{key: 'invoice', label: 'Invoice', kind: 'text'}, {key: 'outstanding', label: 'Outstanding', kind: 'money'}],
+      totals: {invoices: 247, outstanding: '1238879.00'},
+      groups: [{key: 'a', label: 'State Bank of India, Itarsi', values: {invoices: 180, outstanding: '850000.00'}},
+               {key: 'b', label: 'Punjab National Bank, Bhopal', values: {invoices: 67, outstanding: '388879.00'}}], ...detail})});
+  });
+  await page.goto('/reports/outstanding');
+  await expect(page.getByRole('heading', {name: 'Outstanding', level: 1})).toBeVisible();
+  await expect(page.getByText('₹12,38,879.00').first()).toBeVisible();
+  await page.getByRole('button', {name: 'State Bank of India, Itarsi'}).click();
+  await expect(page).toHaveURL(/within=a/);                             // the drill-down is in the address
+  await expect(page.getByRole('region', {name: 'Records for State Bank of India, Itarsi'})).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await page.screenshot({path: `test-results/shots/report-${info.project.name}.png`, fullPage: true});
+});

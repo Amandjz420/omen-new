@@ -7,6 +7,7 @@ export const WORKSPACES = [
   {label: 'Review', items: [{to: '/verification', label: 'Verification'}, {to: '/bank-reports', label: 'Bank reports'}, {to: '/approval', label: 'Final approval'}]},
   {label: 'Finance', items: [{to: '/invoices', label: 'Invoices'}, {to: '/receipts', label: 'Receipts'}]},
   {label: 'Dispatch', items: [{to: '/dispatch', label: 'Dispatch'}]},
+  {label: 'Reports', items: [{to: '/reports', label: 'Reports'}]},
   {label: 'System', items: [{to: '/system/migration', label: 'Migration status'}, {to: '/system/imports', label: 'Import history'}]},
 ];
 
