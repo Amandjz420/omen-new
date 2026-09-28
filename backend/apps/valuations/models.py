@@ -177,4 +177,49 @@ class ValuationEvent(Entity):
         app_label = "target_core"
 
 
-__all__ = ['Valuation', 'QuestionCategory', 'Question', 'QuestionOption', 'ValuationAnswer', 'ValuationVerification', 'Reversion', 'ValuationAttachment', 'ValuationEvent']
+class AssistSource(Entity):
+    """One thing read to suggest answers: a site recording, or photographed pages.
+    text is what was read (the transcript, or the pages' text), against which every
+    suggestion's quote is checked; segments keep timestamps or page numbers."""
+    RECORDING, DOCUMENT = 'recording', 'document'
+    KINDS = [(RECORDING, 'Recording'), (DOCUMENT, 'Document')]
+    valuation = models.ForeignKey('target_core.Valuation', on_delete=models.PROTECT, related_name='assist_sources')
+    kind = models.CharField(max_length=20, choices=KINDS)
+    status = models.CharField(max_length=20, default='ready')
+    error = models.TextField(blank=True)
+    text = models.TextField(blank=True)
+    segments = models.JSONField(default=list, blank=True)
+    document_ids = models.JSONField(default=list, blank=True)
+    duration_seconds = models.FloatField(null=True, blank=True)
+    models_used = models.JSONField(default=dict, blank=True)
+    counts = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+
+    class Meta:
+        app_label = "target_core"
+
+
+class Suggestion(Entity):
+    """A proposed answer to one question, drawn from a source. Nothing reaches the
+    form until a person accepts it; answer is the question's save payload."""
+    PENDING, ACCEPTED, DISMISSED, SUPERSEDED = 'pending', 'accepted', 'dismissed', 'superseded'
+    STATUSES = [(PENDING, 'Waiting for a decision'), (ACCEPTED, 'Accepted'), (DISMISSED, 'Dismissed'),
+                (SUPERSEDED, 'Replaced by a later suggestion')]
+    source = models.ForeignKey('target_core.AssistSource', on_delete=models.PROTECT, related_name='suggestions')
+    valuation = models.ForeignKey('target_core.Valuation', on_delete=models.PROTECT, related_name='suggestions')
+    question = models.ForeignKey('target_core.Question', on_delete=models.PROTECT, related_name='+')
+    answer = models.JSONField(default=dict)
+    display = models.TextField(blank=True)
+    quote = models.TextField(blank=True)
+    located = models.CharField(max_length=40, blank=True)
+    confidence = models.CharField(max_length=10, default='clear')
+    differs = models.BooleanField(default=False)
+    status = models.CharField(max_length=12, choices=STATUSES, default=PENDING, db_index=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        app_label = "target_core"
+
+
+__all__ = ['Valuation', 'QuestionCategory', 'Question', 'QuestionOption', 'ValuationAnswer', 'ValuationVerification', 'Reversion', 'ValuationAttachment', 'ValuationEvent', 'AssistSource', 'Suggestion']

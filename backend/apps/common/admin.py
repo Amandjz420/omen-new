@@ -36,6 +36,7 @@ WORKFLOW = {
     'Lead', 'RequestedService', 'Borrower', 'Case', 'FollowUp', 'LeadNote', 'LeadParty', 'LeadAttachment',
     'WorkOrder', 'WorkOrderRevision',
     'Valuation', 'ValuationAnswer', 'ValuationAttachment', 'ValuationVerification', 'Reversion', 'ValuationEvent',
+    'AssistSource', 'Suggestion',
     'BankReport',
     'ValuationCharge', 'Invoice', 'InvoiceLine', 'CreditNote', 'Receipt', 'ReceiptAllocation', 'InvoiceFollowUp',
     'Dispatch', 'DispatchItem', 'SmsMessage',

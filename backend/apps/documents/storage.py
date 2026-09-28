@@ -27,9 +27,15 @@ from apps.common.http import IntakeError
 MAX_BYTES = 25 * 1024 * 1024          # the legacy photo limit, 26,214,400 bytes
 KINDS = {'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp', 'bmp': 'image/bmp',
          'pdf': 'application/pdf', 'doc': 'application/msword',
-         'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+         'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+         # Site recordings: Android records WebM, iPhones MP4 audio.
+         'webm': 'audio/webm', 'ogg': 'audio/ogg', 'm4a': 'audio/mp4', 'wav': 'audio/wav', 'mp3': 'audio/mpeg'}
 ACCEPTS = {'photo': {'jpeg', 'png', 'webp', 'bmp'},
-           'document': {'pdf', 'doc', 'docx', 'jpeg', 'png', 'webp'}}
+           'document': {'pdf', 'doc', 'docx', 'jpeg', 'png', 'webp'},
+           'recording': {'webm', 'ogg', 'm4a', 'wav', 'mp3'},
+           'page': {'jpeg', 'png', 'webp'}}
+# MP4 is also the container for iPhone HEIC photos and for video; only these brands are audio here.
+AUDIO_BRANDS = {b'M4A ', b'M4B ', b'mp41', b'mp42', b'isom', b'iso2', b'iso5', b'iso6', b'dash'}
 INLINE = {'jpeg', 'png', 'webp', 'bmp', 'pdf'}
 
 
@@ -45,6 +51,16 @@ def sniff(content):
         return 'bmp'
     if content[:5] == b'%PDF-':
         return 'pdf'
+    if content[:4] == b'\x1a\x45\xdf\xa3':
+        return 'webm'
+    if content[:4] == b'OggS':
+        return 'ogg'
+    if content[4:8] == b'ftyp' and content[8:12] in AUDIO_BRANDS:
+        return 'm4a'
+    if content[:4] == b'RIFF' and content[8:12] == b'WAVE':
+        return 'wav'
+    if content[:3] == b'ID3' or content[:2] in (b'\xff\xfb', b'\xff\xf3', b'\xff\xf2'):
+        return 'mp3'
     if content[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
         return 'doc'
     if content[:4] == b'PK\x03\x04':
@@ -74,7 +90,9 @@ def read(upload, purpose):
     kind = sniff(content)
     if kind not in ACCEPTS[purpose]:
         allowed = {'photo': 'JPEG, PNG, WebP or BMP images',
-                   'document': 'PDF, Word documents or images'}[purpose]
+                   'document': 'PDF, Word documents or images',
+                   'recording': 'a WebM, MP4, Ogg, WAV or MP3 recording',
+                   'page': 'photographs of the pages (JPEG, PNG or WebP)'}[purpose]
         raise IntakeError(f'This file type is not accepted. Upload {allowed}.')
     return content, kind
 

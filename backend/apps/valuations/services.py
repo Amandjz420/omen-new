@@ -357,17 +357,23 @@ def section(request, pk, key):
     for a in (m.ValuationAnswer.objects.filter(valuation=valuation, question__in=questions)
               .select_related('document').order_by('answer_group', 'id')):
         answers.setdefault(a.question_id, []).append(a)
+    listed = [question_json(q, answers.get(q.pk, [])) for q in questions]
+    from apps.valuations.assist import provenance
+    pending, sources = provenance(valuation, questions, {str(q['id']): q['answer'] for q in listed})
+    for q in listed:
+        q['source'] = sources.get(str(q['id']))           # where an accepted suggestion came from
     return JsonResponse({'valuation': valuation.pk, 'key': key, 'editable': valuation.legacy_status in EDITABLE,
-                         'questions': [question_json(q, answers.get(q.pk, [])) for q in questions],
-                         'sections': sections(valuation)})
+                         'questions': listed, 'suggestions': pending, 'sections': sections(valuation)})
 
 
-def save_section(request, valuation, questions):
+def save_section(request, valuation, questions, submitted=None):
+    """Save answers to these questions: from the request, or, for an accepted
+    suggestion, given directly, through the same validation and audit."""
     valuation = m.Valuation.objects.select_for_update().get(pk=valuation.pk)
     if valuation.legacy_status not in EDITABLE:
         raise IntakeError(f'A {valuation.legacy_status or "closed"} valuation cannot be edited', 409)
-    data = payload(request, ['answers'])
-    submitted = data.get('answers')
+    if submitted is None:
+        submitted = payload(request, ['answers']).get('answers')
     if not isinstance(submitted, list):
         raise IntakeError('answers must be a list')
     by_id = {str(q.pk): q for q in questions}

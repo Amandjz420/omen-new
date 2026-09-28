@@ -4,11 +4,19 @@ import apps.valuations.submission as endpoint_1
 import apps.valuations.files as endpoint_2
 import apps.valuations.verification as endpoint_3
 
+import apps.valuations.assist as assist_endpoints
+
 urlpatterns = [
     path('api/valuations/', endpoint_0.queue),
     path('api/valuations/cases/<uuid:pk>/', endpoint_0.open_case),
     path('api/valuations/<uuid:pk>/', endpoint_0.detail),
     path('api/valuations/<uuid:pk>/sections/<str:key>/', endpoint_0.section),
+    path('api/valuations/<uuid:pk>/assist/', assist_endpoints.overview),
+    path('api/valuations/<uuid:pk>/assist/recordings/', assist_endpoints.recording),
+    path('api/valuations/<uuid:pk>/assist/documents/', assist_endpoints.document),
+    path('api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/retry/', assist_endpoints.retry),
+    path('api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/accept/', assist_endpoints.accept),
+    path('api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/dismiss/', assist_endpoints.dismiss),
     path('api/valuations/<uuid:pk>/submission/', endpoint_1.submission),
     path('api/valuations/<uuid:pk>/photos/', endpoint_2.photos),
     path('api/valuations/<uuid:pk>/photos/<uuid:photo_pk>/', endpoint_2.photo),

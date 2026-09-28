@@ -9,7 +9,7 @@ from apps.directory.models import Bank, BankBranch, ClientType, ClientOffice, Co
 from apps.catalog.models import ServiceType, ServiceSubtype, State, District, Region, Circle, Block, Panchayat, Village, City, Location, SubLocation, AdministrativeDivision, OfficialLocation, IfscArea, ScrutinyRequirement, ReportUsage
 from apps.leads.models import Lead, RequestedService, Borrower, Case, LeadNote, FollowUp, LeadParty, LeadAttachment
 from apps.workorders.models import WorkOrder, WorkOrderRevision
-from apps.valuations.models import Valuation, QuestionCategory, Question, QuestionOption, ValuationAnswer, ValuationVerification, Reversion, ValuationAttachment, ValuationEvent
+from apps.valuations.models import Valuation, QuestionCategory, Question, QuestionOption, ValuationAnswer, ValuationVerification, Reversion, ValuationAttachment, ValuationEvent, AssistSource, Suggestion
 from apps.reports.models import BankReport, ReportTemplate, ReportHeading, ReportTemplateLine
 from apps.billing.models import ChargeType, ValuationCharge, Invoice, InvoiceLine, Receipt, ReceiptAllocation, InvoiceFollowUp, IssuerAccount, FeeRule, CreditNote, FinancialOperation
 from apps.documents.models import Document, UploadConfiguration, DocumentUsage
