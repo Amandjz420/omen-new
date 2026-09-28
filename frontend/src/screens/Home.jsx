@@ -1,3 +1,4 @@
+import {ResponsiveTable} from '../components/ResponsiveTable.jsx';
 import {Alert, Anchor, Button, Group, Paper, Stack, Table, Text, Title} from '@mantine/core';
 import {useQueries} from '@tanstack/react-query';
 import {Link} from 'react-router';
@@ -57,7 +58,7 @@ export function Home() {
     <Paper withBorder p={{base: 'md', sm: 'xl'}}><StageTrack stages={stages} label="Work waiting at each stage"/></Paper>
     <div>
       <Title order={2} mb="sm">Queues</Title>
-      <Table.ScrollContainer minWidth={420}>
+      <ResponsiveTable>
         <Table>
           <Table.Thead><Table.Tr><Table.Th>Stage</Table.Th><Table.Th>Queue</Table.Th><Table.Th ta="right">Waiting</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>{rows.filter(r => !r.denied).map(r => <Table.Tr key={r.key}>
@@ -68,7 +69,7 @@ export function Home() {
               : count(r.value)}</Table.Td>
           </Table.Tr>)}</Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </ResponsiveTable>
     </div>
   </Stack>;
 }

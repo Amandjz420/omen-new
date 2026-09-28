@@ -1,3 +1,4 @@
+import {ResponsiveTable} from '../components/ResponsiveTable.jsx';
 import {Anchor, Button, Group, Pagination, Paper, Select, Stack, Table, Text, Textarea, TextInput, Title} from '@mantine/core';
 import {useDebouncedValue} from '@mantine/hooks';
 import {notifications} from '@mantine/notifications';
@@ -32,12 +33,12 @@ export function Leads() {
   return <Stack>
     <PageHeader title="Leads" description="Every lead, imported or recorded here."
                 actions={<Button component={Link} to="/leads/new">New lead or client</Button>}/>
-    <Group align="flex-end" wrap="wrap">
+    <Group align="flex-end" wrap="wrap" className="responsive-filters">
       <TextInput label="Search" placeholder="Lead number, source ID or office" value={typed} onChange={e => setTyped(e.currentTarget.value)} style={{flex: 1, minWidth: 240}}/>
       <Select label="Status" data={STATUSES} value={status} onChange={v => set({status: v, page: ''})} allowDeselect={false} w={220}/>
     </Group>
     {list.isError ? <ErrorState error={list.error} onRetry={list.refetch}/> : !list.data ? <LoadingState label="Loading leads"/> : <>
-      <Table.ScrollContainer minWidth={640}>
+      <ResponsiveTable>
         <Table>
           <Table.Thead><Table.Tr><Table.Th>Lead</Table.Th><Table.Th>Commissioning office</Table.Th><Table.Th>Received</Table.Th><Table.Th>Status</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>{list.data.results.map(r => <Table.Tr key={r.id}>
@@ -48,7 +49,7 @@ export function Leads() {
             <Table.Td><StatusBadge tone={tone(r.status_label)}>{r.status_label}</StatusBadge></Table.Td>
           </Table.Tr>)}</Table.Tbody>
         </Table>
-      </Table.ScrollContainer>
+      </ResponsiveTable>
       {list.data.count === 0 ? <EmptyState title="No leads match" description="Try a shorter search, or another status."/>
         : <Group justify="space-between"><Text size="sm" c="dimmed">{count(list.data.count)} leads</Text>
             <Pagination total={Math.ceil(list.data.count / PAGE)} value={page} onChange={p => set({page: String(p)})} size="sm"/></Group>}

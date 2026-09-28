@@ -45,6 +45,9 @@ def presign(key, *, bucket=None, region=None, access_key=None, secret_key=None, 
     if content_type:
         params['response-content-type'] = content_type          # the bucket labels every file octet-stream
     params.update(query or {})
+    token = os.environ.get('AWS_SESSION_TOKEN', '').strip('"').strip("'")
+    if token:
+        params['X-Amz-Security-Token'] = token                 # temporary credentials sign with their session token
     query = '&'.join(f'{quote(k, safe="-_.~")}={quote(v, safe="-_.~")}' for k, v in sorted(params.items()))
     canonical = '\n'.join([method, path, query, f'host:{host}\n', 'host', 'UNSIGNED-PAYLOAD'])
     to_sign = '\n'.join(['AWS4-HMAC-SHA256', stamp, scope, hashlib.sha256(canonical.encode()).hexdigest()])

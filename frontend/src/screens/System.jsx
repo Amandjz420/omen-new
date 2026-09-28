@@ -1,3 +1,4 @@
+import {ResponsiveTable} from '../components/ResponsiveTable.jsx';
 import {Alert, Paper, SimpleGrid, Stack, Table, Text, Title} from '@mantine/core';
 import {useQuery} from '@tanstack/react-query';
 import {PageHeader} from '../components/PageHeader.jsx';
@@ -19,11 +20,11 @@ export function MigrationStatus() {
   const d = s.data, top = Math.max(1, ...d.services.map(v => v.count));
   return <Stack gap="xl">
     <PageHeader title="Migration status" description="What was brought across from the previous system, and how it was handled."/>
-    <Paper withBorder p="lg"><SimpleGrid cols={{base: 2, sm: 4}} spacing="lg">
+    <Paper withBorder p="lg"><SimpleGrid cols={{base: 1, xs: 2, sm: 4}} spacing="lg">
       <Figure label="Client offices" value={d.offices}/><Figure label="Leads" value={d.leads}/>
       <Figure label="Cases" value={d.cases}/><Figure label="Contacts" value={d.contacts}/>
     </SimpleGrid></Paper>
-    <Paper withBorder p="lg"><SimpleGrid cols={{base: 2, sm: 4}} spacing="lg">
+    <Paper withBorder p="lg"><SimpleGrid cols={{base: 1, xs: 2, sm: 4}} spacing="lg">
       <Figure label="Source rows read" value={d.source_rows} note="Every row, including rejects"/>
       <Figure label="Imported" value={d.source_rows - d.quarantined_source_rows}/>
       <Figure label="Imported with corrections" value={d.rows_with_issues}/>
@@ -47,13 +48,13 @@ export function ImportHistory() {
     <PageHeader title="Import history" description="The most recent import from the previous system. Records are matched by their source IDs, and nothing missing from a later import is deleted."/>
     {!last ? <Text>No import has been recorded.</Text> : <>
       <Text size="sm">Imported {dateTime(last.created_at)}</Text>
-      <Table.ScrollContainer minWidth={560}><Table>
+      <ResponsiveTable><Table>
         <Table.Thead><Table.Tr><Table.Th>Source</Table.Th><Table.Th ta="right">Added</Table.Th><Table.Th ta="right">Updated</Table.Th><Table.Th ta="right">Unchanged</Table.Th><Table.Th>Handling</Table.Th></Table.Tr></Table.Thead>
         <Table.Tbody>{Object.entries(last.summary).map(([sheet, x]) => <Table.Tr key={sheet}>
           <Table.Td>{sheet}</Table.Td><Table.Td ta="right" className="num">{count(x.inserted ?? x.staged_inserted)}</Table.Td>
           <Table.Td ta="right" className="num">{count(x.updated ?? x.staged_updated)}</Table.Td><Table.Td ta="right" className="num">{count(x.unchanged)}</Table.Td>
           <Table.Td>{x.staged_inserted !== undefined ? 'Staged only' : `${count(x.rows_with_issues)} rows corrected`}</Table.Td>
         </Table.Tr>)}</Table.Tbody>
-      </Table></Table.ScrollContainer></>}
+      </Table></ResponsiveTable></>}
   </Stack>;
 }

@@ -1,4 +1,19 @@
 /* Fixed-width figures wherever amounts or counts sit in columns. */
 .num { font-variant-numeric: tabular-nums; }
 body { -webkit-font-smoothing: antialiased; }
+/* Let content shrink inside flex/grid containers; tables own their scrolling. */
+#root, main, main > *, .mantine-Stack-root, .mantine-Paper-root { min-width: 0; }
+main { overflow-wrap: anywhere; }
+.mantine-TableScrollContainer-root { max-width: 100%; min-width: 0; }
+@media (max-width: 47.99em) {
+  .mantine-InputWrapper-root { max-width: 100%; min-width: 0 !important; }
+  .mantine-Input-input { font-size: 16px; min-height: 44px; }
+  .mantine-Button-root { min-height: 44px; max-width: 100%; }
+  .mantine-Button-label { white-space: normal; }
+  .mantine-Pagination-control { min-width: 36px; min-height: 44px; }
+  .mantine-Modal-content { max-width: calc(100vw - 24px); }
+  .mantine-SimpleGrid-root > * { min-width: 0; }
+  .responsive-filters > * { flex: 1 1 100% !important; width: 100%; }
+  .mantine-TableScrollContainer-root::before { content: 'Swipe sideways to see all columns'; display: block; margin-bottom: 8px; color: var(--mantine-color-gray-7); font-size: 12px; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

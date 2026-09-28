@@ -11,7 +11,7 @@ import classes from './Shell.module.css';
 export function Shell() {
   const {session, signOut} = useSession();
   const [opened, {toggle, close}] = useDisclosure(false);
-  const phone = useMediaQuery('(max-width: 48em)');
+  const phone = useMediaQuery('(max-width: 47.99em)');
   const location = useLocation();
   useEffect(close, [location.pathname]);          // choosing a page closes the phone menu
 
@@ -20,7 +20,7 @@ export function Shell() {
   }
 
   return <AppShell header={{height: 64}} navbar={{width: 248, breakpoint: 'sm', collapsed: {mobile: !opened}}}
-                   footer={{height: 60, collapsed: !phone}} padding={{base: 'md', sm: 'xl'}}>
+                   footer={{height: 'calc(60px + env(safe-area-inset-bottom, 0px))', collapsed: !phone}} padding={{base: 'sm', sm: 'xl'}}>
     <AppShell.Header className={classes.header}>
       <Group h="100%" px="md" justify="space-between" wrap="nowrap">
         {/* On a phone the bottom bar's Menu opens navigation; a header hamburger would duplicate it. */}

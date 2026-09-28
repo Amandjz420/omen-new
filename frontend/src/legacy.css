@@ -2,6 +2,8 @@
    .legacy-screen so they never restyle the new components. Buttons and links use
    Omen blue so the carried-over screens match the new ones while they are rebuilt. */
 .legacy-screen {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--mantine-color-omen-9);
   font-size: 14px;
 
@@ -22,7 +24,7 @@
   & .error { background: #fdecea; color: #b42318; padding: 12px 14px; border-radius: 6px; font-size: 13px; }
   & .toolbar { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; }
   & .search { flex: 1; min-width: 220px; }
-  & .table-wrap { overflow-x: auto; }
+  & .table-wrap { overflow-x: auto; max-width: 100%; min-width: 0; }
   & table { border-collapse: collapse; width: 100%; font-size: 13px; text-align: left; }
   & th { color: var(--mantine-color-gray-7); font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--mantine-color-gray-3); padding: 10px; }
   & td { padding: 12px 10px; border-bottom: 1px solid var(--mantine-color-gray-2); font-variant-numeric: tabular-nums; }
@@ -35,12 +37,16 @@
   & .note { border-top: 1px solid var(--mantine-color-gray-2); margin-top: 18px; padding-top: 10px; }
   & .intake { display: grid; gap: 20px; }
   & .intake-form { padding: 20px 0; border-top: 1px solid var(--mantine-color-gray-2); }
-  & .intake-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
-  & .valuation-layout { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 1.25rem; margin-top: 1rem; align-items: start; }
+  & .intake-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 16px; margin-bottom: 16px; }
+  & .valuation-layout { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 1.25rem; margin-top: 1rem; align-items: start; }
+  & .section-body, & .intake, & .panel, & .intake-fields > *, & .form-grid > * { min-width: 0; }
+  & .mobile-section-picker { display: none; }
   & .sections { display: flex; flex-direction: column; gap: .25rem; position: sticky; top: 80px; }
   & .sections button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: .1rem; background: transparent; color: inherit; padding: 8px 10px; }
   & .sections button.active { font-weight: 650; background: var(--mantine-color-omen-0); color: var(--mantine-color-omen-9); }
-  & .question { border: 1px solid var(--mantine-color-gray-3); border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; }
+  & .question { min-inline-size: 0; border: 1px solid var(--mantine-color-gray-3); border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; }
+  & .question legend { max-width: 100%; overflow-wrap: anywhere; }
+  & input[hidden] { display: none; }
   & .question legend { font-weight: 600; padding: 0 .25rem; }
   & .choice { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; font-weight: 400; }
   & .required { color: #b42318; }
@@ -52,7 +58,7 @@
   & .photo-grid img, & .photo-placeholder { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
   & .photo-placeholder { display: flex; align-items: center; justify-content: center; background: var(--mantine-color-gray-1); color: var(--mantine-color-gray-7); font-size: .85rem; }
   & .photo-grid figcaption { padding: .4rem .6rem; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
-  & .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .75rem 1rem; margin: .75rem 0; }
+  & .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: .75rem 1rem; margin: .75rem 0; }
   & .tabs { display: flex; gap: .25rem; margin-bottom: .75rem; flex-wrap: wrap; }
   & .tabs button { background: transparent; color: var(--mantine-color-gray-7); border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 12px; }
   & .tabs button.active { color: var(--mantine-color-omen-8); border-bottom-color: var(--mantine-color-omen-6); font-weight: 650; }
@@ -67,10 +73,28 @@
   & .picker li { padding: .25rem .5rem; }
 
   @media (max-width: 48em) {
-    & .valuation-layout { grid-template-columns: 1fr; }
-    & .sections { position: static; }
+    & .valuation-layout { grid-template-columns: minmax(0, 1fr); }
+    & .sections { display: none; }
+    & .mobile-section-picker { display: block; margin-bottom: 0; }
     & .panel { padding: 16px; }
+    & .panel .panel { padding: 12px; }
+    & .question { padding: 12px; }
+    & .toolbar { align-items: stretch; gap: 8px; }
+    & .toolbar > label, & .search { flex: 1 1 100%; min-width: 0; }
+    & input, & select, & textarea { max-width: 100%; min-height: 44px; font-size: 16px; }
+    & input[type='checkbox'], & input[type='radio'] { min-height: 20px; min-width: 20px; flex-shrink: 0; }
+    & .choice { min-height: 44px; }
+    & .table-wrap table { min-width: 480px; }
+    & .table-wrap input, & .table-wrap select { min-width: 120px; }
+    & .table-wrap::before { content: 'Swipe sideways to see all columns'; display: block; position: sticky; left: 0; font-size: 12px; color: var(--mantine-color-gray-7); padding: 6px 0; }
+    & .totals { min-width: 0; width: 100%; }
+    & .pagination { flex-wrap: wrap; }
+    & .pagination span { flex-basis: 100%; }
+    & .document-row { align-items: flex-start; }
+    & .document-row a { overflow-wrap: anywhere; }
+    & .photo-grid { grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); }
+    & .pill, & .status { white-space: normal; }
     & td, & th { padding: 10px 8px; }
-    & button { min-height: 44px; }                                   /* touch targets on phones */
+    & button { min-height: 44px; max-width: 100%; white-space: normal; }
   }
 }

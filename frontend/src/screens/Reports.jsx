@@ -63,7 +63,7 @@ export function ReportView() {
       <PageHeader title={r.title} description={r.description}
                   actions={<Button component="a" href={`/api/mis/${key}/export/?${query}`} download variant="light">Export to Excel</Button>}/>
     </div>
-    <Group align="flex-end" wrap="wrap">
+    <Group align="flex-end" wrap="wrap" className="responsive-filters">
       <DatePickerInput type="range" label={r.date_label} placeholder="All dates" clearable value={range} valueFormat="D MMM YYYY"
                        onChange={([a, b]) => set({from: iso(a), to: iso(b), within: '', page: ''})} w={260}/>
       {r.groupings.length > 1 && <Select label="Group by" data={r.groupings.map(g => ({value: g.key, label: g.label}))} value={r.group}
@@ -73,7 +73,7 @@ export function ReportView() {
     </Group>
 
     <Paper withBorder p="md">
-      <SimpleGrid cols={{base: 2, sm: r.measures.length}} spacing="md">
+      <SimpleGrid cols={{base: 1, xs: 2, md: Math.min(3, r.measures.length), xl: r.measures.length}} spacing="md">
         {r.measures.map(m => <div key={m.key}><Text size="sm" c="dimmed">{m.label}</Text>
           <Text fz={22} fw={650} lh={1.2}>{cell(m, r.totals[m.key])}</Text></div>)}
       </SimpleGrid>
@@ -113,4 +113,3 @@ export function ReportView() {
     </section>}
   </Stack>;
 }
-

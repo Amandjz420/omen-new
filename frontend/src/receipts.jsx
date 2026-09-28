@@ -1,3 +1,4 @@
+import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 
 const STAGES = [['to_check', 'To check'], ['to_verify', 'To verify'], ['verified', 'Verified'], ['voided', 'Voided']];
@@ -40,10 +41,10 @@ function Queue({api, onOpen, onNew}) {
     <p className="muted">A receipt counts only once it has been made, checked and verified. A recovery settles its invoice at verification.</p>
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
-      <div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Type</th><th>Payer</th><th>Invoice</th><th>Mode</th><th>Amount</th><th></th></tr></thead>
+      <ResponsiveTable><table><thead><tr><th>Receipt</th><th>Date</th><th>Type</th><th>Payer</th><th>Invoice</th><th>Mode</th><th>Amount</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.id}><td><strong>{r.number}</strong></td><td>{r.received_date || '—'}</td><td>{r.received_as}</td>
         <td>{r.payer}</td><td>{r.invoice || '—'}</td><td>{r.mode}</td><td>{rs(r.amount)}</td>
-        <td><button className="link" onClick={() => onOpen(r.id)}>Open →</button></td></tr>)}</tbody></table></div>
+        <td><button className="link" onClick={() => onOpen(r.id)}>Open →</button></td></tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>Nothing here.</p>}
       <div className="pagination"><span>{list.total.toLocaleString('en-IN')} · Page {page}</span>
         <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>

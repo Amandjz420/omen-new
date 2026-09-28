@@ -1,3 +1,4 @@
+import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 
 const TABS = [['awaiting', 'Awaiting dispatch'], ['lying', 'Lying at HO'], ['transit', 'In transit'], ['delivered', 'Delivered'], ['cancelled', 'Cancelled']];
@@ -37,7 +38,7 @@ function Lists({api, onSend, onOpen}) {
     {awaiting && <p className="muted">Approved reports not yet in any dispatch, newest first. Dispatch tracking began in 2021, so older reports appear here without having been lost.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
-      <div className="table-wrap"><table>{awaiting
+      <ResponsiveTable><table>{awaiting
         ? <><thead><tr><th></th><th>Report</th><th>Borrower</th><th>Office</th><th>Valued</th><th>Assessor's instruction</th></tr></thead>
           <tbody>{list.results.map(r => <tr key={r.valuation}><td><input type="checkbox" checked={!!picked[r.valuation]}
             onChange={e => setPicked(p => {const n = {...p}; e.target.checked ? n[r.valuation] = r : delete n[r.valuation]; return n;})}/></td>
@@ -47,7 +48,7 @@ function Lists({api, onSend, onOpen}) {
           <tbody>{list.results.map(d => <tr key={d.id}><td><strong>{d.number}</strong></td><td>{d.outward_date || '—'}</td><td>{d.reports || '—'}</td>
             <td>{d.client}</td><td>{d.mode}</td><td>{d.consignment || '—'}</td><td>{d.status}{d.delivered_date ? ` · ${d.delivered_date}` : ''}</td>
             <td><button className="link" onClick={() => onOpen(d.id)}>Open →</button></td></tr>)}</tbody></>}
-      </table></div>
+      </table></ResponsiveTable>
       {list.total === 0 && <p>Nothing here.</p>}
       <div className="pagination"><span>{list.total.toLocaleString('en-IN')} · Page {page}</span>
         <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>

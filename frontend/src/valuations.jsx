@@ -1,3 +1,4 @@
+import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {Standing} from './approvals.jsx';
 
@@ -50,7 +51,7 @@ function Queue({api, onOpen}) {
     {list?.scoped && <p className="notice">Showing only the leads assigned to you.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading valuations…</p> : <>
-      <div className="table-wrap"><table><thead><tr><th>Lead</th><th>Borrower</th><th>Work order</th><th>Service</th><th>District</th><th>Valuation</th><th></th></tr></thead>
+      <ResponsiveTable><table><thead><tr><th>Lead</th><th>Borrower</th><th>Work order</th><th>Service</th><th>District</th><th>Valuation</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.case}>
         <td><strong>{r.lead_number}</strong></td><td>{r.borrower}</td><td>{r.work_order || '—'}</td>
         <td>{r.service}<small>{r.subtype}</small></td><td>{r.district || '—'}</td>
@@ -58,7 +59,7 @@ function Queue({api, onOpen}) {
         <td>{r.valuation
           ? <button className="link" onClick={() => onOpen(r.valuation.id)}>Open →</button>
           : <button disabled={busy === r.case} onClick={() => start(r)}>{busy === r.case ? 'Starting…' : 'Start valuation'}</button>}</td>
-      </tr>)}</tbody></table></div>
+      </tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>No matching valuations.</p>}
       <div className="pagination"><span>{list.total.toLocaleString('en-IN')} cases · Page {page}</span>
         <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
@@ -124,7 +125,15 @@ function ValuationForm({api, id, onBack}) {
     {head.status === 'Revert' && <p className="notice">This valuation was sent back for correction. Update the answers, then resubmit.</p>}
     <p className="muted">Some forms include a section for each bank. Complete the common parts and the section for {head.bank || 'this case\u2019s bank'} only.</p>
     <div className="valuation-layout">
-      <nav className="sections">{head.sections.map(s => <button key={s.key} className={s.key === key ? 'active' : ''} onClick={() => choose(s.key)}>
+      <label className="mobile-section-picker">Valuation section
+        <select value={key || ''} onChange={e => choose(e.target.value)}>
+          {!key && <option value="" disabled>Choose a section</option>}
+          {head.sections.map(s => <option key={s.key} value={s.key}>{s.name} ({s.answered}/{s.questions})</option>)}
+          <option value="__billing">Billing</option><option value="__photos">Photos</option>
+          <option value="__submit">{head.status === 'Submit' ? 'Submission' : 'Submit'}</option>
+        </select>
+      </label>
+      <nav className="sections" aria-label="Valuation sections">{head.sections.map(s => <button key={s.key} className={s.key === key ? 'active' : ''} onClick={() => choose(s.key)}>
         <span>{s.name}</span>
         <small>{s.answered}/{s.questions}{s.required ? ` · required ${s.required_answered}/${s.required}` : ''}</small>
       </button>)}

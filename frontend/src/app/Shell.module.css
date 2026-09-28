@@ -5,7 +5,7 @@
 .assessors { font-size: 9px; letter-spacing: .42em; margin-top: 5px; }
 .wordmark[data-size='lg'] .omen { font-size: 40px; }
 .wordmark[data-size='lg'] .assessors { font-size: 15px; margin-top: 10px; }
-.user { color: white; font-size: 14px; font-weight: 600; padding: 8px 10px; border-radius: var(--mantine-radius-sm); }
+.user { color: white; font-size: 14px; font-weight: 600; padding: 8px 10px; border-radius: var(--mantine-radius-sm); min-width: 0; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 44px; }
 .user:hover, .user:focus-visible { background: rgba(255, 255, 255, .14); }
 .user:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 .navlink { border-radius: var(--mantine-radius-sm); font-weight: 500; }

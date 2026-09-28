@@ -1,3 +1,4 @@
+import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {Question} from './valuations.jsx';
 
@@ -28,12 +29,12 @@ function Queue({api, track, setTrack, onOpen}) {
       onChange={e => {setQ(e.target.value); setPage(1);}}/></label></div>
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
-      <div className="table-wrap"><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th>Tracks done</th><th></th></tr></thead>
+      <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th>Tracks done</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.id}>
         <td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td>
         <td>{r.service}<small>{r.subtype}</small></td><td>{r.submitted_on || '—'}<small>{r.assessor}</small></td>
         <td>{TRACKS.filter(([k]) => r.tracks[k]).map(([, l]) => l).join(', ') || 'None yet'}</td>
-        <td><button className="link" onClick={() => onOpen(r.id)}>Review →</button></td></tr>)}</tbody></table></div>
+        <td><button className="link" onClick={() => onOpen(r.id)}>Review →</button></td></tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>Nothing waiting for {TRACKS.find(([k]) => k === track)[1].toLowerCase()} verification.</p>}
       <div className="pagination"><span>{list.total.toLocaleString('en-IN')} waiting · Page {page}</span>
         <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>

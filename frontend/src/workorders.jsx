@@ -1,3 +1,4 @@
+import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useRef, useState} from 'react';
 import {IntakeLead} from './intake.jsx';
 
@@ -42,7 +43,7 @@ export function WorkOrders({api, leadId, onChange}) {
     {state.closed && state.outstanding === 0 && <p className="notice">Every borrower is ordered and the lead is closed. Closure means the work has been ordered; it is not valuation approval or payment completion.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {total === 0 ? <p>Add a borrower before issuing work orders.</p> :
-    <div className="table-wrap"><table><thead><tr><th>Borrower</th><th>Cases</th><th>Work order</th><th></th></tr></thead><tbody>
+    <ResponsiveTable><table><thead><tr><th>Borrower</th><th>Cases</th><th>Work order</th><th></th></tr></thead><tbody>
       {state.borrowers.map(b => <tr key={b.id}>
         <td>{b.name}</td><td>{b.cases}</td>
         <td>{b.work_order ? <><strong>{b.work_order.number}</strong>{b.work_order.issued_at && <><br/><small>{when(b.work_order.issued_at)}{b.work_order.issued_by ? ` · ${b.work_order.issued_by}` : ''}</small></>}</> : <span className="muted">Not issued</span>}</td>
@@ -54,7 +55,7 @@ export function WorkOrders({api, leadId, onChange}) {
             ? <button disabled={busy === b.id} onClick={() => issue(b)}>{busy === b.id ? 'Issuing…' : 'Issue work order'}</button>
             : <small className="muted">{b.reasons.join('; ')}</small>}</td>
       </tr>)}
-    </tbody></table></div>}
+    </tbody></table></ResponsiveTable>}
   </section>;
 }
 

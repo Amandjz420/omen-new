@@ -120,6 +120,40 @@ class ValuationFormTests(Form, TestCase):
         progress = site.json()['sections'][0]
         self.assertEqual((progress['answered'], progress['required_answered']), (4, 2))
 
+    def written_in(self, v, question, text):
+        m.ValuationAnswer.objects.create(valuation_id=v['id'], question=question, answer_group=0, value=text)
+
+    def test_a_written_in_choice_answer_is_shown(self):
+        v = self.open().json()
+        self.written_in(v, self.check, 'Sale deed and mutation order')
+        body = self.client.get(f"/api/valuations/{v['id']}/sections/{self.site.pk}/").json()
+        answer = {q['id']: q['answer'] for q in body['questions']}[str(self.check.pk)]
+        self.assertEqual(answer, {'selected': [], 'custom': 'Sale deed and mutation order'})     # previously hidden
+
+    def test_a_save_that_does_not_mention_a_written_in_answer_keeps_it(self):
+        """Regression: saving the section deleted the 10,993 legacy written-in answers."""
+        v = self.open().json()
+        self.written_in(v, self.check, 'Sale deed and mutation order')
+        self.put(v['id'], str(self.site.pk), [{'question': str(self.check.pk), 'selected': [str(self.check_opts[0].pk)]}])
+        values = sorted(m.ValuationAnswer.objects.filter(question=self.check).values_list('value', flat=True))
+        self.assertEqual(values, ['Khatoni', 'Sale deed and mutation order'])                 # previously deleted
+
+    def test_a_written_in_answer_can_be_given_changed_and_cleared(self):
+        v = self.open().json()
+        q = str(self.check.pk)
+        self.put(v['id'], str(self.site.pk), [{'question': q, 'selected': [], 'custom': 'Registry copy'}])
+        self.assertEqual(list(m.ValuationAnswer.objects.filter(question=self.check).values_list('value', 'option')), [('Registry copy', None)])
+        self.put(v['id'], str(self.site.pk), [{'question': q, 'selected': [], 'custom': 'Registry and map'}])
+        self.assertEqual(m.ValuationAnswer.objects.get(question=self.check).value, 'Registry and map')
+        self.put(v['id'], str(self.site.pk), [{'question': q, 'selected': [], 'custom': ''}])
+        self.assertFalse(m.ValuationAnswer.objects.filter(question=self.check).exists())
+
+    def test_a_single_choice_takes_an_option_or_a_written_in_answer_not_both(self):
+        v = self.open().json()
+        response = self.put(v['id'], str(self.site.pk), [{'question': str(self.radio.pk), 'selected': [str(self.radio_opts[0].pk)], 'custom': 'Partly'}])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.put(v['id'], str(self.site.pk), [{'question': str(self.radio.pk), 'selected': [], 'custom': 'Partly'}]).status_code, 200)
+
     def test_a_sum_question_reports_its_total(self):
         v = self.open().json()
         body = self.put(v['id'], str(self.value.pk), [{'question': str(self.total.pk), 'values': {

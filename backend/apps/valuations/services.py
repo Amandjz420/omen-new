@@ -197,7 +197,11 @@ def formula(cells, columns):
 def answer_of(question, answers, options):
     kind = KINDS.get(question.answer_type, 'text')
     if kind in ('single', 'multiple'):
-        return {'selected': [str(a.option_id) for a in answers if a.option_id and filled(a)]}
+        # A written-in answer is a choice answer with no option: 10,993 legacy answers
+        # take that form. It was once not read at all, so the form hid it and a save
+        # deleted it.
+        custom = next((a.value for a in answers if not a.option_id and filled(a)), '')
+        return {'selected': [str(a.option_id) for a in answers if a.option_id and filled(a)], 'custom': custom}
     if kind == 'text':
         chosen = next((a for a in answers if not a.option_id), answers[0] if answers else None)
         return {'value': chosen.value if chosen else ''}
@@ -389,8 +393,19 @@ def save_section(request, valuation, questions):
             chosen = [str(o) for o in item.get('selected') or []]
             if kind == 'single' and len(chosen) > 1:
                 raise IntakeError(f'Choose one option for "{question.text.strip()[:60]}"')
+            # The written-in answer, when none of the options fits. A save that does not
+            # mention it keeps the one stored, so a form unaware of written-in answers
+            # cannot delete them.
+            if 'custom' in item:
+                custom = str(item.get('custom') or '').strip()
+                if kind == 'single' and custom and chosen:
+                    raise IntakeError(f'Choose an option or write your own answer for "{question.text.strip()[:60]}", not both')
+            else:
+                custom = next((a.value for a in stored.get(question.pk, []) if not a.option_id and filled(a)), '')
             for option_id in dict.fromkeys(chosen):
                 cell(option_id, options[option_id].value if option_id in options else '')
+            if custom:
+                rows.append(m.ValuationAnswer(valuation=valuation, question=question, answer_group=0, value=custom[:100000]))
         elif kind == 'text':
             value = str(item.get('value') or '')
             if value.strip():

@@ -1,3 +1,4 @@
+import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 
 const BUCKETS = [['to_invoice', 'To invoice'], ['unpaid', 'Unpaid'], ['paid', 'Paid'], ['cancelled', 'Cancelled'], ['offline', 'Offline']];
@@ -32,7 +33,7 @@ function Queue({api, onIssue, onOpen}) {
     {offline && <p className="muted">Invoices raised outside the system in 2020–21 and recorded afterwards. They belong to no valuation; their lead and report numbers are kept as references.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
-      <div className="table-wrap"><table><thead><tr>{offline
+      <ResponsiveTable><table><thead><tr>{offline
         ? <><th>Invoice</th><th>Date</th><th>Billed to</th><th>Customer</th><th>Reference</th><th>Total</th><th>Outstanding</th><th></th></>
         : issuing
         ? <><th>Report</th><th>Lead</th><th>Borrower</th><th>Billed</th><th></th></>
@@ -44,7 +45,7 @@ function Queue({api, onIssue, onOpen}) {
         ? <tr key={r.valuation}><td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td><td>{rs(r.total)}</td>
             <td><button className="link" onClick={() => onIssue(r.valuation)}>Invoice →</button></td></tr>
         : <tr key={r.id}><td><strong>{r.number}</strong></td><td>{r.issued_on || '—'}</td><td>{r.report_number}</td><td>{r.borrower}</td>
-            <td>{rs(r.total)}</td><td>{rs(r.remaining)}</td><td><button className="link" onClick={() => onOpen(r.id)}>Open →</button></td></tr>)}</tbody></table></div>
+            <td>{rs(r.total)}</td><td>{rs(r.remaining)}</td><td><button className="link" onClick={() => onOpen(r.id)}>Open →</button></td></tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>Nothing here.</p>}
       <div className="pagination"><span>{list.total.toLocaleString('en-IN')} · Page {page}</span>
         <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>

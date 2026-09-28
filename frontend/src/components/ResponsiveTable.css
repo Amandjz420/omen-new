@@ -1,0 +1,15 @@
+.responsive-table { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; }
+.mobile-cell-value { min-width: 0; }
+@media (max-width: 47.99em) {
+  .responsive-table { overflow: visible; }
+  .responsive-table table { display: block; width: 100%; min-width: 0; }
+  /* Keep the column headers available to assistive technology. */
+  .responsive-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+  .responsive-table tbody { display: grid; gap: 14px; }
+  .responsive-table tbody tr { display: block; border: 1px solid var(--mantine-color-gray-3); border-radius: 8px; background: var(--mantine-color-body); padding: 8px 12px; }
+  .responsive-table tbody td { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.4fr); gap: 12px; text-align: left; border: 0; padding: 8px 0; overflow-wrap: anywhere; }
+  .responsive-table tbody td::before { content: attr(data-label); color: var(--mantine-color-gray-7); font-size: 12px; font-weight: 600; }
+  .responsive-table tbody td[data-wide] { display: block; }
+  .responsive-table tbody td[data-wide]::before { display: none; }
+  .responsive-table .mobile-cell-value button, .responsive-table .mobile-cell-value a { min-height: 44px; display: inline-flex; align-items: center; white-space: normal; }
+}

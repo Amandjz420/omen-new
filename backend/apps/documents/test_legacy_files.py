@@ -152,3 +152,14 @@ class ReceiptDocumentTests(TestCase):
         from apps.valuations.test_forms import user_with_role
         self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Assessor')))
         self.assertEqual(self.client.get(f'/api/receipts/{r.pk}/document/').status_code, 404)    # not their receipt
+
+
+class TemporaryCredentialTests(TestCase):
+    @mock.patch.dict(os.environ, {**AWS, 'AWS_SESSION_TOKEN': 'FQoGZXIvYXdzEXAMPLE'})
+    def test_a_session_token_is_signed_into_the_link(self):
+        self.assertIn('X-Amz-Security-Token=FQoGZXIvYXdzEXAMPLE', s3.presign('LeadUpload/a.jpg'))
+
+    @mock.patch.dict(os.environ, AWS)
+    def test_without_one_the_link_carries_none(self):
+        os.environ.pop('AWS_SESSION_TOKEN', None)
+        self.assertNotIn('X-Amz-Security-Token', s3.presign('LeadUpload/a.jpg'))
