@@ -1639,7 +1639,9 @@
     "api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/accept/",
     "api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/dismiss/",
     "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/retry/",
-    "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/files/<uuid:document_pk>/"
+    "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/files/<uuid:document_pk>/",
+    "api/valuations/<uuid:pk>/checklist/",
+    "api/valuations/<uuid:pk>/checklist/follow-up/"
   ],
   "amendments": [
     {
@@ -1812,6 +1814,17 @@
       "reason": "Retain current and suggested values after review, and authorize access to saved audio and source pages.",
       "added_routes": [
         "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/files/<uuid:document_pk>/"
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "migration": "none",
+      "changed_models": [],
+      "added_models": [],
+      "reason": "The site checklist and its focused follow-up (Codex).",
+      "added_routes": [
+        "api/valuations/<uuid:pk>/checklist/",
+        "api/valuations/<uuid:pk>/checklist/follow-up/"
       ]
     }
   ]
