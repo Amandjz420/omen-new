@@ -5,6 +5,7 @@ import apps.valuations.files as endpoint_2
 import apps.valuations.verification as endpoint_3
 
 import apps.valuations.assist as assist_endpoints
+from apps.valuations import checklist as checklist_endpoints
 
 urlpatterns = [
     path('api/valuations/', endpoint_0.queue),
@@ -12,9 +13,12 @@ urlpatterns = [
     path('api/valuations/<uuid:pk>/', endpoint_0.detail),
     path('api/valuations/<uuid:pk>/sections/<str:key>/', endpoint_0.section),
     path('api/valuations/<uuid:pk>/assist/', assist_endpoints.overview),
+    path('api/valuations/<uuid:pk>/checklist/', checklist_endpoints.checklist),
+    path('api/valuations/<uuid:pk>/checklist/follow-up/', checklist_endpoints.follow_up),
     path('api/valuations/<uuid:pk>/assist/recordings/', assist_endpoints.recording),
     path('api/valuations/<uuid:pk>/assist/documents/', assist_endpoints.document),
     path('api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/retry/', assist_endpoints.retry),
+    path('api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/files/<uuid:document_pk>/', assist_endpoints.source_file),
     path('api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/accept/', assist_endpoints.accept),
     path('api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/dismiss/', assist_endpoints.dismiss),
     path('api/valuations/<uuid:pk>/submission/', endpoint_1.submission),

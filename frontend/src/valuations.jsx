@@ -1,6 +1,7 @@
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {Standing} from './approvals.jsx';
+import {SiteChecklist} from './screens/SiteChecklist.jsx';
 
 const FILTERS = [['', 'Active work'], ['not_started', 'Not started'], ['Pending', 'Pending'], ['Revert', 'Reverted'],
                  ['Hold', 'On hold'], ['Submit', 'Submitted'], ['Cancel', 'Cancelled']];
@@ -117,6 +118,7 @@ function ValuationForm({api, id, onBack}) {
   return <section className="panel">
     <button className="link" onClick={() => {if (!dirty || window.confirm('Leave without saving?')) onBack();}}>← Back to valuations</button>
     <h2>{head.report_number || 'Valuation in progress'}</h2>
+    {head.editable && <p><a href={`/valuations/${head.id}/form`}>Answer on a phone, by voice or from documents</a></p>}
     <p>{head.lead_number} · {head.borrower} · {head.work_order}</p>
     <p className="muted">{head.service}{head.subtype ? ` / ${head.subtype}` : ''}{head.bank ? ` · ${head.bank}` : ''}{head.asset ? ` · ${head.asset}` : ''}</p>
     <p><span className="status">{LABELS[head.status] || head.status}</span></p>
@@ -124,6 +126,7 @@ function ValuationForm({api, id, onBack}) {
     {readOnly && <p className="notice">This valuation is {(LABELS[head.status] || head.status).toLowerCase()} and cannot be edited.</p>}
     {head.status === 'Revert' && <p className="notice">This valuation was sent back for correction. Update the answers, then resubmit.</p>}
     <p className="muted">Some forms include a section for each bank. Complete the common parts and the section for {head.bank || 'this case\u2019s bank'} only.</p>
+    <SiteChecklist id={id} unsaved={dirty} onQuestion={q => choose(q.section_key)}/>
     <div className="valuation-layout">
       <label className="mobile-section-picker">Valuation section
         <select value={key || ''} onChange={e => choose(e.target.value)}>

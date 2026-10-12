@@ -1553,6 +1553,8 @@
         "located": "models.CharField(blank=True, max_length=40)",
         "confidence": "models.CharField(default='clear', max_length=10)",
         "differs": "models.BooleanField(default=False)",
+        "resolution": "models.CharField(blank=True, max_length=20)",
+        "previous_answer": "models.JSONField(blank=True, default=dict)",
         "status": "models.CharField(choices=[('pending', 'Waiting for a decision'), ('accepted', 'Accepted'), ('dismissed', 'Dismissed'), ('superseded', 'Replaced by a later suggestion')], db_index=True, default='pending', max_length=12)",
         "decided_by": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to=settings.AUTH_USER_MODEL)",
         "decided_at": "models.DateTimeField(blank=True, null=True)"
@@ -1636,7 +1638,8 @@
     "api/valuations/<uuid:pk>/assist/recordings/",
     "api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/accept/",
     "api/valuations/<uuid:pk>/assist/suggestions/<uuid:spk>/dismiss/",
-    "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/retry/"
+    "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/retry/",
+    "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/files/<uuid:document_pk>/"
   ],
   "amendments": [
     {
@@ -1797,6 +1800,18 @@
       "reason": "Retry a failed recording or document from its stored files.",
       "added_routes": [
         "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/retry/"
+      ]
+    },
+    {
+      "date": "2026-09-28",
+      "migration": "0030_suggestion_resolution",
+      "changed_models": [
+        "Suggestion"
+      ],
+      "added_models": [],
+      "reason": "Retain current and suggested values after review, and authorize access to saved audio and source pages.",
+      "added_routes": [
+        "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/files/<uuid:document_pk>/"
       ]
     }
   ]

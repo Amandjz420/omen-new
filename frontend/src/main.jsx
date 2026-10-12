@@ -37,6 +37,7 @@ const Approvals = screen(() => import('./approvals.jsx'), 'Approvals');
 const Invoices = screen(() => import('./invoices.jsx'), 'Invoices');
 const Receipts = screen(() => import('./receipts.jsx'), 'Receipts');
 const Dispatch = screen(() => import('./dispatch.jsx'), 'Dispatch');
+const ValuationForm = screen(() => import('./screens/ValuationForm.jsx'), 'ValuationForm');
 
 // A failed request is shown to the person, not silently repeated: many of these
 // endpoints change money or state, and retrying them is the server's decision.
@@ -63,6 +64,7 @@ export function App() {
                   <Route path="leads/:id" element={<LeadDetail/>}/>
                   <Route path="offices" element={<Offices/>}/>
                   <Route path="valuations" element={legacy('Valuations', 'Start a valuation, fill in its form, and submit it for verification.', Valuations)}/>
+                  <Route path="valuations/:id/form" element={<Suspense fallback={<LoadingState label="Opening the form"/>}><ValuationForm/></Suspense>}/>
                   <Route path="verification" element={legacy('Verification', 'Legal, technical, social and general checks, each in its own queue.', Verifications)}/>
                   <Route path="bank-reports" element={legacy('Bank reports', 'Prepare the report a bank receives, once all four checks are done.', BankReports)}/>
                   <Route path="approval" element={legacy('Final approval', 'Issue reports to banks, or send them back for correction.', Approvals)}/>
