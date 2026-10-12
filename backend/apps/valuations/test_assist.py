@@ -79,6 +79,7 @@ class AssistTests(Form, TestCase):
         self.assertEqual([s['display'] for s in body['suggestions']], ['Khatoni, Map', '1999', 'Name: Sharma ji'])
         self.assertEqual([s['located'] for s in body['suggestions']], ['0:06', '0:12', '0:18'])
         self.assertEqual(body['suggestions'][2]['confidence'], 'check')
+        self.assertEqual((body['suggestions'][0]['question_text'], body['suggestions'][0]['section']), ('Documents produced', str(self.site.pk)))
         self.assertEqual(body['source']['counts']['dropped'],
                          {'unknown question': 1, 'option not in the question': 1, 'amounts not in the question': 1,
                           'quote not in the source': 1})
@@ -178,6 +179,87 @@ class AssistTests(Form, TestCase):
         self.assertEqual(retried.json()['suggestions'][0]['display'], '1999')
         self.assertEqual(self.retry(source, []).status_code, 409)                          # only a failed one
 
+    def test_source_files_are_scoped_and_can_be_played_after_failure(self):
+        with mock.patch.object(deepinfra, 'transcribe', side_effect=deepinfra.AssistError('Try later')):
+            response = self.client.post(f'/api/valuations/{self.v}/assist/recordings/', {'audio': SimpleUploadedFile('site.webm', WEBM)})
+        url = response.json()['source']['files'][0]['url']
+        playback = self.client.get(url)
+        self.assertEqual(playback.status_code, 200)
+        self.assertEqual(playback['Content-Type'], 'audio/webm')
+        self.assertTrue(playback['Content-Disposition'].startswith('inline'))
+        self.assertEqual(b''.join(playback.streaming_content), WEBM)
+        self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Not assigned')))
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_recording_uses_s3_and_playback_returns_a_short_lived_inline_link(self):
+        from apps.documents import s3
+        with mock.patch.object(s3, 'configured', return_value=True), mock.patch.object(s3, 'upload') as upload, \
+             mock.patch('apps.valuations.assist.read_bytes', return_value=WEBM):
+            response = self.record([])
+        self.assertEqual(response.status_code, 201)
+        document = m.Document.objects.get(pk=response.json()['source']['files'][0]['id'])
+        self.assertEqual(document.storage_provider, 's3')
+        self.assertTrue(document.storage_key.startswith('OMEN/onsite/valuations/'))
+        upload.assert_called_once_with(document.storage_key, WEBM, 'audio/webm')
+        with mock.patch.object(s3, 'configured', return_value=True), mock.patch.object(s3, 'presign', return_value='https://example.com/private-audio') as sign:
+            playback = self.client.get(response.json()['source']['files'][0]['url'])
+        self.assertEqual(playback.status_code, 302)
+        self.assertFalse(sign.call_args.kwargs['attachment'])
+        self.assertEqual(sign.call_args.kwargs['content_type'], 'audio/webm')
+
+    def test_keep_both_preserves_form_answer_and_source_evidence(self):
+        self.put(self.v, str(self.site.pk), [{'question': str(self.text.pk), 'value': '2004'}])
+        suggestion = self.record([{'q': self.label(self.text), 'value': '1999', 'quote': 'Makaan 1999 mein bana'}]).json()['suggestions'][0]
+        url = f'/api/valuations/{self.v}/assist/suggestions/{suggestion["id"]}/accept/'
+        self.assertEqual(self.client.post(url).status_code, 409)
+        response = self.client.post(url, {'resolution': 'keep_both', 'expected_answer': suggestion['current_answer']}, content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(m.ValuationAnswer.objects.get(question=self.text).value, '2004')
+        question = next(q for q in self.section(self.site)['questions'] if q['id'] == str(self.text.pk))
+        self.assertEqual(question['comparisons'][0]['display'], '1999')
+        self.assertEqual(question['comparisons'][0]['previous_display'], '2004')
+        self.assertIsNone(question['source'])
+
+    def test_own_answer_preserves_previous_answer_and_ai_evidence(self):
+        self.put(self.v, str(self.site.pk), [{'question': str(self.text.pk), 'value': '2004'}])
+        suggestion = self.record([{'q': self.label(self.text), 'value': '1999', 'quote': 'Makaan 1999 mein bana'}]).json()['suggestions'][0]
+        response = self.client.post(f'/api/valuations/{self.v}/assist/suggestions/{suggestion["id"]}/accept/',
+            {'resolution': 'write_own', 'expected_answer': suggestion['current_answer'], 'own_answer': {'value': '2001'}},
+            content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(m.ValuationAnswer.objects.get(question=self.text).value, '2001')
+        saved = m.Suggestion.objects.get(pk=suggestion['id'])
+        self.assertEqual(saved.previous_answer['value'], '2004')
+        self.assertEqual(saved.answer['value'], '1999')
+        question = next(q for q in self.section(self.site)['questions'] if q['id'] == str(self.text.pk))
+        self.assertIsNone(question['source'])
+        self.assertEqual(question['comparisons'][0]['previous_display'], '2004')
+        self.assertEqual(question['comparisons'][0]['display'], '1999')
+
+    def test_stale_review_cannot_replace_a_newer_answer(self):
+        suggestion = self.record([{'q': self.label(self.text), 'value': '1999', 'quote': 'Makaan 1999 mein bana'}]).json()['suggestions'][0]
+        self.put(self.v, str(self.site.pk), [{'question': str(self.text.pk), 'value': '2020'}])
+        response = self.client.post(f'/api/valuations/{self.v}/assist/suggestions/{suggestion["id"]}/accept/',
+                                   {'resolution': 'use_source', 'expected_answer': suggestion['current_answer']}, content_type='application/json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(m.ValuationAnswer.objects.get(question=self.text).value, '2020')
+
+    def test_pdf_is_rendered_into_reviewable_pages(self):
+        from reportlab.pdfgen import canvas
+        pdf = io.BytesIO()
+        c = canvas.Canvas(pdf)
+        c.drawString(40, 700, 'Property area 1200 sq ft')
+        c.showPage(); c.save()
+        with mock.patch.object(deepinfra, 'read_page', return_value='Property area 1200 sq ft'), \
+             mock.patch.object(deepinfra, 'answer_json', return_value={'answers': []}):
+            response = self.client.post(f'/api/valuations/{self.v}/assist/documents/', {'pages': SimpleUploadedFile('deed.pdf', pdf.getvalue())})
+        self.assertEqual(response.status_code, 201, response.content)
+        source = response.json()['source']
+        self.assertEqual(len(source['files']), 1)
+        self.assertEqual(source['files'][0]['type'], 'image/jpeg')
+        self.assertEqual(len(source['counts']['original_documents']), 1)
+
+
     def retry(self, source, answers):
         with mock.patch.object(deepinfra, 'transcribe', return_value=HEARD), \
              mock.patch.object(deepinfra, 'answer_json', return_value={'answers': answers}):
@@ -197,7 +279,7 @@ class ClientTests(TestCase):
         with mock.patch('urllib.request.urlopen', return_value=self.reply({'text': '', 'segments': [{'start': 0, 'end': 1, 'text': 'Hello'}]})) as sent:
             heard = deepinfra.transcribe(b'audio-bytes', 'site rec.webm', 'audio/webm')
         request = sent.call_args[0][0]
-        self.assertEqual(request.full_url, 'https://api.deepinfra.com/v1/inference/Qwen/Qwen3-ASR-1.7B')
+        self.assertEqual(request.full_url, 'https://api.deepinfra.com/v1/inference/openai/whisper-large-v3')
         self.assertEqual(request.get_header('Authorization'), 'Bearer di-test-key')
         self.assertIn(b'name="audio"; filename="site_rec.webm"', request.data)
         self.assertEqual(heard['text'], 'Hello')                         # from the segments when text is empty

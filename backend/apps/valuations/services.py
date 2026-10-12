@@ -358,10 +358,13 @@ def section(request, pk, key):
               .select_related('document').order_by('answer_group', 'id')):
         answers.setdefault(a.question_id, []).append(a)
     listed = [question_json(q, answers.get(q.pk, [])) for q in questions]
-    from apps.valuations.assist import provenance
+    from apps.valuations.assist import provenance, suggestion_json
     pending, sources = provenance(valuation, questions, {str(q['id']): q['answer'] for q in listed})
     for q in listed:
         q['source'] = sources.get(str(q['id']))           # where an accepted suggestion came from
+        q['comparisons'] = [suggestion_json(s) for s in m.Suggestion.objects.filter(
+            valuation=valuation, question_id=q['id'], status=m.Suggestion.ACCEPTED,
+            resolution__in=['keep_both', 'keep_site', 'use_source', 'write_own']).select_related('source', 'question')]
     return JsonResponse({'valuation': valuation.pk, 'key': key, 'editable': valuation.legacy_status in EDITABLE,
                          'questions': listed, 'suggestions': pending, 'sections': sections(valuation)})
 

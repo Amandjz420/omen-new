@@ -1,6 +1,6 @@
 """The DeepInfra models behind answer suggestions.
 
-Speech is transcribed by Qwen3-ASR through DeepInfra's inference endpoint; pages
+Speech is transcribed by Whisper Large V3 through DeepInfra's inference endpoint; pages
 are read, and sources matched to the form's questions, by Qwen3-VL through its
 OpenAI-compatible chat endpoint. Both are zero-retention on DeepInfra. The key is
 read from the environment (DEEPINFRA_API_KEY, in the repository's git-ignored
@@ -31,7 +31,7 @@ def configured():
 
 
 def models():
-    return {'transcribe': _clean(os.environ.get('OMEN_ASR_MODEL')) or 'Qwen/Qwen3-ASR-1.7B',
+    return {'transcribe': _clean(os.environ.get('OMEN_ASR_MODEL')) or 'openai/whisper-large-v3',
             'read': _clean(os.environ.get('OMEN_VISION_MODEL')) or 'Qwen/Qwen3-VL-235B-A22B-Instruct'}
 
 

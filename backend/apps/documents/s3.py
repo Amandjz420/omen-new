@@ -18,6 +18,22 @@ from urllib.parse import quote
 EXPIRES = 300                      # seconds a link stays valid
 
 
+def upload(key, content, content_type):
+    """Private object upload using the existing bucket; never sets a public ACL."""
+    from urllib.request import Request, urlopen
+    from apps.common.http import IntakeError
+    if not configured():
+        raise IntakeError('S3 storage is not configured on this server.', 503)
+    try:
+        request = Request(presign(key, method='PUT'), data=content, method='PUT',
+                          headers={'Content-Type': content_type})
+        with urlopen(request, timeout=90) as response:
+            if response.status not in (200, 201):
+                raise OSError('Upload failed')
+    except (OSError, TimeoutError):
+        raise IntakeError('The recording could not be saved to S3. Keep the recording and retry the upload.', 503) from None
+
+
 def configured():
     return all(os.environ.get(k) for k in ('AWS_S3_BUCKET_NAME', 'AWS_DEFAULT_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'))
 

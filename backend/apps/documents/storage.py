@@ -36,7 +36,7 @@ ACCEPTS = {'photo': {'jpeg', 'png', 'webp', 'bmp'},
            'page': {'jpeg', 'png', 'webp'}}
 # MP4 is also the container for iPhone HEIC photos and for video; only these brands are audio here.
 AUDIO_BRANDS = {b'M4A ', b'M4B ', b'mp41', b'mp42', b'isom', b'iso2', b'iso5', b'iso6', b'dash'}
-INLINE = {'jpeg', 'png', 'webp', 'bmp', 'pdf'}
+INLINE = {'jpeg', 'png', 'webp', 'bmp', 'pdf', 'webm', 'ogg', 'm4a', 'wav', 'mp3'}
 
 
 def sniff(content):
@@ -103,6 +103,13 @@ def store(upload, purpose, folder):
     failure to write rolls the record back."""
     content, kind = read(upload, purpose)
     relative = f'{folder}/{uuid.uuid4().hex}.{kind}'
+    from . import s3
+    if purpose == 'recording' and s3.configured():
+        relative = f'OMEN/onsite/{relative}'
+        s3.upload(relative, content, KINDS[kind])
+        return m.Document.objects.create(storage_provider='s3', storage_key=relative,
+                                         original_name=clean_name(upload.name), media_type=KINDS[kind],
+                                         size_bytes=len(content))
     document = m.Document.objects.create(storage_provider='local', storage_key=relative,
                                          original_name=clean_name(upload.name), media_type=KINDS[kind],
                                          size_bytes=len(content))
@@ -128,6 +135,8 @@ LOCAL_MARK = 'local:'
 def s3_key(document):
     """The object key to request: the verified location, or before files have been
     located, the stored key as it is, which is right for most."""
+    if document.storage_provider == 's3':
+        return document.storage_key
     if document.storage_provider not in PREFIX:
         return None
     if document.legacy_location and not document.legacy_location.startswith(LOCAL_MARK):

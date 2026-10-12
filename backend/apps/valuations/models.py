@@ -214,6 +214,8 @@ class Suggestion(Entity):
     located = models.CharField(max_length=40, blank=True)
     confidence = models.CharField(max_length=10, default='clear')
     differs = models.BooleanField(default=False)
+    resolution = models.CharField(max_length=20, blank=True)
+    previous_answer = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=12, choices=STATUSES, default=PENDING, db_index=True)
     decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     decided_at = models.DateTimeField(null=True, blank=True)

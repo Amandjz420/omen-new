@@ -28,8 +28,8 @@ from django.utils import timezone
 
 from target_core import models as m
 from apps.audit.services import record
-from apps.common.http import IntakeError, endpoint, find
-from apps.documents.storage import read as read_upload, read_bytes, store
+from apps.common.http import IntakeError, endpoint, find, payload as request_payload
+from apps.documents.storage import read as read_upload, read_bytes, store, file_json, serve, MAX_BYTES
 from apps.valuations import deepinfra
 from apps.valuations.services import (EDITABLE, KINDS, answer_of, form_questions, in_scope, options_of, save_section,
                                       section_key)
@@ -208,7 +208,7 @@ def suggest(source, valuation):
                 source=source, valuation=valuation, question=question, answer=payload, display=display[:4000],
                 quote=quote[:1000], located=located(source, quote), confidence=confidence,
                 differs=differs(question, payload, valuation)))
-        source.counts = {'questions': len(index), 'suggested': len(made), 'dropped': dropped}
+        source.counts = {**source.counts, 'questions': len(index), 'suggested': len(made), 'dropped': dropped}
         source.save(update_fields=['counts'])
     return made
 
@@ -224,14 +224,54 @@ def editable(request, pk):
 
 
 def source_json(source):
+    documents = {str(d.pk): d for d in m.Document.objects.filter(pk__in=source.document_ids)}
+    files = []
+    for number, doc_id in enumerate(source.document_ids, 1):
+        doc = documents.get(str(doc_id))
+        if doc:
+            files.append({**file_json(doc), 'page': number, 'storage': doc.storage_provider,
+                          'url': f'/api/valuations/{source.valuation_id}/assist/sources/{source.pk}/files/{doc.pk}/'})
     return {'id': source.pk, 'kind': source.kind, 'status': source.status, 'error': source.error, 'text': source.text,
-            'duration': source.duration_seconds, 'counts': source.counts, 'created_at': source.created_at}
+            'duration': source.duration_seconds, 'counts': source.counts, 'created_at': source.created_at, 'files': files}
+
+
+@endpoint(['GET'])
+def source_file(request, pk, sid, document_pk):
+    valuation = find(m.Valuation, pk)
+    in_scope(request.user, valuation.case)
+    source = m.AssistSource.objects.filter(pk=sid, valuation=valuation).first()
+    if source is None or str(document_pk) not in source.document_ids + source.counts.get('original_documents', []):
+        raise IntakeError('Source file not found', 404)
+    return serve(find(m.Document, document_pk))
+
+
+def current_answer(s):
+    return answer_of(s.question, list(m.ValuationAnswer.objects.filter(valuation_id=s.valuation_id, question=s.question)),
+                     options_of(s.question))
+
+
+def answer_display(question, answer):
+    labels = {str(o.pk): o.value.strip() for o in options_of(question)}
+    if 'selected' in answer:
+        return ', '.join([labels.get(str(i), '') for i in answer.get('selected', [])] + ([answer['custom']] if answer.get('custom') else []))
+    if 'value' in answer:
+        return str(answer.get('value') or '')
+    if 'rows' in answer:
+        return '\n'.join('; '.join(f'{labels.get(k, k)}: {v}' for k, v in row.get('cells', {}).items()) for row in answer['rows'])
+    return '; '.join(f'{labels.get(k, k)}: {v}' for k, v in answer.get('values', {}).items())
 
 
 def suggestion_json(s):
-    return {'id': s.pk, 'question': s.question_id, 'source': s.source_id, 'kind': s.source.kind, 'display': s.display,
+    current = current_answer(s)
+    return {'id': s.pk, 'question': s.question_id, 'question_text': s.question.text.strip(), 'section': section_key(s.question),
+            'answer_kind': KINDS.get(s.question.answer_type, 'text'),
+            'options': [{'id': str(o.pk), 'label': o.value.strip()} for o in options_of(s.question)],
+            'source': s.source_id, 'kind': s.source.kind, 'display': s.display,
             'quote': s.quote, 'located': s.located, 'confidence': s.confidence, 'differs': s.differs,
-            'status': s.status, 'answer': s.answer}
+            'status': s.status, 'answer': s.answer, 'current_answer': current,
+            'current_display': answer_display(s.question, current), 'resolution': s.resolution,
+            'previous_display': answer_display(s.question, s.previous_answer),
+            'differs': differs(s.question, s.answer, s.valuation) if s.status == m.Suggestion.PENDING else s.differs}
 
 
 def run(source, valuation):
@@ -242,7 +282,7 @@ def run(source, valuation):
         documents = {str(d.pk): d for d in m.Document.objects.filter(pk__in=source.document_ids)}
         files = [documents.get(i) for i in source.document_ids]
         if source.kind == m.AssistSource.RECORDING:
-            data = read_bytes(files[0]) if files and files[0] else None
+            data = read_bytes(files[0], limit=MAX_BYTES) if files and files[0] else None
             if not data:
                 raise deepinfra.AssistError('The recording could not be read back from storage.')
             heard = deepinfra.transcribe(data, files[0].original_name or 'recording', files[0].media_type)
@@ -263,8 +303,9 @@ def run(source, valuation):
         source.status, source.error = 'ready', ''
         source.save(update_fields=['status', 'error'])
         return made
-    except deepinfra.AssistError as exc:
-        source.status, source.error = 'failed', str(exc)
+    except (deepinfra.AssistError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        message = str(exc) if isinstance(exc, deepinfra.AssistError) else 'The service returned an invalid answer. Your source is saved; try again.'
+        source.status, source.error = 'failed', message
         source.save(update_fields=['status', 'error'])
         return None
 
@@ -301,22 +342,37 @@ def document(request, pk):
         raise IntakeError('Photograph the pages, or choose documents already attached')
     if len(pages) + len(attached) > MAX_PAGES:
         raise IntakeError(f'Read at most {MAX_PAGES} pages at a time')
-    ids = []
-    for upload in pages:
-        read_upload(upload, 'page')
+    ids, originals = [], []
+    def add_pages(upload):
+        content, kind = read_upload(upload, 'document')
         upload.seek(0)
-        ids.append(str(store(upload, 'page', f'valuations/{valuation.pk}/pages').pk))
+        if kind == 'pdf':
+            from apps.valuations.pages import render_pdf
+            rendered = render_pdf(content, upload.name, MAX_PAGES - len(ids))
+            originals.append(str(store(upload, 'document', f'valuations/{valuation.pk}/pages/originals').pk))
+        elif kind in ('jpeg', 'png', 'webp'):
+            rendered = [upload]
+        else:
+            raise IntakeError('Choose a PDF or photographs (JPEG, PNG or WebP).')
+        if len(ids) + len(rendered) > MAX_PAGES:
+            raise IntakeError(f'Read at most {MAX_PAGES} pages at a time')
+        for page in rendered:
+            ids.append(str(store(page, 'page', f'valuations/{valuation.pk}/pages').pk))
+    for upload in pages:
+        add_pages(upload)
     mine = ({str(x) for x in m.ValuationAttachment.objects.filter(valuation=valuation).values_list('document_id', flat=True)}
             | {str(x) for x in m.ValuationAnswer.objects.filter(valuation=valuation).exclude(document=None).values_list('document_id', flat=True)})
     for doc_id in attached:
         doc = m.Document.objects.filter(pk=doc_id).first() if doc_id in mine else None
         if doc is None:
             raise IntakeError('A chosen document is not attached to this valuation', 404)
-        if not (doc.media_type or '').startswith('image/') and not re.search(r'\.(jpe?g|png|webp)$', doc.storage_key or '', re.I):
-            raise IntakeError('Only photographs of pages can be read for now; PDFs need a page renderer installed')
-        ids.append(str(doc.pk))
+        data = read_bytes(doc, limit=MAX_BYTES)
+        if not data:
+            raise IntakeError('An attached document could not be read from storage.')
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        add_pages(SimpleUploadedFile(doc.original_name or 'attached-document', data))
     source = m.AssistSource.objects.create(valuation=valuation, kind=m.AssistSource.DOCUMENT, document_ids=ids,
-                                           models_used=deepinfra.models(), created_by=request.user)
+                                           models_used=deepinfra.models(), created_by=request.user, counts={'original_documents': originals})
     record(request.user, source, action='assist_document')
     return answered(source, run(source, valuation))
 
@@ -337,16 +393,19 @@ def retry(request, pk, sid):
 def overview(request, pk):
     valuation = find(m.Valuation, pk)
     in_scope(request.user, valuation.case)
-    pending = m.Suggestion.objects.filter(valuation=valuation, status=m.Suggestion.PENDING).select_related('source')
+    pending = m.Suggestion.objects.filter(valuation=valuation, status=m.Suggestion.PENDING).select_related('source', 'question')
     return JsonResponse({'configured': deepinfra.configured(), 'models': deepinfra.models(),
                          'suggestions': [suggestion_json(s) for s in pending.order_by('created_at')],
-                         'sources': [source_json(s) for s in valuation.assist_sources.order_by('-created_at')[:10]]})
+                         'sources': [source_json(s) for s in valuation.assist_sources.order_by('-created_at')]})
 
 
 def decided(request, pk, spk, accept):
     valuation = find(m.Valuation, pk)
     in_scope(request.user, valuation.case)
     with transaction.atomic():
+        valuation = m.Valuation.objects.select_for_update().get(pk=valuation.pk)
+        if valuation.legacy_status not in EDITABLE:
+            raise IntakeError('This valuation cannot be edited', 409)
         s = (m.Suggestion.objects.select_for_update().filter(pk=spk, valuation=valuation)
              .select_related('question', 'source').first())
         if s is None:
@@ -354,11 +413,28 @@ def decided(request, pk, spk, accept):
         if s.status != m.Suggestion.PENDING:
             raise IntakeError(f'This suggestion is already {s.get_status_display().lower()}', 409)
         if accept:
+            data = request_payload(request, ['resolution', 'expected_answer', 'own_answer']) if request.content_type == 'application/json' and request.body else {}
+            resolution = data.get('resolution', 'use_source')
+            if resolution not in ('use_source', 'keep_both', 'keep_site', 'write_own'):
+                raise IntakeError('Choose how to resolve the answer')
+            current = current_answer(s)
+            changed = differs(s.question, s.answer, valuation)
+            if 'expected_answer' in data and data['expected_answer'] != current:
+                raise IntakeError('The answer changed while you reviewed it. Reopen the suggestions and choose again.', 409)
+            if changed and 'resolution' not in data:
+                raise IntakeError('This differs from the current answer. Choose keep both, use suggestion, or keep current.', 409)
+            s.previous_answer, s.resolution, s.differs = current, resolution, changed
             # Through the form's own save: its validation, audit and conflict protection.
-            save_section(request, valuation, [s.question], submitted=[{'question': str(s.question_id), **s.answer}])
+            if resolution == 'use_source':
+                save_section(request, valuation, [s.question], submitted=[{'question': str(s.question_id), **s.answer}])
+            elif resolution == 'write_own':
+                own = data.get('own_answer')
+                if not isinstance(own, dict) or not own or set(own) - {'selected', 'custom', 'value', 'rows', 'values'}:
+                    raise IntakeError('Enter your own answer using the fields for this question')
+                save_section(request, valuation, [s.question], submitted=[{**own, 'question': str(s.question_id)}])
         s.status = m.Suggestion.ACCEPTED if accept else m.Suggestion.DISMISSED
         s.decided_by, s.decided_at = request.user, timezone.now()
-        s.save(update_fields=['status', 'decided_by', 'decided_at'])
+        s.save(update_fields=['status', 'decided_by', 'decided_at', 'resolution', 'previous_answer', 'differs'])
         record(request.user, s, action='accept_suggestion' if accept else 'dismiss_suggestion')
     return JsonResponse({**suggestion_json(s), 'section': section_key(s.question)})
 
@@ -378,15 +454,17 @@ def provenance(valuation, questions, answers_by_question):
     current answer is an accepted suggestion, where it came from."""
     ids = [q.pk for q in questions]
     pending = [suggestion_json(s) for s in m.Suggestion.objects.filter(
-        valuation=valuation, question_id__in=ids, status=m.Suggestion.PENDING).select_related('source').order_by('created_at')]
+        valuation=valuation, question_id__in=ids, status=m.Suggestion.PENDING).select_related('source', 'question').order_by('created_at')]
     sources = {}
     for s in (m.Suggestion.objects.filter(valuation=valuation, question_id__in=ids, status=m.Suggestion.ACCEPTED)
               .select_related('source').order_by('decided_at')):
+        if s.resolution in ('keep_both', 'keep_site', 'write_own'):
+            continue
         current = answers_by_question.get(str(s.question_id)) or {}
         same = all((sorted(current.get(k) or []) == sorted(v)) if k == 'selected' else ((current.get(k) or '') == v)
                    for k, v in s.answer.items() if k in ('selected', 'custom', 'value'))
         if same:
-            sources[str(s.question_id)] = {'kind': s.source.kind, 'located': s.located, 'at': s.decided_at}
+            sources[str(s.question_id)] = {'id': s.source_id, 'kind': s.source.kind, 'located': s.located, 'at': s.decided_at}
         else:
             sources.pop(str(s.question_id), None)             # changed by hand since: no longer the suggestion's
     return pending, sources
