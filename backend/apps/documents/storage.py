@@ -12,6 +12,7 @@ What each purpose accepts follows the legacy data:
     are refused: they cannot be previewed and are the usual carrier for malware.
 """
 import io
+import logging
 import re
 import uuid
 import zipfile
@@ -23,6 +24,8 @@ from django.http import FileResponse
 
 from target_core import models as m
 from apps.common.http import IntakeError
+
+logger = logging.getLogger(__name__)
 
 MAX_BYTES = 25 * 1024 * 1024          # the legacy photo limit, 26,214,400 bytes
 KINDS = {'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp', 'bmp': 'image/bmp',
@@ -105,11 +108,18 @@ def store(upload, purpose, folder):
     relative = f'{folder}/{uuid.uuid4().hex}.{kind}'
     from . import s3
     if purpose == 'recording' and s3.configured():
-        relative = f'OMEN/onsite/{relative}'
-        s3.upload(relative, content, KINDS[kind])
-        return m.Document.objects.create(storage_provider='s3', storage_key=relative,
-                                         original_name=clean_name(upload.name), media_type=KINDS[kind],
-                                         size_bytes=len(content))
+        # A refused or failed upload must not lose the assessor's recording: it is
+        # kept on local storage instead, and archive_recordings moves it to S3 later,
+        # verified, once the bucket accepts writes. The legacy bucket's credentials
+        # were issued read-only (s3:ListBucket, s3:GetObject), which refuses every PUT.
+        try:
+            s3.upload(f'OMEN/onsite/{relative}', content, KINDS[kind])
+        except IntakeError:
+            logger.warning('A recording could not be saved to S3; kept on local storage for archive_recordings.')
+        else:
+            return m.Document.objects.create(storage_provider='s3', storage_key=f'OMEN/onsite/{relative}',
+                                             original_name=clean_name(upload.name), media_type=KINDS[kind],
+                                             size_bytes=len(content))
     document = m.Document.objects.create(storage_provider='local', storage_key=relative,
                                          original_name=clean_name(upload.name), media_type=KINDS[kind],
                                          size_bytes=len(content))

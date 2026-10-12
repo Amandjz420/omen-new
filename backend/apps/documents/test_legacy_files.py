@@ -163,3 +163,30 @@ class TemporaryCredentialTests(TestCase):
     def test_without_one_the_link_carries_none(self):
         os.environ.pop('AWS_SESSION_TOKEN', None)
         self.assertNotIn('X-Amz-Security-Token', s3.presign('LeadUpload/a.jpg'))
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+@mock.patch.dict(os.environ, AWS)
+class RecordingStorageTests(TestCase):
+    """A recording is never lost to a failed S3 upload."""
+
+    def upload(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.documents.storage import store
+        return store(SimpleUploadedFile('site.webm', b'\x1a\x45\xdf\xa3' + b'\x00' * 64), 'recording', 'valuations/v/recordings')
+
+    def test_a_recording_goes_to_s3_when_the_bucket_accepts_it(self):
+        with mock.patch.object(s3, 'upload') as put:
+            doc = self.upload()
+        self.assertEqual((doc.storage_provider, doc.storage_key.startswith('OMEN/onsite/valuations/v/recordings/')), ('s3', True))
+        put.assert_called_once()
+
+    def test_a_refused_upload_keeps_the_recording_on_local_storage(self):
+        """Regression: with read-only credentials every PUT is refused, and the recording was lost."""
+        refused = IntakeError('The recording could not be saved to S3. Keep the recording and retry the upload.', 503)
+        with mock.patch.object(s3, 'upload', side_effect=refused), self.assertLogs('apps.documents.storage', 'WARNING'):
+            doc = self.upload()
+        self.assertEqual(doc.storage_provider, 'local')                       # previously: an error, and nothing kept
+        from apps.documents.storage import local_path
+        self.assertIsNotNone(local_path(doc))
+        self.assertEqual(local_path(doc).read_bytes()[:4], b'\x1a\x45\xdf\xa3')
