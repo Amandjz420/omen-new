@@ -11,7 +11,8 @@ from target_core.sync import synchronize
 from apps.migration_pipeline.tests import FakeSource, dataset
 
 
-class IntakeTests(TestCase):
+class IntakeFixture:
+    """Everything a complete legacy intake needs; holds no tests."""
     def setUp(self):
         self.user = get_user_model().objects.create_user('intake-admin',password='Only-for-tests-984!',is_staff=True)
         self.client.force_login(self.user)
@@ -20,29 +21,56 @@ class IntakeTests(TestCase):
         self.employee = m.Employee.objects.create(name='Test assessor')
         self.service = m.ServiceType.objects.create(name='Valuation')
         self.subtype = m.ServiceSubtype.objects.create(name='Land',service=self.service)
+        self.usage = m.ReportUsage.objects.create(name='Loan purpose',service=self.service,subtype=self.subtype)
+        self.document = m.ScrutinyRequirement.objects.create(name='Sale deed',service=self.service,subtype=self.subtype,report_usage=self.usage)
+        self.state = m.State.objects.create(name='Madhya Pradesh')
+        self.district = m.District.objects.create(name='Bhopal',state=self.state)
+        self.block = m.Block.objects.create(name='Huzur',district=self.district)
+        self.contact.phone = '9826012345'; self.contact.save()
+        batch = m.ImportBatch.objects.create()
+        for schema, table, obj, code in (('lead_mngt', 'usage_of_reports', self.usage, '148'), ('lead_mngt', 'scrutiny_document', self.document, '114'),
+                                         ('uam_user', 'block', self.block, '305')):
+            m.SourceIdentity.objects.create(batch=batch, environment='main', schema=schema, table=table, key=json.dumps([['id', code]]),
+                                            target_model=obj._meta.label, target_id=obj.pk)
 
     def send(self, path, data, method='post'):
         return getattr(self.client,method)(path,json.dumps(data,default=str),content_type='application/json')
 
     def data(self, **extra):
-        return {'request_id':str(uuid.uuid4()),'office':str(self.office.pk),'contact':str(self.contact.pk),
-                'received_date':'2026-09-24','assigned_employee':str(self.employee.pk),**extra}
+        return {'request_id':str(uuid.uuid4()),'contact':str(self.contact.pk),'enquiry_mode':1,
+                'received_by':str(self.employee.pk),'received_date':'2026-09-24','assigned_employee':str(self.employee.pk),
+                'services':[{'service':str(self.service.pk),'subtype':str(self.subtype.pk),'case_count':1}],**extra}
+
+    def borrower(self, **extra):
+        return {'name':'Asha Verma','contact_number':'9826054321','property_count':1,'payer':1,'fee_basis':1,
+                'payment_reference_name':'R. K. Sharma','payment_reference_number':'9893012345','pay_by_date':'2026-10-31',
+                'customer_payment_method':1,**extra}
+
+    def case(self, borrower, **extra):
+        return {'borrower':borrower,'service':str(self.service.pk),'subtype':str(self.subtype.pk),'report_usages':[str(self.usage.pk)],
+                'scrutiny_documents':[str(self.document.pk)],'expected_report_date':'2026-10-20','asset_amount':'3850000',
+                'asset_address':'Plot 47, Ward 12','state':str(self.state.pk),'district':str(self.district.pk),
+                'block':str(self.block.pk),'asset_pin_code':'462042',**extra}
+
+    def follow_up(self, **extra):
+        return {'status':'4','notify_date':'2026-10-15','notify_time':'11:30','remark':'Call back after site visit',**extra}
 
     def create(self, **extra):
         r = self.send('/api/intake/leads/',self.data(**extra))
         self.assertEqual(r.status_code,201,r.content)
         return m.Lead.objects.get(pk=r.json()['id'])
 
+
+
+class IntakeTests(IntakeFixture, TestCase):
     def test_complete_intake_and_audit(self):
         lead = self.create()
         base=f'/api/intake/leads/{lead.pk}/'
-        service=self.send(base+'services/',{'service':self.service.pk,'subtype':self.subtype.pk,'party_count':1,'case_count':1})
-        self.assertEqual(service.status_code,201,service.content)
-        borrower=self.send(base+'borrowers/',{'name':'Test borrower','property_count':1,'agreed_fee':'1234.50'})
+        borrower=self.send(base+'borrowers/',self.borrower(fee_basis=2,agreed_fee='1234.50'))
         self.assertEqual(borrower.status_code,201,borrower.content)
-        case=self.send(base+'cases/',{'borrower':borrower.json()['id'],'service':self.service.pk,'subtype':self.subtype.pk,'asset_address':'Test address'})
+        case=self.send(base+'cases/',self.case(borrower.json()['id']))
         self.assertEqual(case.status_code,201,case.content)
-        follow=self.send(base+'follow-ups/',{'outcome':'Contacted','remark':'Visit agreed'})
+        follow=self.send(base+'follow-ups/',self.follow_up())
         self.assertEqual(follow.status_code,201,follow.content)
         detail=self.client.get(base).json()
         self.assertEqual(detail['legacy_status'],'2')
@@ -76,11 +104,14 @@ class IntakeTests(TestCase):
         self.assertEqual(m.LeadCounter.objects.count(),0)
         self.assertEqual(m.IntakeAudit.objects.count(),0)
 
-    def test_foreign_contact_and_missing_office_are_rejected(self):
+    def test_the_office_is_the_lead_givers_and_an_unknown_contact_is_refused(self):
+        # As on the legacy form, the lead's client is the lead giver's: a contact from
+        # another office brings that office, and an office sent alongside is ignored.
         other=m.ClientOffice.objects.create(name='Other office')
-        contact=m.Contact.objects.create(name='Other contact',office=other)
-        self.assertEqual(self.send('/api/intake/leads/',self.data(contact=contact.pk)).status_code,400)
-        self.assertEqual(self.send('/api/intake/leads/',self.data(office=uuid.uuid4())).status_code,400)
+        contact=m.Contact.objects.create(name='Other contact',office=other,phone='9826011111')
+        lead=self.create(contact=contact.pk,office=str(self.office.pk))
+        self.assertEqual(lead.office,other)
+        self.assertEqual(self.send('/api/intake/leads/',self.data(contact=uuid.uuid4())).status_code,404)
 
     def test_assignment_edit_cancellation_and_lock(self):
         lead=self.create();base=f'/api/intake/leads/{lead.pk}/'
@@ -102,15 +133,17 @@ class IntakeTests(TestCase):
         lead=self.create();other=self.create()
         b=m.Borrower.objects.create(lead=other,name='Wrong borrower')
         base=f'/api/intake/leads/{lead.pk}/cases/'
-        self.assertEqual(self.send(base,{'borrower':b.pk,'service':self.service.pk,'asset_address':'A'}).status_code,400)
+        self.assertEqual(self.send(base,self.case(str(b.pk))).status_code,400)                 # another lead's borrower
         b.lead=lead;b.save()
-        self.assertEqual(self.send(base,{'borrower':b.pk,'service':self.service.pk,'asset_address':'A'}).status_code,400)
+        unrequested=m.ServiceSubtype.objects.create(name='Flat',service=self.service)
+        self.assertEqual(self.send(base,self.case(str(b.pk),subtype=str(unrequested.pk))).status_code,400)   # not requested
+        self.assertEqual(self.send(base,self.case(str(b.pk))).status_code,201)
 
     def test_service_duplicates_and_negative_fees_are_rejected(self):
         lead=self.create();base=f'/api/intake/leads/{lead.pk}/'
         for status in [201,409]:
             self.assertEqual(self.send(base+'services/',{'service':self.service.pk}).status_code,status)
-        self.assertEqual(self.send(base+'borrowers/',{'name':'Borrower','agreed_fee':'-1'}).status_code,400)
+        self.assertEqual(self.send(base+'borrowers/',self.borrower(fee_basis=2,agreed_fee='-1')).status_code,400)
 
     def test_client_and_contact_create_edit(self):
         r=self.send('/api/intake/offices/',{'name':'Created office','branch_name':'Branch'})
@@ -143,7 +176,7 @@ class IntakeTests(TestCase):
         self.assertEqual(self.send(base,{'assigned_employee':self.employee.pk,'received_date':'2026-09-24'},'patch').status_code,200)
         self.assertEqual(self.send(f'/api/intake/offices/{imported.office_id}/',{'name':'Locally edited office'},'patch').status_code,200)
         local=self.create()
-        self.send(base+'follow-ups/',{'outcome':'No answer','remark':'Try again'})
+        self.assertEqual(self.send(base+'follow-ups/',self.follow_up(status='3')).status_code,201)
         source[('lead_mngt','lead')][0]['lead_status']='4'
         source[('lead_mngt','client')][0]['name']='Changed in source'
         synchronize(FakeSource(source));synchronize(FakeSource(source))

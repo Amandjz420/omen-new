@@ -10,6 +10,7 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 
 from target_core import models as m
+from apps.leads.test_intake import IntakeFixture
 from target_core import workorders
 from target_core.numbering import allocate, format_number
 
@@ -235,14 +236,9 @@ class WorkOrderLetterContentTests(TestCase):
 
 
 @override_settings(MEDIA_ROOT=MEDIA)
-class LeadLifecycleTests(TestCase):
-    """Intake and work orders together, driven only through the public API."""
-
-    def setUp(self):
-        self.user = User.objects.create_user('operator', password='x', is_staff=True)
-        self.client.force_login(self.user)
-        self.service = m.ServiceType.objects.create(name='Valuation of asset')
-        self.subtype = m.ServiceSubtype.objects.create(name='L & B', service=self.service)
+class LeadLifecycleTests(IntakeFixture, TestCase):
+    """Intake and work orders together, driven only through the public API, with the
+    legacy intake forms' fields."""
 
     def post(self, path, data, expect=201):
         response = self.client.post(f'/api/{path}', data, content_type='application/json')
@@ -252,11 +248,8 @@ class LeadLifecycleTests(TestCase):
     def test_a_lead_runs_from_intake_to_closure_through_the_api(self):
         office = self.post('intake/offices/', {'name': 'SBI Main Branch', 'branch_name': 'Main', 'address': 'MP Nagar'})
         contact = self.post('intake/contacts/', {'name': 'R. Sharma', 'office': office['id'], 'phone': '9000000001'})
-        lead = self.post('intake/leads/', {
-            'request_id': str(uuid.uuid4()), 'office': office['id'], 'contact': contact['id'],
-            'received_date': '2026-09-24',
-            'services': [{'service': str(self.service.pk), 'subtype': str(self.subtype.pk)}],
-            'borrowers': [{'name': 'Asha Verma'}, {'name': 'Ravi Verma'}]})
+        lead = self.post('intake/leads/', self.data(contact=contact['id'], borrowers=[
+            self.borrower(name='Asha Verma'), self.borrower(name='Ravi Verma', contact_number='9826054322')]))
         detail = self.client.get(f"/api/intake/leads/{lead['id']}/").json()
         self.assertEqual(detail['legacy_status'], '2')          # services recorded -> In process
         borrowers = {b['name']: b['id'] for b in detail['borrowers']}
@@ -266,9 +259,7 @@ class LeadLifecycleTests(TestCase):
         self.assertTrue(all(not b['eligible'] for b in state['borrowers']))
 
         for name in borrowers:
-            self.post(f"intake/leads/{lead['id']}/cases/", {
-                'borrower': borrowers[name], 'service': str(self.service.pk), 'subtype': str(self.subtype.pk),
-                'asset_address': f'Plot for {name}', 'asset_district': 'Bhopal', 'asset_state': 'Madhya Pradesh'})
+            self.post(f"intake/leads/{lead['id']}/cases/", self.case(borrowers[name], asset_address=f'Plot for {name}'))
 
         first = self.post('work-orders/', {'request_id': str(uuid.uuid4()), 'borrower': borrowers['Asha Verma']})
         self.assertFalse(first['lead_closed'])

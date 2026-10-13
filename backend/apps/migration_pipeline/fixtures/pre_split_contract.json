@@ -119,6 +119,7 @@
         "legacy_working_status": "models.CharField(blank=True, max_length=40)",
         "state": "models.CharField(blank=True, max_length=150)",
         "district": "models.CharField(blank=True, max_length=150)",
+        "block": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.block')",
         "gstin": "models.CharField(blank=True, max_length=200)",
         "ifsc": "models.CharField(blank=True, max_length=45)"
       },
@@ -146,6 +147,7 @@
         "office": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, to='target_core.clientoffice')",
         "designation": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.contactdesignation')",
         "division": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.leaddivision')",
+        "subdivision": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.leadsubdivision')",
         "phone": "models.CharField(blank=True, max_length=80)",
         "alternate_phone": "models.CharField(blank=True, max_length=80)"
       },
@@ -1641,7 +1643,11 @@
     "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/retry/",
     "api/valuations/<uuid:pk>/assist/sources/<uuid:sid>/files/<uuid:document_pk>/",
     "api/valuations/<uuid:pk>/checklist/",
-    "api/valuations/<uuid:pk>/checklist/follow-up/"
+    "api/valuations/<uuid:pk>/checklist/follow-up/",
+    "api/intake/lookups/",
+    "api/intake/lookups/ifsc/",
+    "api/intake/lookups/offices/",
+    "api/intake/lookups/orderer/"
   ],
   "amendments": [
     {
@@ -1825,6 +1831,29 @@
       "added_routes": [
         "api/valuations/<uuid:pk>/checklist/",
         "api/valuations/<uuid:pk>/checklist/follow-up/"
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "migration": "0031_clientoffice_block_contact_subdivision",
+      "changed_models": [
+        "ClientOffice",
+        "Contact"
+      ],
+      "added_models": [],
+      "reason": "The orderer's sub-division and the client office's city, for the lead form's auto-fill."
+    },
+    {
+      "date": "2026-10-13",
+      "migration": "none",
+      "changed_models": [],
+      "added_models": [],
+      "reason": "The intake forms' lookups and auto-fill, as the legacy forms had.",
+      "added_routes": [
+        "api/intake/lookups/",
+        "api/intake/lookups/ifsc/",
+        "api/intake/lookups/offices/",
+        "api/intake/lookups/orderer/"
       ]
     }
   ]

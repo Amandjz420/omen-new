@@ -43,6 +43,8 @@ class ClientOffice(NamedEntity):
     legacy_working_status = models.CharField(max_length=40, blank=True)
     state = models.CharField(max_length=150, blank=True)
     district = models.CharField(max_length=150, blank=True)
+    # The office's city (legacy client.block_id), shown on the lead form: 1,341 of 1,394 carry one.
+    block = models.ForeignKey('target_core.Block', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     gstin = models.CharField(max_length=200, blank=True)          # printed on invoices billed to the client
     ifsc = models.CharField(max_length=45, blank=True)
 
@@ -63,6 +65,8 @@ class Contact(NamedEntity):
     # The orderer's division (legacy orderer_reg.division_id), which the invoice MIS
     # groups by. 2,045 of 2,049 imported orderers carry one.
     division = models.ForeignKey('target_core.LeadDivision', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    # The orderer's sub-division (legacy orderer_reg.sub_division_id): 1,515 of 2,049 carry one.
+    subdivision = models.ForeignKey('target_core.LeadSubdivision', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     phone = models.CharField(max_length=80, blank=True)
     alternate_phone = models.CharField(max_length=80, blank=True)
 

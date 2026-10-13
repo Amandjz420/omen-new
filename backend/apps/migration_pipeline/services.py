@@ -48,10 +48,18 @@ SPECS = [
  ('lead_mngt','client_designation','client_designation_id',m.ContactDesignation,{'name':'name'},{}),
  ('lead_mngt','service_type','service_type_id',m.ServiceType,{'name':'name'},{}),
  ('lead_mngt','service_sub_type','service_sub_type_id',m.ServiceSubtype,{'name':'name'}, {'service':('service_type','service_type_id',False)}),
- ('lead_mngt','client','client_id',m.ClientOffice,{'name':'name','branch_name':'branch','address':'address','legacy_working_status':'working','gstin':'gst_no','ifsc':'ifsc'}, {'client_type':('client_type','client_type_id',True),'bank':('bank','bank_id',True),'directory_branch':('bank_branch','bank_branch_id',True)}),
+ # Places load before client offices, each of which names its city (block).
+ ('uam_user','state','state_id',m.State,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','legacy_status':'status'},{}),
+ ('uam_user','district','district_id',m.District,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','legacy_status':'status'}, {'state':('state','state_id',True)}),
+ ('uam_user','region','region_id',m.Region,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'},{}),
+ ('uam_user','circle','circle_id',m.Circle,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'}, {'region':('region','region_id',True)}),
+ ('uam_user','block','block_id',m.Block,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','area_type':'area_type','legacy_status':'status'}, {'district':('district','district_id',True),'region':('region','region_id',True),'circle':('circle','circle_id',True)}),
+ ('lead_mngt','client','client_id',m.ClientOffice,{'name':'name','branch_name':'branch','address':'address','legacy_working_status':'working','gstin':'gst_no','ifsc':'ifsc'}, {'block':('block','block_id',True),'client_type':('client_type','client_type_id',True),'bank':('bank','bank_id',True),'directory_branch':('bank_branch','bank_branch_id',True)}),
  # Divisions load before orderers, each of which names one.
  ('lead_mngt','division','division_id',m.LeadDivision,{'name':'name','legacy_status':'status','legacy_deleted':'delete_status'},{}),
- ('lead_mngt','orderer_reg','orderer_reg_id',m.Contact,{'name':'orderer_name','phone':'mobile_no','alternate_phone':'alt_contact_no'}, {'office':('client','client_id',False),'designation':('client_designation','client_designation_id',True),'division':('division','division_id',True)}),
+ # Sub-divisions load before orderers, each of which names one.
+ ('lead_mngt','sub_division','sub_division_id',m.LeadSubdivision,{'name':'name','legacy_status':'status','legacy_deleted':'delete_status'}, {'division':('division','division_id',True)}),
+ ('lead_mngt','orderer_reg','orderer_reg_id',m.Contact,{'name':'orderer_name','phone':'mobile_no','alternate_phone':'alt_contact_no'}, {'office':('client','client_id',False),'designation':('client_designation','client_designation_id',True),'division':('division','division_id',True),'subdivision':('sub_division','sub_division_id',True)}),
  ('lead_mngt','lead','lead_id',m.Lead,{'number':'lead_no','received_date':'lead_date','legacy_status':'lead_status','legacy_deleted':'delete_status','enquiry_mode':'mode','party_count':'no_of_parties','case_count':'no_of_cases','legacy_number_old':'lead_no_old'}, {'office':('client','client_id',False),'contact':('orderer_reg','orderer_reg_id',True),'assigned_employee':('employee','assigned_to',True),'received_by':('employee','received_by',True),'client_type':('client_type','client_type_id',True)}),
  ('lead_mngt','lead_services','lead_service_id',m.RequestedService,{'party_count':'no_of_parties','case_count':'no_of_cases'}, {'lead':('lead','lead_id',False),'service':('service_type','service_type_id',False),'subtype':('service_sub_type','service_sub_type_id',True)}),
  ('lead_mngt','lead_borrower','lead_borrower_id',m.Borrower,{'name':'name_of_borrower','agreed_fee':'wo_amount','property_count':'no_of_properties','contact_number':'contact_no','email':'email_id','payer':'paid_by','fee_basis':'payment_by_mode','customer_payment_method':'cc_payment_mode','payer_name':'payment_by','payer_mobile':'payment_by_mobile','pay_by_date':'pay_by_date','gst_number':'cc_gst_no','payment_reference_number':'payment_res_no','payment_reference_name':'payment_res_name','legacy_deleted':'delete_status'}, {'lead':('lead','lead_id',False)}),
@@ -72,11 +80,6 @@ SPECS = [
  # --- Organization: administrative geography -------------------------------
  # Legacy stores these parent keys as varchar, so every link is optional and an
  # unresolved reference is reported rather than discarding the row.
- ('uam_user','state','state_id',m.State,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','legacy_status':'status'},{}),
- ('uam_user','district','district_id',m.District,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','legacy_status':'status'}, {'state':('state','state_id',True)}),
- ('uam_user','region','region_id',m.Region,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'},{}),
- ('uam_user','circle','circle_id',m.Circle,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'}, {'region':('region','region_id',True)}),
- ('uam_user','block','block_id',m.Block,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','area_type':'area_type','legacy_status':'status'}, {'district':('district','district_id',True),'region':('region','region_id',True),'circle':('circle','circle_id',True)}),
  ('uam_user','panchayat','panchayat_id',m.Panchayat,{'name':'name','name_hindi':'name_hindi','legacy_status':'status'}, {'block':('block','block_id',True)}),
  ('uam_user','village','village_id',m.Village,{'name':'name','name_hindi':'name_hindi','census_code':'census_code','pincode':'pincode','area_type':'area_type','legacy_status':'status','legacy_panchayat_code':'panchayat_id'},{}),
  ('uam_user','city','city_id',m.City,{'name':'name','name_hindi':'name_hindi','code':'code','legacy_status':'status'},{}),
@@ -90,7 +93,6 @@ SPECS = [
  ('lead_mngt','usage_of_reports','usage_of_reports_id',m.ReportUsage,{'name':'name','legacy_status':'status','legacy_deleted':'delete_status'}, {'service':('service_type','service_type_id',True),'subtype':('service_sub_type','service_sub_type_id',True)}),
 
  # --- Lead operations: territory, follow-up, targets, assignment -----------
- ('lead_mngt','sub_division','sub_division_id',m.LeadSubdivision,{'name':'name','legacy_status':'status','legacy_deleted':'delete_status'}, {'division':('division','division_id',True)}),
  ('lead_mngt','follow_up','follow_up_id',m.FollowUp,{'call_status':'call_status_id','logged_date_text':'date','logged_time_text':'time','remark':'remark','legacy_update_date':'update_date'}, {'lead':('lead','lead_id',False)}),
  ('lead_mngt','employee_target','target_id',m.EmployeeTarget,{'financial_year':'fin_year','period_start':'fy_start_date','period_end':'fy_end_date','target_cases':'target_cases','target_amount':'target_amount','legacy_status':'status'}, {'employee':('employee','emp_id',False)}),
  ('lead_mngt','employee_tagging','emp_tagging_id',m.EmployeeAssignmentRule,{'usage_of_report_code':'usage_of_report','asset_value':'asset_value'}, {'report_usage':('usage_of_reports','usage_of_report',True),'employee':('employee','emp_id',True),'client_type':('client_type','client_type_id',True),'service':('service_type','service_type_id',True),'subtype':('service_sub_type','service_sub_type_id',True)}),
