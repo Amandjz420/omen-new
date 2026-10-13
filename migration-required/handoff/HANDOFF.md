@@ -213,3 +213,10 @@ idempotent and never unlink.
    or `OMEN_UAM_ROOT`). On 28 September 2026 it located all 150,686: 143,973 in
    the bucket as stored, 6,663 with a doubled slash collapsed, and 50 in the local
    folder. Screens open a file only once it has been located.
+4. `manage.py link_document_history --settings=config.full_database` records each
+   valuation's earlier documents: legacy uploads tagged to a valuation
+   ("<user>-<valuation>-<option>") but no longer linked to an answer or a photo,
+   which the legacy "All uploaded docs history" listed. On 12 October 2026 it
+   recorded all 3,530, across 2,039 valuations, each with its question. Safe to
+   repeat; documents replaced or removed in the new system are recorded as it
+   happens.

@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/valuations/<uuid:pk>/photos/<uuid:photo_pk>/', endpoint_2.photo),
     path('api/valuations/<uuid:pk>/photos/<uuid:photo_pk>/file/', endpoint_2.photo_file),
     path('api/valuations/<uuid:pk>/documents/', endpoint_2.answer_document),
+    path('api/valuations/<uuid:pk>/documents/history/', endpoint_2.document_history),
     path('api/valuations/<uuid:pk>/documents/<uuid:document_pk>/file/', endpoint_2.document_file),
     path('api/verifications/', endpoint_3.queue),
     path('api/verifications/<uuid:pk>/', endpoint_3.detail),

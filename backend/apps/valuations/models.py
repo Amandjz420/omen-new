@@ -225,4 +225,22 @@ class Suggestion(Entity):
         app_label = "target_core"
 
 
-__all__ = ['Valuation', 'QuestionCategory', 'Question', 'QuestionOption', 'ValuationAnswer', 'ValuationVerification', 'Reversion', 'ValuationAttachment', 'ValuationEvent', 'AssistSource', 'Suggestion']
+class DocumentVersion(Entity):
+    """An earlier document of a valuation's answer: replaced or removed here, or a legacy
+    upload no longer linked to an answer. The legacy "All uploaded docs history"
+    (allDoc_view) listed them; 3,530 such uploads across 2,039 valuations."""
+    LEGACY, REPLACED, REMOVED = 'legacy', 'replaced', 'removed'
+    SOURCES = [(LEGACY, 'Earlier upload in the previous system'), (REPLACED, 'Replaced'), (REMOVED, 'Removed')]
+    valuation = models.ForeignKey('target_core.Valuation', on_delete=models.PROTECT, related_name='document_versions')
+    document = models.OneToOneField('target_core.Document', on_delete=models.PROTECT, related_name='+')
+    question = models.ForeignKey('target_core.Question', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    name = models.CharField(max_length=500, blank=True)
+    source = models.CharField(max_length=12, choices=SOURCES)
+    replaced_at = models.DateTimeField(null=True, blank=True)
+    by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+
+    class Meta:
+        app_label = "target_core"
+
+
+__all__ = ['Valuation', 'QuestionCategory', 'Question', 'QuestionOption', 'ValuationAnswer', 'ValuationVerification', 'Reversion', 'ValuationAttachment', 'ValuationEvent', 'AssistSource', 'Suggestion', 'DocumentVersion']

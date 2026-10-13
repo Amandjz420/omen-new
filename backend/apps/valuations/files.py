@@ -18,6 +18,7 @@ leaves a source identity pointing at nothing, which aborts the next import, so
 photos of an edited valuation are owned by it (PARENT_OWNED in sync.py). The file
 itself is kept as evidence; only the link is removed.
 """
+from django.utils import timezone
 from django.http import JsonResponse
 
 from target_core import models as m
@@ -128,6 +129,13 @@ def answer_document(request, pk):
     answer = answer_for(valuation, data)
     record(request.user, valuation, snapshot(valuation),
            action='attach_answer_document' if request.method == 'POST' else 'detach_answer_document')
+    if answer.document_id:
+        # The earlier document stays in the valuation's history, as the legacy
+        # "All uploaded docs history" kept every upload.
+        m.DocumentVersion.objects.get_or_create(document_id=answer.document_id, defaults={
+            'valuation': valuation, 'question': answer.question, 'name': answer.document.original_name or '',
+            'source': m.DocumentVersion.REPLACED if request.method == 'POST' else m.DocumentVersion.REMOVED,
+            'replaced_at': timezone.now(), 'by': request.user})
     if request.method == 'POST':
         answer.document = store(request.FILES.get('file'), 'document', f'valuations/{valuation.pk}/documents')
     else:
@@ -142,7 +150,25 @@ def answer_document(request, pk):
 def document_file(request, pk, document_pk):
     valuation = find(m.Valuation, pk)
     in_scope(request.user, valuation.case)
-    # Serve only a document that belongs to this valuation's answers.
-    if not m.ValuationAnswer.objects.filter(valuation=valuation, document_id=document_pk).exists():
+    # Serve only a document of this valuation's answers, current or earlier.
+    if not (m.ValuationAnswer.objects.filter(valuation=valuation, document_id=document_pk).exists()
+            or m.DocumentVersion.objects.filter(valuation=valuation, document_id=document_pk).exists()):
         raise IntakeError('File not found', 404)
     return serve(find(m.Document, document_pk))
+
+
+@endpoint(['GET'])
+def document_history(request, pk):
+    """Every document of the valuation's answers: those in place, and earlier ones,
+    replaced or removed here or left behind in the previous system (legacy allDoc_view)."""
+    valuation = find(m.Valuation, pk)
+    in_scope(request.user, valuation.case)
+    current = [{'document': a.document_id, 'name': a.document.original_name or '', 'question': a.question.text.strip(),
+                'status': 'current', 'on': a.document.created_at, 'by': ''}
+               for a in m.ValuationAnswer.objects.filter(valuation=valuation).exclude(document=None).select_related('document', 'question')]
+    earlier = [{'document': v.document_id, 'name': v.name or v.document.original_name or '', 'question': v.question.text.strip() if v.question_id else '',
+                'status': v.source, 'on': v.replaced_at or v.document.created_at, 'by': v.by.get_full_name() or v.by.username if v.by_id else ''}
+               for v in valuation.document_versions.select_related('document', 'question', 'by')]
+    rows = sorted(current + earlier, key=lambda r: (r['on'] is None, r['on']), reverse=True)
+    return JsonResponse({'documents': rows})
+

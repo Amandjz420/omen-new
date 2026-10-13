@@ -61,6 +61,7 @@ LAYOUTS = {
     'ValuationVerification': ('valuation__report_number legal_status technical_status social_status general_status final_status final_done_by_name', 'valuation__report_number valuation__case__lead__number final_done_by_name legal_done_by_name technical_done_by_name', 'legal_status technical_status social_status general_status final_status', '-created_at'),
     'Reversion': ('valuation__report_number stage reverted_on reverted_by_name remark', 'valuation__report_number reverted_by_name remark', 'stage reverted_on', '-reverted_on'),
     'ValuationEvent': ('valuation__report_number kind from_status to_status on by_name reason', 'valuation__report_number by_name reason', 'kind on', '-on'),
+    'DocumentVersion': ('valuation__report_number name source replaced_at', 'valuation__report_number name', 'source', '-replaced_at'),
     'AssistSource': ('valuation__report_number kind status duration_seconds created_at', 'valuation__report_number text', 'kind status created_at', '-created_at'),
     'Suggestion': ('valuation__report_number question__text display confidence differs status decided_at', 'valuation__report_number question__text display quote', 'status confidence differs', '-created_at'),
     'BankReport': ('report_number valuation__case__borrower__name bank__name report_date revision market_fair_amount generated_at approved_at superseded_at', 'report_number valuation__case__borrower__name our_reference your_reference unique_reference', 'bank report_date approved_at superseded_at', '-report_date'),

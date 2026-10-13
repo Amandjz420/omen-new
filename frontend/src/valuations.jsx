@@ -144,7 +144,7 @@ function ValuationForm({api, id, onBack}) {
       </nav>
       <div className="section-body">
         {error && <p role="alert" className="error">{error}</p>}
-        {key === '__billing' ? <Billing api={api} id={id}/> : key === '__photos' ? <Photos api={api} id={id}/> :
+        {key === '__billing' ? <Billing api={api} id={id}/> : key === '__photos' ? <><Photos api={api} id={id}/><DocumentHistory api={api} id={id}/></> :
         key === '__submit' ? <Submission api={api} id={id} onJump={choose} onDone={setHead}/> :
         !section ? <p>Loading section…</p> : <>
           {section.questions.map(q => <Question key={q.id} q={q} value={draft[q.id]} readOnly={readOnly} onChange={a => edit(q.id, a)}
@@ -369,3 +369,23 @@ function Submission({api, id, onJump, onDone}) {
     {!locked && <p className="actions"><button disabled={saving || data.missing_required.length > 0}>{saving ? 'Submitting…' : 'Submit valuation'}</button></p>}
   </form>;
 }
+
+// Every document of the valuation's answers, current and earlier, as the legacy
+// "All uploaded docs history": a replaced or removed document stays listed and opens.
+const VERSION_LABEL = {current: 'In place', replaced: 'Replaced', removed: 'Removed', legacy: 'Earlier upload (previous system)'};
+export function DocumentHistory({api, id}) {
+  const [rows, setRows] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {if (open && rows === null) api(`valuations/${id}/documents/history/`).then(r => setRows(r.documents)).catch(() => setRows([]));}, [open]);
+  return <section className="document-history">
+    <button type="button" className="link" onClick={() => setOpen(!open)} aria-expanded={open}>
+      {open ? 'Hide' : 'Show'} all uploaded documents{rows ? ` (${rows.length})` : ''}</button>
+    {open && rows === null && <p className="muted">Loading…</p>}
+    {open && rows?.length === 0 && <p className="muted">No documents have been uploaded for this valuation.</p>}
+    {open && rows?.length > 0 && <ul>{rows.map(r => <li key={r.document}>
+      <a href={`/api/valuations/${id}/documents/${r.document}/file/`} target="_blank" rel="noopener">{r.name || 'Document'}</a>
+      {' · '}{VERSION_LABEL[r.status] || r.status}{r.question ? ` · ${r.question}` : ''}
+      {r.on ? ` · ${new Date(r.on).toLocaleDateString('en-IN')}` : ''}{r.by ? ` · ${r.by}` : ''}</li>)}</ul>}
+  </section>;
+}
+

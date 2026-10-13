@@ -278,3 +278,34 @@ class BillingTotalsTests(Extras):
         self.assertEqual(self.bill({'1': '1500'}).status_code, 409)
         self.assertEqual(self.bill({'1': '1000', '3': '100'}).json()['totals']['total'], '1100.00')
         self.assertEqual(m.ValuationCharge.objects.filter(valuation_id=self.v, charge_type=self.heads['1']).count(), 2)
+
+
+class DocumentHistoryTests(Extras):
+    """A valuation's earlier documents stay listed and openable, as the legacy "All
+    uploaded docs history" listed every upload."""
+
+    def setUp(self):
+        super().setUp()
+        self.choose_documents(self.deed)
+
+    def history(self, v=None):
+        return self.client.get(f'/api/valuations/{v or self.v}/documents/history/').json()['documents']
+
+    def test_a_replaced_document_moves_to_the_history(self):
+        first = self.attach(self.deed, name='deed-v1.pdf').json()['file']
+        self.attach(self.deed, name='deed-v2.pdf')
+        self.assertEqual([(r['name'], r['status']) for r in self.history()], [('deed-v2.pdf', 'current'), ('deed-v1.pdf', 'replaced')])
+        earlier = m.DocumentVersion.objects.get()
+        self.assertEqual((str(earlier.document_id), earlier.question_id), (str(first['id']), self.docs.pk))
+        self.assertIn(self.client.get(f"/api/valuations/{self.v}/documents/{first['id']}/file/").status_code, (200, 302))   # still opens
+
+    def test_a_removed_document_is_kept_in_the_history(self):
+        self.attach(self.deed)
+        self.client.delete(f'/api/valuations/{self.v}/documents/?question={self.docs.pk}&option={self.deed.pk}')
+        self.assertEqual([r['status'] for r in self.history()], ['removed'])
+
+    def test_another_valuations_earlier_document_does_not_open_here(self):
+        first = self.attach(self.deed, name='deed-v1.pdf').json()['file']
+        self.attach(self.deed, name='deed-v2.pdf')
+        other = self.client.post(f'/api/valuations/cases/{self.lead_with_case().pk}/', {}, content_type='application/json').json()['id']
+        self.assertEqual(self.client.get(f"/api/valuations/{other}/documents/{first['id']}/file/").status_code, 404)
