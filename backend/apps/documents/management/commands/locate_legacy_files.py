@@ -1,9 +1,11 @@
 """Record where each of the previous system's files is.
 
-Lists the bucket's LeadUpload/ and UAMUpload/ folders and checks the local copy of
-the user-management uploads, then records on each legacy document its exact
-location: the stored key if it exists, otherwise the key with doubled slashes
-collapsed, otherwise nothing, meaning not found. Idempotent; run after each import:
+Lists the bucket's LeadUpload/ and UAMUpload/ folders and the copy of the
+user-management uploads in OMEN/uamupload/, then records on each legacy document its
+exact location: for a user-management upload its copy first; then the stored key if
+it exists, otherwise the key with doubled slashes collapsed; for a user-management
+upload, last, the local folder if this machine has it; otherwise nothing, meaning not
+found. Idempotent; run after each import and after upload_uam_files:
 
     manage.py locate_legacy_files
 """
@@ -18,7 +20,7 @@ from django.utils import timezone
 
 from target_core import models as m
 from apps.documents import s3
-from apps.documents.storage import LOCAL_MARK, PREFIX, contained
+from apps.documents.storage import LOCAL_MARK, PREFIX, UAM_COPY, contained
 
 
 def listing(prefix):
@@ -42,19 +44,23 @@ class Command(BaseCommand):
         if not s3.configured():
             raise CommandError('The S3 credentials are not configured (AWS_* in the repository .env).')
         self.stdout.write('Listing the bucket…')
-        found = {p: listing(p) for p in PREFIX.values()}
-        self.stdout.write(f"  LeadUpload/ {len(found['LeadUpload/']):,} objects, UAMUpload/ {len(found['UAMUpload/']):,}")
+        found = {p: listing(p) for p in [*PREFIX.values(), UAM_COPY]}
+        self.stdout.write(f"  LeadUpload/ {len(found['LeadUpload/']):,} objects, UAMUpload/ {len(found['UAMUpload/']):,}, "
+                          f"{UAM_COPY} {len(found[UAM_COPY]):,}")
         now, outcome, changed = timezone.now(), Counter(), []
         for doc in m.Document.objects.filter(storage_provider__in=PREFIX).only('id', 'storage_provider', 'storage_key',
                                                                                'legacy_location', 'legacy_checked_at').iterator(2000):
             prefix, key = PREFIX[doc.storage_provider], doc.storage_key.lstrip('/')
             location, how = '', 'not found'
-            if doc.storage_provider == 'legacy_uam_local' and contained(settings.LEGACY_UAM_ROOT, key):
-                location, how = LOCAL_MARK + key, 'local uploads folder'
+            uam = doc.storage_provider == 'legacy_uam_local'
+            if uam and UAM_COPY + key in found[UAM_COPY]:
+                location, how = UAM_COPY + key, 'bucket, uploads folder copy'
             elif prefix + key in found[prefix]:
                 location, how = prefix + key, 'bucket, as stored'
             elif prefix + re.sub('/+', '/', key) in found[prefix]:
                 location, how = prefix + re.sub('/+', '/', key), 'bucket, doubled slash collapsed'
+            elif uam and contained(settings.LEGACY_UAM_ROOT, key):
+                location, how = LOCAL_MARK + key, 'local uploads folder'
             outcome[(doc.storage_provider, how)] += 1
             if doc.legacy_location != location or doc.legacy_checked_at is None:
                 doc.legacy_location, doc.legacy_checked_at = location, now

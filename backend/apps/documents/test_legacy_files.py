@@ -82,6 +82,18 @@ class ServingTests(TestCase):
                 with self.assertRaises(IntakeError):
                     serve(escape)
 
+    def test_a_user_management_upload_copied_to_the_bucket_comes_from_there(self):
+        with tempfile.TemporaryDirectory() as root:
+            (Path(root) / '202411').mkdir()
+            (Path(root) / '202411' / 'img_67.jpg').write_bytes(b'\xff\xd8\xff\xe0 jpeg')
+            doc = m.Document.objects.create(storage_provider='legacy_uam_local', storage_key='202411/img_67.jpg',
+                                            legacy_location='OMEN/uamupload/202411/img_67.jpg',
+                                            legacy_checked_at=datetime.datetime.now(datetime.timezone.utc))
+            with override_settings(LEGACY_UAM_ROOT=root):                # even where the folder still exists
+                response = serve(doc)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/OMEN/uamupload/202411/img_67.jpg?', response['Location'])
+
     def test_the_screens_learn_whether_a_file_can_be_opened(self):
         self.assertEqual((file_json(self.lead_doc())['available'], file_json(self.lead_doc())['local']), (True, False))
         self.assertFalse(file_json(self.lead_doc(location=''))['available'])
@@ -116,7 +128,11 @@ class LocatingTests(TestCase):
             Path(root, '202411').mkdir()
             Path(root, '202411', 'd.jpg').write_bytes(b'x')
             uam = m.Document.objects.create(storage_provider='legacy_uam_local', storage_key='202411/d.jpg')
-            bucket = {'LeadUpload/': {'LeadUpload/202403_10//a.jpeg', 'LeadUpload/202102_14/b.jpeg'}, 'UAMUpload/': set()}
+            copied = m.Document.objects.create(storage_provider='legacy_uam_local', storage_key='202411/e.jpg')
+            Path(root, '202411', 'e.jpg').write_bytes(b'x')
+            older = m.Document.objects.create(storage_provider='legacy_uam_local', storage_key='201908/f.jpg')
+            bucket = {'LeadUpload/': {'LeadUpload/202403_10//a.jpeg', 'LeadUpload/202102_14/b.jpeg'},
+                      'UAMUpload/': {'UAMUpload/201908/f.jpg'}, 'OMEN/uamupload/': {'OMEN/uamupload/202411/e.jpg'}}
             with override_settings(LEGACY_UAM_ROOT=root), \
                  mock.patch('apps.documents.management.commands.locate_legacy_files.listing', side_effect=lambda p: bucket[p]):
                 call_command('locate_legacy_files', stdout=open(os.devnull, 'w'))
@@ -124,7 +140,9 @@ class LocatingTests(TestCase):
         self.assertEqual(found[exact.pk], 'LeadUpload/202403_10//a.jpeg')             # kept: the bucket has "//"
         self.assertEqual(found[collapsed.pk], 'LeadUpload/202102_14/b.jpeg')          # collapsed: the bucket has "/"
         self.assertEqual(found[gone.pk], '')
-        self.assertEqual(found[uam.pk], 'local:202411/d.jpg')
+        self.assertEqual(found[uam.pk], 'local:202411/d.jpg')                         # only on this machine
+        self.assertEqual(found[copied.pk], 'OMEN/uamupload/202411/e.jpg')            # the bucket copy wins
+        self.assertEqual(found[older.pk], 'UAMUpload/201908/f.jpg')
         self.assertTrue(all(m.Document.objects.values_list('legacy_checked_at', flat=True)))
 
 

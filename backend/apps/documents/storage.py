@@ -136,9 +136,12 @@ def store(upload, purpose, folder):
 #     bucket holds both forms of a doubled slash: 143,973 keys exist as stored,
 #     including some with "//", and 6,663 only with it collapsed. Neither rule alone
 #     works, so the location is recorded, not guessed.
-#   * User-management uploads: the local copy of its upload folder, else the
-#     bucket's UAMUpload/ folder, which holds only 80 older files.
+#   * User-management uploads: the copy of its local upload folder made by
+#     manage.py upload_uam_files under OMEN/uamupload/; else the bucket's own
+#     UAMUpload/ folder, which holds only 80 older files; else, on a machine that
+#     still has it, the local folder itself.
 PREFIX = {'legacy_lead_s3': 'LeadUpload/', 'legacy_uam_local': 'UAMUpload/'}
+UAM_COPY = 'OMEN/uamupload/'
 LOCAL_MARK = 'local:'
 
 
@@ -153,6 +156,8 @@ def s3_key(document):
         return document.legacy_location
     if document.legacy_checked_at:
         return None                                      # located, and not in the bucket
+    if document.storage_provider == 'legacy_uam_local':
+        return UAM_COPY + document.storage_key.lstrip('/')
     return PREFIX[document.storage_provider] + document.storage_key.lstrip('/')
 
 
@@ -165,7 +170,10 @@ def contained(root, key):
 def local_path(document):
     if document.storage_provider == 'local':
         return contained(settings.MEDIA_ROOT, document.storage_key)
-    if document.storage_provider == 'legacy_uam_local':
+    # The local folder only where locating found the file there and not in the bucket,
+    # or before files have been located at all.
+    if document.storage_provider == 'legacy_uam_local' and (
+            not document.legacy_checked_at or (document.legacy_location or '').startswith(LOCAL_MARK)):
         return contained(settings.LEGACY_UAM_ROOT, document.storage_key)
     return None
 
