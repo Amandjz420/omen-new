@@ -130,8 +130,16 @@ def in_scope(user, case):
 # --- the form ----------------------------------------------------------------
 
 def live_questions(case):
-    return m.Question.objects.filter(service=case.service, subtype=case.subtype,
-                                     legacy_deleted__in=LIVE, legacy_status='1')
+    """The form's questions, by the legacy rule (ValuationService.questionList and
+    findAllQuesValuation): the case's service and subtype, not deleted, in an active
+    section. A question's own status is not consulted, as the legacy form did not;
+    the bank is not consulted either: a bank's own form is its own subtype, such as
+    L & B ( SBIN). Previously the question's status was checked and the section's
+    was not, showing 46 questions from retired sections and hiding one."""
+    # A section is hidden only when switched off ('0'), so one added here, without a
+    # legacy status, shows. Like the legacy join, a question needs a section.
+    return (m.Question.objects.filter(service=case.service, subtype=case.subtype, legacy_deleted__in=LIVE, category__isnull=False)
+            .exclude(category__legacy_status='0'))
 
 
 def form_questions(valuation):

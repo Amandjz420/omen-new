@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 
 from target_core import models as m
+from apps.valuations.services import form_questions, live_questions
 from target_core.sync import source_key, synchronize
 from apps.migration_pipeline.tests import FakeSource, dataset, row
 
@@ -456,3 +457,37 @@ class HistoricalAnswerTests(Form, TestCase):
         grid = self.grid_of(self.section())
         rows = [{'group': 3, 'cells': {str(self.name.pk): 'A'}}, {'group': 3, 'cells': {str(self.name.pk): 'B'}}]
         self.assertEqual(self.put([{'question': grid['id'], 'rows': rows}]).status_code, 400)
+
+
+class LegacyQuestionRuleTests(Form, TestCase):
+    """The form shows what the legacy form showed: the case's service and subtype, not
+    deleted, in a section that is not switched off; a question's own status is not
+    consulted. Answered questions always show."""
+
+    def setUp(self):
+        self.build()
+        self.client.force_login(User.objects.create_user('office', password='x', is_staff=True))
+        self.case = self.lead_with_case()
+
+    def question(self, category, **extra):
+        return m.Question.objects.create(service=self.case.service, subtype=self.case.subtype, category=category, text='Q',
+                                         answer_type=3, legacy_deleted='0', **extra)
+
+    def shown(self):
+        return set(live_questions(self.case).values_list('pk', flat=True))
+
+    def test_a_switched_off_section_is_hidden_unless_answered(self):
+        retired = m.QuestionCategory.objects.create(name='PUNB', legacy_status='0')
+        q = self.question(retired)
+        self.assertNotIn(q.pk, self.shown())                                      # previously shown
+        v = m.Valuation.objects.get(pk=self.client.post(f'/api/valuations/cases/{self.case.pk}/', {}, content_type='application/json').json()['id'])
+        m.ValuationAnswer.objects.create(valuation=v, question=q, answer_group=0, value='Imported answer')
+        self.assertIn(q.pk, set(form_questions(v).values_list('pk', flat=True)))  # its answer stays visible
+
+    def test_an_inactive_question_in_an_active_section_shows_as_it_did(self):
+        q = self.question(m.QuestionCategory.objects.create(name='PART C', legacy_status='1'), legacy_status='0')
+        self.assertIn(q.pk, self.shown())                                         # previously hidden (SBIN Guide Line Value)
+
+    def test_a_section_added_here_without_a_legacy_status_shows(self):
+        q = self.question(m.QuestionCategory.objects.create(name='New section'))
+        self.assertIn(q.pk, self.shown())

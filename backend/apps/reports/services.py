@@ -111,6 +111,15 @@ def blockers(valuation):
     return reasons
 
 
+def office_bank(office):
+    """The office's bank: as recorded, or else from its IFSC in the bank directory (131
+    of 140 bank offices without one have an IFSC the directory knows)."""
+    if office.bank_id:
+        return office.bank
+    branch = m.BankBranch.objects.filter(ifsc__iexact=(office.ifsc or '').strip()).select_related('bank').first() if office.ifsc else None
+    return branch.bank if branch and branch.bank_id else None
+
+
 def resolve_template(valuation, bank):
     case = valuation.case
     office = case.lead.office
@@ -134,7 +143,7 @@ def report_json(valuation):
     office = valuation.case.lead.office
     bank_client = is_bank_client(valuation)
     template = error = None
-    bank = report.bank if report and report.bank_id else (office.bank if bank_client else None)
+    bank = report.bank if report and report.bank_id else (office_bank(office) if bank_client else None)
     try:
         chosen = resolve_template(valuation, bank) if (bank or not bank_client) else None
         if chosen:

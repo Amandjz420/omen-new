@@ -234,3 +234,48 @@ class EditAndProgressTests(IntakeFixture, TestCase):
         m.LegacyAccount.objects.create(name='Intake admin', login_id='intake-admin', user=self.user, employee=self.employee,
                                        must_change_password=False)
         self.assertEqual(self.client.get('/api/intake/lookups/').json()['me']['employee_id'], str(self.employee.pk))
+
+
+class BankFormTests(IntakeFixture, TestCase):
+    """A bank's own valuation form (a subtype named with its IFSC prefix) only for that
+    bank's leads, as the bank of the lead's client office says."""
+
+    def setUp(self):
+        super().setUp()
+        self.office.ifsc = 'SBIN0000383'; self.office.save()
+        self.sbi = m.ServiceSubtype.objects.create(name='L & B ( SBIN)', service=self.service)
+        self.canara = m.ServiceSubtype.objects.create(name='L & B ( CNRB)', service=self.service)
+
+    def request(self, subtype, lead=None):
+        lead = lead or self.create()
+        return self.send(f'/api/intake/leads/{lead.pk}/services/', {'service': str(self.service.pk), 'subtype': str(subtype.pk), 'case_count': 1})
+
+    def test_another_banks_form_is_refused(self):
+        r = self.request(self.canara)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("L & B ( CNRB) is the form for CNRB; this lead's client is SBIN", r.json()['error'])
+        r = self.send('/api/intake/leads/', self.data(services=[{'service': str(self.service.pk), 'subtype': str(self.canara.pk), 'case_count': 1}]))
+        self.assertEqual(r.status_code, 400)                                      # at creation too
+
+    def test_the_banks_own_form_or_the_general_one_may_be_used(self):
+        self.assertEqual(self.request(self.sbi).status_code, 201)
+        self.assertEqual(self.request(m.ServiceSubtype.objects.create(name='L & B', service=self.service)).status_code, 201)
+
+    def test_without_a_valid_ifsc_any_form_may_be_used(self):
+        self.office.ifsc = ''; self.office.save()
+        self.assertEqual(self.request(self.canara).status_code, 201)
+
+    def test_the_bank_code_is_read_from_the_form_and_the_ifsc(self):
+        from apps.catalog.banks import form_bank, office_bank
+        for name, code in (('L & B ( SBIN)', 'SBIN'), ('Land ( CNRB )', 'CNRB'), ('L & B', None), ('Flat & Shop', None)):
+            self.assertEqual(form_bank(m.ServiceSubtype(name=name)), code, name)
+        for ifsc, code in (('sbin0000383', 'SBIN'), ('\tSBI', None), ('', None), ('UCBA0001234', 'UCBA')):
+            self.assertEqual(office_bank(m.ClientOffice(ifsc=ifsc)), code, ifsc)
+
+    def test_a_report_takes_the_bank_from_the_ifsc_when_the_office_records_none(self):
+        from apps.reports.services import office_bank
+        sbi = m.Bank.objects.create(name='State Bank of India')
+        m.BankBranch.objects.create(name='HOSHANGABAD', bank=sbi, ifsc='SBIN0000383')
+        self.assertEqual(office_bank(self.office), sbi)
+        self.office.bank = m.Bank.objects.create(name='Recorded bank'); self.office.save()
+        self.assertEqual(office_bank(self.office).name, 'Recorded bank')        # what is recorded wins

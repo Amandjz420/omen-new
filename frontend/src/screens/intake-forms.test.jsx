@@ -175,3 +175,20 @@ describe('the follow-up form', () => {
     expect(save.mock.calls[0][0]).toMatchObject({status: '4', notify_time: '10:00', remark: 'After the site visit'});
   });
 });
+
+describe("a bank's own form", () => {
+  const SUBTYPES = [...CATALOG.subtypes, {id: 'sbin', name: 'L & B ( SBIN)', service_id: 'val'}, {id: 'cnrb', name: 'L & B ( CNRB)', service_id: 'val'}];
+
+  it("is chosen for that bank's leads, and another bank's is not offered", async () => {
+    backend({'intake/lookups/orderer': {matches: [POONAM]}, 'intake/catalog': {...CATALOG, subtypes: SUBTYPES}});
+    renderApp(<Routes><Route path="/leads/new" element={<NewLeadForm/>}/></Routes>, {route: '/leads/new'});
+    fireEvent.change(await screen.findByLabelText(/Lead giver mobile no/), {target: {value: '9826012345'}});    // an SBI branch
+    await screen.findByLabelText("The lead giver's details");
+    await choose('Service 1', 'Valuation of asset');
+    expect(field('Sub service 1').value).toBe('L & B ( SBIN)');
+    expect(screen.getByText("SBIN's own form is chosen; the general form is also allowed.")).toBeTruthy();
+    fireEvent.click(field('Sub service 1'));
+    expect(screen.getByRole('option', {name: 'L & B'})).toBeTruthy();
+    expect(screen.queryByRole('option', {name: 'L & B ( CNRB)'})).toBeNull();
+  });
+});

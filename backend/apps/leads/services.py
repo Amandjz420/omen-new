@@ -48,6 +48,11 @@ def editable(lead):
 def service_check(obj):
     if obj.subtype_id and obj.subtype.service_id != obj.service_id:
         raise IntakeError('The subtype does not belong to the selected service')
+    # A bank's own form only for that bank's leads (apps/catalog/banks.py).
+    from apps.catalog.banks import wrong_bank
+    reason = obj.subtype_id and obj.lead_id and wrong_bank(obj.subtype, obj.lead.office)
+    if reason:
+        raise IntakeError(reason)
 
 
 def lead_check(lead):

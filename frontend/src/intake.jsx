@@ -1,4 +1,4 @@
-import {BorrowerForm, CaseForm, FollowUpForm, useLookups} from './screens/IntakeForms.jsx';
+import {BorrowerForm, CaseForm, FollowUpForm, formsFor, ifscBank, ownForm, useLookups} from './screens/IntakeForms.jsx';
 import {confirmAction} from './components/confirm.jsx';
 import React, {useEffect, useState} from 'react';
 
@@ -93,9 +93,12 @@ function Contacts({api, office, catalog, value, onSelect}) {
 
 // The subtype list depends on the service, so the service comes first. It had come
 // after the subtype, which then showed an empty list before any service was chosen.
-export function ServiceForm({catalog, save}) {
+export function ServiceForm({catalog, save, ifsc = ''}) {
   const [service,setService] = useState('');
-  const subtypes = catalog.subtypes.filter(s => s.service_id === service);
+  // The bank decides the form: its own pre-chosen, another bank's not offered.
+  const bank = ifscBank(ifsc);
+  const subtypes = formsFor(catalog.subtypes.filter(s => s.service_id === service), bank);
+  const own = ownForm(subtypes, bank);
   const hint = !service ? 'Choose a service first' : subtypes.length ? 'Select…' : 'This service has no subtypes';
   return <Form title="Add requested service" save={save}
     fields={[input('party_count','Expected parties','number',false),input('case_count','Expected cases','number',false)]}
@@ -103,7 +106,7 @@ export function ServiceForm({catalog, save}) {
       <label>Service<select name="service" required value={service} onChange={e => setService(e.target.value)}>
         <option value="">Select…</option>{catalog.services.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}
       </select></label>
-      <label>Asset subtype<select name="subtype" key={service || 'none'} defaultValue="" disabled={!service || !subtypes.length}>
+      <label>Asset subtype<select name="subtype" key={`${service}-${own?.id || ''}`} defaultValue={own ? own.id : ''} disabled={!service || !subtypes.length}>
         <option value="">{hint}</option>{subtypes.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}
       </select></label>
     </>}/>;
@@ -158,7 +161,7 @@ export function IntakeLead({api, leadId, catalog: supplied, onChange}) {
     <section className="panel"><Form key={lead.updated_at || lead.id} title="Assignment and intake date" initial={{assigned_employee:lead.assigned_employee,received_date:lead.received_date}}
       fields={[option('assigned_employee','Assigned employee',catalog.employees,false),input('received_date','Received date','date')]}
       save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify({...data,contact})});await reload();}}/>
-    <ServiceForm catalog={catalog} save={data => add('services',data)}/>
+    <ServiceForm catalog={catalog} ifsc={lead.office_detail?.ifsc} save={data => add('services',data)}/>
     {editing?.kind === 'borrowers' && <BorrowerForm key={editing.record.id} lead={lead} initial={editing.record} onCancel={() => setEditing(null)}
       onUpdate={(id, data) => change('borrowers', id, data)}/>}
     {editing?.kind === 'cases' && <CaseForm key={editing.record.id} lead={lead} catalog={catalog} initial={editing.record} onCancel={() => setEditing(null)}

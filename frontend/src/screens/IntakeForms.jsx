@@ -18,6 +18,14 @@ const codes = (rows = []) => rows.map(r => ({value: String(r.code), label: r.lab
 const digitsOf = v => String(v || '').replace(/\D/g, '').slice(-10);
 const today = () => new Date().toISOString().slice(0, 10);
 
+// A bank's own valuation form is its own subtype, named with its IFSC prefix, as in
+// L & B ( SBIN); a client office's bank is its IFSC's prefix (apps/catalog/banks.py).
+export const formBank = name => (String(name || '').match(/\(\s*([A-Z]{4})\s*\)\s*$/) || [])[1] || null;
+export const ifscBank = ifsc => (String(ifsc || '').trim().toUpperCase().match(/^([A-Z]{4})0[A-Z0-9]{6}$/) || [])[1] || null;
+/** The forms this bank's leads may use: the general ones and the bank's own. */
+export const formsFor = (subtypes, bank) => subtypes.filter(s => !bank || !formBank(s.name) || formBank(s.name) === bank);
+export const ownForm = (subtypes, bank) => (bank && subtypes.find(s => formBank(s.name) === bank)) || null;
+
 function ReadOnly({label, value}) {
   return <TextInput label={label} value={value || '—'} readOnly variant="filled"/>;
 }
@@ -80,6 +88,18 @@ export function NewLeadForm() {
     } catch (e) { setError(e.message); }
   }
 
+  // The bank decides the form: its own pre-chosen, another bank's not offered.
+  const bank = ifscBank(known ? known.office?.ifsc : office?.ifsc);
+  const formsOf = service => formsFor((catalog.data?.subtypes || []).filter(x => String(x.service_id) === String(service)), bank);
+  useEffect(() => {
+    setRows(rs => rs.map(r => {
+      if (!r.service) return r;
+      const allowed = formsOf(r.service);
+      if (r.subtype && allowed.some(x => String(x.id) === String(r.subtype))) return r;
+      const own = ownForm(allowed, bank);
+      return {...r, subtype: own ? String(own.id) : null};
+    }));
+  }, [bank]);   // eslint-disable-line react-hooks/exhaustive-deps
   const total = rows.reduce((n, r) => n + (Number(r.case_count) || 0), 0);
   async function submit(event) {
     event.preventDefault(); setError(''); setBusy(true);
@@ -161,12 +181,14 @@ export function NewLeadForm() {
       <Table.ScrollContainer minWidth={520}><Table>
         <Table.Thead><Table.Tr><Table.Th>Type of service</Table.Th><Table.Th>Type of sub service</Table.Th><Table.Th>No. of case / property</Table.Th><Table.Th/></Table.Tr></Table.Thead>
         <Table.Tbody>{rows.map((r, i) => {
-          const subtypes = C.subtypes.filter(s => String(s.service_id) === String(r.service));
+          const subtypes = formsOf(r.service);
+          const own = ownForm(subtypes, bank);
           const set = patch => setRows(rs => rs.map((x, n) => (n === i ? {...x, ...patch} : x)));
           return <Table.Tr key={i}>
-            <Table.Td><Select aria-label={`Service ${i + 1}`} required={i === 0} data={options(C.services)} value={r.service} onChange={v => set({service: v, subtype: null})} placeholder="Select…"/></Table.Td>
+            <Table.Td><Select aria-label={`Service ${i + 1}`} required={i === 0} data={options(C.services)} value={r.service} onChange={v => { const mine = ownForm(formsOf(v), bank); set({service: v, subtype: mine ? String(mine.id) : null}); }} placeholder="Select…"/></Table.Td>
             <Table.Td><Select aria-label={`Sub service ${i + 1}`} data={options(subtypes)} value={r.subtype} onChange={v => set({subtype: v})} disabled={!r.service || !subtypes.length}
-                              placeholder={!r.service ? 'Choose a service first' : subtypes.length ? 'Select…' : 'No sub services'}/></Table.Td>
+                              placeholder={!r.service ? 'Choose a service first' : subtypes.length ? 'Select…' : 'No sub services'}
+                              description={own && String(r.subtype) === String(own.id) ? `${bank}'s own form is chosen; the general form is also allowed.` : undefined}/></Table.Td>
             <Table.Td><TextInput aria-label={`Cases ${i + 1}`} required inputMode="numeric" value={r.case_count} onChange={e => set({case_count: e.currentTarget.value})}/></Table.Td>
             <Table.Td>{rows.length > 1 && <Button variant="subtle" color="red" size="xs" onClick={() => setRows(rs => rs.filter((_, n) => n !== i))}>Remove</Button>}</Table.Td>
           </Table.Tr>;
