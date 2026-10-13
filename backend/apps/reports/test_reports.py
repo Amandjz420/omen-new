@@ -195,6 +195,8 @@ class LiableAssessorTests(BankReportTests):
         super().setUp()
         self.assignee = m.Employee.objects.create(name='Rahul Patidar', legacy_status='1')
         m.Lead.objects.filter(case__valuation__pk=self.v).update(assigned_employee=self.assignee)
+        # Nothing chosen at submission: the lead's assignee is the fallback these test.
+        m.Valuation.objects.filter(pk=self.v).update(submitted_to=None)
 
     def change(self, employee, reason='Branch reassigned'):
         return self.client.post(f'/api/bank-reports/{self.v}/liable/', {'employee': str(employee.pk), 'reason': reason},
@@ -233,3 +235,46 @@ class LiableAssessorTests(BankReportTests):
 
     def test_there_is_nothing_to_change_before_a_report(self):
         self.assertEqual(self.change(self.assignee).status_code, 409)
+
+
+class SubmissionLiableTests(BankReportTests):
+    """The submission's "Liable FA" (submitted_to): the lead's assignee unless chosen,
+    and the one the bank report is credited to."""
+
+    def setUp(self):
+        super().setUp()
+        self.assignee = m.Employee.objects.create(name='Rahul Patidar', legacy_status='1')
+        m.Lead.objects.filter(case__valuation__pk=self.v).update(assigned_employee=self.assignee)
+
+    def test_the_submission_offers_the_leads_assignee(self):
+        m.Valuation.objects.filter(pk=self.v).update(submitted_to=None)
+        body = self.client.get(f'/api/valuations/{self.v}/submission/').json()
+        self.assertEqual(str(body['values']['submitted_to']), str(self.assignee.pk))
+
+    def test_the_report_is_credited_to_the_one_chosen_at_submission(self):
+        chosen = m.Employee.objects.create(name='Chosen at submission', legacy_status='1')
+        m.Valuation.objects.filter(pk=self.v).update(submitted_to=chosen)
+        self.assertEqual(self.generate().json()['report']['liable']['name'], 'Chosen at submission')
+
+
+class ValuesRequiredTests(BankReportTests):
+    """Market, realisable and distress values are required for a property valuation
+    only; legacy reports of other kinds almost never gave them."""
+
+    def without_values(self):
+        return self.generate(market_fair_amount='', realisable_value_amount='', distress_value_amount='')
+
+    def test_a_property_valuation_needs_its_values(self):
+        self.service.name, self.subtype.name = 'Valuation of asset', 'L & B ( SBIN)'
+        self.service.save(); self.subtype.save()
+        self.assertEqual(self.without_values().status_code, 400)
+        self.assertTrue(self.client.get(f'/api/bank-reports/{self.v}/').json()['values_required'])
+
+    def test_a_certificate_or_a_plant_valuation_does_not(self):
+        """Regression: values were required for every report, refusing about 28% of them."""
+        self.service.name = 'Chartered Engineer Certificate'; self.service.save()
+        self.assertEqual(self.without_values().status_code, 200, self.without_values().content)
+        self.assertFalse(self.client.get(f'/api/bank-reports/{self.v}/').json()['values_required'])
+        self.service.name, self.subtype.name = 'Valuation of asset', 'Plant & Machinery'
+        self.service.save(); self.subtype.save()
+        self.assertFalse(self.client.get(f'/api/bank-reports/{self.v}/').json()['values_required'])

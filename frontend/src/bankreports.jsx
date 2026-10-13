@@ -63,7 +63,8 @@ export function ReportForm({api, id, onBack}) {
     try {adopt(await api(`bank-reports/${id}/`, {method: 'PUT', body: JSON.stringify(form)}));}
     catch (err) {setError(err.message);} finally {setSaving(false);}
   }
-  const amount = (k, label, required = true) => <label>{label}{required && <span className="required"> *</span>}
+  // The values are required for a property valuation only (values_required).
+  const amount = (k, label, required = data.values_required !== false) => <label>{label}{required && <span className="required"> *</span>}
     <input inputMode="decimal" value={form[k] ?? ''} disabled={blocked} required={required} onChange={e => set(k, e.target.value)}/>
     {form[k] !== '' && form[k] != null && <small className="muted">Rs. {rupees(form[k])}</small>}</label>;
   const text = (k, label, required = false) => <label>{label}{required && <span className="required"> *</span>}

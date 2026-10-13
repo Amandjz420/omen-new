@@ -120,9 +120,24 @@ def office_bank(office):
     return branch.bank if branch and branch.bank_id else None
 
 
+def values_required(valuation):
+    """Whether the report must state market, realisable and distress values: for a
+    property valuation, yes. Legacy reports since 2024 show the values absent from
+    nearly every other kind: cost incurred (191 of 191), chartered engineer
+    certificates (156 of 157), estimate vetting (110 of 110), estimates, rent
+    assessments, revisits, fitness, and plant and machinery valuations (105 of 109);
+    requiring them refused about 28% of the reports staff produce. Book value was
+    never given (3,383 of 3,383) and stays optional."""
+    case = valuation.case
+    service = (case.service.name if case.service_id else '').strip().lower()
+    subtype = (case.subtype.name if case.subtype_id else '').strip().lower()
+    return service == 'valuation of asset' and not subtype.startswith('plant')
+
+
 def liable_for(valuation, report):
     """Who a report's billing and recovery is credited to: a previous revision's (with
-    any correction), an imported report's legacy assessor, or the lead's assignee."""
+    any correction), an imported report's legacy assessor, the liable assessor chosen
+    at submission, or the lead's assignee."""
     earlier = (m.BankReport.objects.filter(valuation=valuation, liable_employee__isnull=False)
                .exclude(pk=report.pk).order_by('-revision').first())
     if earlier:
@@ -132,7 +147,9 @@ def liable_for(valuation, report):
         found = liable_assessors()(report.legacy_liable_fa)
         if found:
             return m.Employee.objects.filter(pk=found[0]).first()
-    return valuation.case.lead.assigned_employee
+    # The liable assessor chosen at submission (the legacy form's "Liable FA"), else
+    # the lead's assignee.
+    return valuation.submitted_to or valuation.case.lead.assigned_employee
 
 
 def resolve_template(valuation, bank):
@@ -167,7 +184,7 @@ def report_json(valuation):
         error = exc.message
     value = lambda f: str(getattr(report, f)) if report and getattr(report, f) is not None else ''
     return {'valuation': valuation.pk, 'report_number': valuation.report_number,
-            'blockers': blockers(valuation), 'bank_client': bank_client,
+            'blockers': blockers(valuation), 'bank_client': bank_client, 'values_required': values_required(valuation),
             'template': template, 'template_error': error,
             'report': None if report is None else {
                 'id': report.pk, 'revision': report.revision, 'document': file_json(report.document), 'liable': liable_json(report),
@@ -247,9 +264,10 @@ def generate(request, valuation):
                              'distress_value_amount', 'our_reference', 'your_reference', 'unique_reference',
                              'omen_id', 'report_date', 'bank', 'branch', 'certificate'])
     amounts = {}
-    for field, label, required in (('market_fair_amount', 'Fair market value', True),
-                                   ('realisable_value_amount', 'Realisable value', True),
-                                   ('distress_value_amount', 'Distress value', True),
+    needed = values_required(valuation)
+    for field, label, required in (('market_fair_amount', 'Fair market value', needed),
+                                   ('realisable_value_amount', 'Realisable value', needed),
+                                   ('distress_value_amount', 'Distress value', needed),
                                    ('book_value_amount', 'Book value', False)):
         if required and data.get(field) in (None, ''):
             raise IntakeError(f'Enter the {label.lower()}')

@@ -90,7 +90,9 @@ def submission_json(valuation):
                        'desired_loan_amount': str(valuation.desired_loan_amount or ''),
                        'assessor_comment': valuation.assessor_comment,
                        'non_cost_factor': valuation.non_cost_factor,
-                       'submitted_to': valuation.submitted_to_id,
+                       # The legacy form's "Liable FA": the lead's assignee unless chosen, as
+                       # legacy reports were credited (98.7-100% from 2024).
+                       'submitted_to': valuation.submitted_to_id or valuation.case.lead.assigned_employee_id,
                        'dispatch_at': valuation.dispatch_at_code or None,
                        'dispatch_by': valuation.dispatch_by_code or None,
                        'report_category': valuation.report_category or None},

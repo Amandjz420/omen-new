@@ -358,7 +358,8 @@ function Submission({api, id, onJump, onDone}) {
       <label>Valuation date<input type="date" value={form.valuation_date || ''} disabled={locked} max={new Date().toISOString().slice(0, 10)} onChange={e => set('valuation_date', e.target.value)}/><small className="muted">Defaults to today</small></label>
       <label>Eligible loan amount<span className="required"> *</span><input inputMode="decimal" value={form.eligible_loan_amount || ''} disabled={locked} required onChange={e => set('eligible_loan_amount', e.target.value)}/></label>
       <label>Desired loan amount<span className="required"> *</span><input inputMode="decimal" value={form.desired_loan_amount || ''} disabled={locked} required onChange={e => set('desired_loan_amount', e.target.value)}/></label>
-      {select('submitted_to', 'Submit to', data.options.employees)}
+      {select('submitted_to', 'Liable assessor (FA)', data.options.employees)}
+      <small className="muted form-note">Who this report's billing and recovery is credited to. It starts as the lead's assignee.</small>
       {select('dispatch_at', 'To be dispatched at', data.options.dispatch_at)}
       {select('dispatch_by', 'To be dispatched by', data.options.dispatch_by)}
       {select('report_category', 'Report category', data.options.report_category)}
