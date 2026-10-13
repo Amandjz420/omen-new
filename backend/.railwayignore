@@ -1,0 +1,7 @@
+.venv/
+*.sqlite3
+*.sqlite3-*
+.local-secret
+__pycache__/
+staticfiles/
+.DS_Store

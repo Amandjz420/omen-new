@@ -52,7 +52,10 @@ INSTALLED_APPS = ['apps.common.admin_config.DomainAdminConfig', 'django.contrib.
                   'apps.audit.apps.DomainConfig',
                   'apps.analytics.apps.DomainConfig',
 ]
-MIDDLEWARE = ['django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
+MIDDLEWARE = ['django.middleware.security.SecurityMiddleware',
+              # Serves the admin site's CSS and scripts in deployment, from STATIC_ROOT.
+              'whitenoise.middleware.WhiteNoiseMiddleware',
+              'django.contrib.sessions.middleware.SessionMiddleware',
               'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware',
               'django.contrib.auth.middleware.AuthenticationMiddleware',
               'django.contrib.messages.middleware.MessageMiddleware',
@@ -124,6 +127,12 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:5173', 'http://localhost:5173'] if DEBUG else []
+if os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS'):
+    CSRF_TRUSTED_ORIGINS = os.environ['DJANGO_CSRF_TRUSTED_ORIGINS'].split(',')
+# In deployment the browser speaks HTTPS to Railway's edge, which forwards plain HTTP
+# through the frontend's Caddy; Caddy sets this header so Django knows the request
+# was secure (secure cookies, CSRF origin checks).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_CONTENT_TYPE_NOSNIFF = True
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
