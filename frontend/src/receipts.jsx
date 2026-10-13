@@ -1,3 +1,4 @@
+import {uuid} from './lib/uuid.js';  // crypto.randomUUID exists only on secure pages
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 
@@ -11,7 +12,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 export const WRITE_FIELDS = ['received_as', 'invoice', 'amount', 'received_date', 'amount_received_on', 'payment_mode',
   'cheque_draft_number', 'cheque_draft_bank', 'issue_date', 'in_favour_of', 'payer_name', 'mobile', 'remark', 'description'];
 const writable = form => Object.fromEntries(WRITE_FIELDS.map(k => [k, form[k] ?? '']));
-const blank = () => ({operation_id: crypto.randomUUID(), received_as: 2, invoice: '', amount: '', received_date: today(),
+const blank = () => ({operation_id: uuid(), received_as: 2, invoice: '', amount: '', received_date: today(),
   amount_received_on: '', payment_mode: 4, cheque_draft_number: '', cheque_draft_bank: '', issue_date: '', in_favour_of: '',
   payer_name: '', mobile: '', remark: '', description: ''});
 

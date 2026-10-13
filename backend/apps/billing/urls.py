@@ -18,5 +18,6 @@ urlpatterns = [
     path('api/invoices/<uuid:pk>/document/', endpoint_1.document),
     path('api/invoices/<uuid:pk>/payments/', endpoint_1.payment),
     path('api/invoices/<uuid:pk>/write-off/', endpoint_1.write_off),
+    path('api/invoices/<uuid:pk>/follow-ups/', endpoint_1.follow_ups),
     path('api/invoices/<uuid:pk>/credit-note/', endpoint_1.credit_note),
 ]

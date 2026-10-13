@@ -1,3 +1,4 @@
+import {uuid} from './lib/uuid.js';  // crypto.randomUUID exists only on secure pages
 import {useLookups} from './screens/IntakeForms.jsx';
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useRef, useState} from 'react';
@@ -27,7 +28,7 @@ export function WorkOrders({api, leadId, onChange}) {
     const lastOne = state.outstanding === 1;
     const warning = lastOne ? '\n\nThis is the last borrower without a work order, so the lead will be closed.' : '';
     if (!window.confirm(`Issue a work order for ${borrower.name}?${warning}`)) return;
-    const key = pending.current[borrower.id] ||= crypto.randomUUID();
+    const key = pending.current[borrower.id] ||= uuid();
     setBusy(borrower.id); setError('');
     try {
       await api('work-orders/', {method: 'POST', body: JSON.stringify({request_id: key, borrower: borrower.id})});

@@ -1,5 +1,7 @@
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
+import {FollowUpForm, useLookups} from './screens/IntakeForms.jsx';
+import {uuid} from './lib/uuid.js';
 
 const BUCKETS = [['to_invoice', 'To invoice'], ['unpaid', 'Unpaid'], ['paid', 'Paid'], ['cancelled', 'Cancelled'], ['offline', 'Offline']];
 const rs = v => `₹ ${Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -113,12 +115,14 @@ function Issue({api, valuation, onBack, onIssued}) {
   </section>;
 }
 
-function Invoice({api, id, onBack}) {
+export function Invoice({api, id, onBack}) {
   const [inv, setInv] = useState(null);
   // One operation ID per intended payment or write-off. It is kept when a request
   // fails, so resubmitting after a lost response is a safe retry the server
   // answers without booking the money again, and renewed only after success.
-  const newId = () => crypto.randomUUID();
+  // crypto.randomUUID exists only on secure pages; a phone on the office network over
+  // plain http has none, and the invoice screen failed to open there.
+  const newId = () => uuid();
   const [pay, setPay] = useState({amount: '', date: today(), mode: '', payer_name: '', operation_id: newId()});
   const [wo, setWo] = useState({amount: '', remark: '', operation_id: newId()});
   const [reason, setReason] = useState('');
@@ -179,9 +183,25 @@ function Invoice({api, id, onBack}) {
       <h3>Cancel with a credit note</h3>
       <label>Reason<span className="required"> *</span><input value={reason} required onChange={e => setReason(e.target.value)}/></label>
       <button disabled={busy === 'credit-note' || !reason.trim()}>Issue credit note</button></form>}
+    <RecoveryFollowUps api={api} id={id} rows={inv.follow_ups || []} owed={owed}/>
     {inv.payments.length > 0 && <><h3>Payments</h3><ul>{inv.payments.map((p, i) => <li key={i}>{p.on || '—'} · {rs(p.amount)}{p.mode ? ` · ${p.mode}` : ''}{p.by ? ` · ${p.by}` : ''}{p.recorded === 'previous system' && <small className="muted"> · recorded in the previous system</small>}</li>)}</ul></>}
     {inv.credit_notes.length > 0 && <><h3>Credit notes</h3><ul>{inv.credit_notes.map(c => <li key={c.id}>{c.number} · {c.on} · {rs(c.total)}
       {Number(c.refund_due) > 0 && ` · ${rs(c.refund_due)} to refund`} · {c.reason}
       {c.document?.available && <> · <a href={`/api/invoices/credit-notes/${c.id}/document/`} target="_blank" rel="noopener">PDF</a></>}</li>)}</ul></>}
   </section>;
 }
+
+// Recovery follow-up (legacy /amount_received, design/payment_info): calls chasing the
+// invoice's payment, on the same form as a lead's follow-up.
+function RecoveryFollowUps({api, id, rows: initial, owed}) {
+  const {data: lookups} = useLookups();
+  const [rows, setRows] = useState(initial);
+  useEffect(() => setRows(initial), [initial]);
+  const label = code => (lookups?.follow_up_statuses || []).find(s => String(s.code) === String(code))?.label || code;
+  return <section className="recovery">
+    {owed && <FollowUpForm onSave={async data => setRows((await api(`invoices/${id}/follow-ups/`, {method: 'POST', body: JSON.stringify(data)})).follow_ups)}/>}
+    {rows.length > 0 && <><h3>Recovery follow-ups</h3><ul>{rows.map(f => <li key={f.id}><strong>{label(f.call_status)}</strong>
+      {(f.logged_date_text || '').slice(0, 10) && ` · call back ${(f.logged_date_text || '').slice(0, 10)} ${f.logged_time_text || ''}`} · {f.remark}</li>)}</ul></>}
+  </section>;
+}
+

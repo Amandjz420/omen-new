@@ -363,10 +363,10 @@ def add_case(lead, data, user, instance=None):
     return obj
 
 
-def add_follow_up(lead, data, user):
-    """A follow-up call (design/add_feedback.jsp): its status, when to call back, and a
-    remark, all required. The call-back date and time are stored where imported
-    follow-ups keep them; the status is the legacy code."""
+def checked_follow_up(data):
+    """A follow-up call's status, call-back date and time, and remark, all required, as
+    on the legacy follow-up forms (design/add_feedback.jsp for a lead, payment_info.jsp
+    for an invoice). Returned as stored: the legacy status code, the date, HH:MM."""
     import datetime
     from apps.leads.lookups import FOLLOW_UP_STATUSES
     if data.get('status') not in [c for c, _ in FOLLOW_UP_STATUSES]:
@@ -380,8 +380,14 @@ def add_follow_up(lead, data, user):
     remark = data.get('remark')
     if not isinstance(remark, str) or not remark.strip() or len(remark) > 4000:
         raise IntakeError('Enter a remark of at most 4,000 characters')
-    obj = m.FollowUp.objects.create(lead=lead, call_status=data['status'], remark=remark.strip(),
-                                    logged_date_text=notify.isoformat(), logged_time_text=data['notify_time'])
+    return {'call_status': data['status'], 'remark': remark.strip(), 'logged_date_text': notify.isoformat(),
+            'logged_time_text': data['notify_time']}
+
+
+def add_follow_up(lead, data, user):
+    """A follow-up call on a lead. The call-back date and time are stored where imported
+    follow-ups keep them; the status is the legacy code."""
+    obj = m.FollowUp.objects.create(lead=lead, **checked_follow_up(data))
     record(user, obj, action='followup.create')
     return obj
 

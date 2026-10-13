@@ -1,3 +1,4 @@
+import {uuid} from './lib/uuid.js';  // crypto.randomUUID exists only on secure pages
 import {BorrowerForm, CaseForm, FollowUpForm, formsFor, ifscBank, ownForm, useLookups} from './screens/IntakeForms.jsx';
 import {confirmAction} from './components/confirm.jsx';
 import React, {useEffect, useState} from 'react';
@@ -183,11 +184,11 @@ export default function IntakeWorkspace({api}) {
   const [contact,setContact] = useState('');
   const [leadId,setLeadId] = useState(null);
   const [error,setError] = useState('');
-  const [key,setKey] = useState(() => crypto.randomUUID());
+  const [key,setKey] = useState(() => uuid());
   useEffect(() => {let active=true;api('intake/catalog/').then(x => active && setCatalog(x)).catch(e => active && setError(e.message));return () => {active=false;};},[]);
   if(error) return <p role="alert" className="error">{error}</p>;
   if(!catalog) return <p>Loading intake options…</p>;
-  if(leadId) return <><button onClick={() => {setLeadId(null);setKey(crypto.randomUUID());}}>Create another lead</button><IntakeLead api={api} leadId={leadId} catalog={catalog}/></>;
+  if(leadId) return <><button onClick={() => {setLeadId(null);setKey(uuid());}}>Create another lead</button><IntakeLead api={api} leadId={leadId} catalog={catalog}/></>;
   return <div className="intake"><p className="intro">Add or edit client offices and their lead givers. Record new leads on the New lead form, which finds a lead giver by mobile number.</p>
     <OfficePicker api={api} selected={office} onSelect={id => {setOffice(id);setContact('');}} catalog={catalog}/>
     <Contacts api={api} office={office} catalog={catalog} value={contact} onSelect={setContact}/>

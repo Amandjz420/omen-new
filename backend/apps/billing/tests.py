@@ -602,3 +602,33 @@ class FinanceConsistencyTests(Invoicing):
         from apps.valuations.test_forms import user_with_role
         self.client.force_login(user_with_role('157', m.Employee.objects.create(name='Assessor')))
         self.assertEqual(self.client.get('/api/invoices/?state=cancelled').json()['total'], 0)
+
+
+class RecoveryFollowUpTests(Invoicing):
+    """Calls chasing an invoice's payment (legacy /amount_received/save_followup), on the
+    same form and checks as a lead's follow-up."""
+
+    def follow(self, invoice, **extra):
+        body = {'status': '4', 'notify_date': '2026-10-20', 'notify_time': '11:30', 'remark': 'Branch to release payment Monday', **extra}
+        return self.client.post(f'/api/invoices/{invoice}/follow-ups/', body, content_type='application/json')
+
+    def test_a_follow_up_is_recorded_as_the_legacy_one_was(self):
+        invoice = self.issue().json()['id']
+        r = self.follow(invoice)
+        self.assertEqual(r.status_code, 201, r.content)
+        f = m.InvoiceFollowUp.objects.get()
+        self.assertEqual((f.call_status, f.logged_date_text, f.logged_time_text, f.remark),
+                         ('4', '2026-10-20', '11:30', 'Branch to release payment Monday'))
+        self.assertTrue(m.IntakeAudit.objects.filter(action='invoice_follow_up').exists())
+
+    def test_the_same_checks_as_a_leads_follow_up(self):
+        invoice = self.issue().json()['id']
+        for bad in ({'status': 'Contacted'}, {'notify_date': ''}, {'notify_time': '9'}, {'remark': ''}):
+            self.assertEqual(self.follow(invoice, **bad).status_code, 400, bad)
+
+    def test_the_invoice_lists_its_follow_ups_newest_first(self):
+        invoice = self.issue().json()['id']
+        self.follow(invoice, remark='First call')
+        self.follow(invoice, status='6', remark='Meeting fixed')
+        detail = self.client.get(f'/api/invoices/{invoice}/').json()
+        self.assertEqual([f['remark'] for f in detail['follow_ups']], ['Meeting fixed', 'First call'])

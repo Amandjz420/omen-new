@@ -188,6 +188,7 @@ def invoice_json(invoice):
             'gstin_party': invoice.get_gstin_party_display() if invoice.gstin_party else '',
             'account': invoice.issuer_account.name.strip() if invoice.issuer_account_id else '',
             'lines': lines, 'total': str(total), 'paid': str(paid), 'bad_debt': str(bad), 'bad_debt_remark': invoice.bad_debt_remark,
+            'follow_ups': follow_ups_of(invoice),
             'remaining': str(remaining), 'excess': str(excess),
             'recorded_remaining': str(q(invoice.legacy_remaining_amount)), 'recorded_excess': str(q(invoice.excess_amount)),
             'payment_status': status, 'cancelled': invoice.cancelled_at is not None, 'cancel_reason': invoice.cancel_reason,
@@ -473,6 +474,25 @@ def credit_note(request, pk):
     record(request.user, invoice, before, action='credit_note_invoice')
     attach_document(invoice, credit)
     return JsonResponse(invoice_json(invoice))
+
+
+@endpoint(['GET', 'POST'])
+def follow_ups(request, pk):
+    """Recovery follow-up (legacy /amount_received/save_followup, design/payment_info):
+    calls chasing an invoice's payment, as on the lead's follow-up form."""
+    invoice = find(m.Invoice, pk)
+    check_scope(request.user, invoice)
+    if request.method == 'POST':
+        from apps.leads.services import checked_follow_up
+        fields = checked_follow_up(payload(request, ['status', 'notify_date', 'notify_time', 'remark']))
+        obj = m.InvoiceFollowUp.objects.create(invoice=invoice, **fields)
+        record(request.user, obj, action='invoice_follow_up')
+    return JsonResponse({'follow_ups': follow_ups_of(invoice)}, status=201 if request.method == 'POST' else 200)
+
+
+def follow_ups_of(invoice):
+    return list(m.InvoiceFollowUp.objects.filter(invoice=invoice).order_by('-created_at')
+                .values('id', 'call_status', 'remark', 'logged_date_text', 'logged_time_text', 'created_at'))
 
 
 @endpoint(['GET'])

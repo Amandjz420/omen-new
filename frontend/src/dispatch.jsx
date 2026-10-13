@@ -1,3 +1,4 @@
+import {uuid} from './lib/uuid.js';  // crypto.randomUUID exists only on secure pages
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 
@@ -58,7 +59,7 @@ function Lists({api, onSend, onOpen}) {
 }
 
 function SendForm({api, reports, resend, onBack, onSent}) {
-  const [form, setForm] = useState({operation_id: crypto.randomUUID(), mode: 2, courier: '', other_courier: '', consignment_number: '',
+  const [form, setForm] = useState({operation_id: uuid(), mode: 2, courier: '', other_courier: '', consignment_number: '',
     authorized_person: '', cost: '', outward_date: today(), town: '', status: 1, delivered_date: '', others: ''});
   const [reasons, setReasons] = useState({});
   const [error, setError] = useState('');

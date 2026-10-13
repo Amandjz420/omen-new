@@ -1650,7 +1650,8 @@
     "api/intake/lookups/offices/",
     "api/intake/lookups/orderer/",
     "api/intake/leads/<uuid:pk>/<str:kind>/<uuid:cid>/",
-    "api/bank-reports/<uuid:pk>/liable/"
+    "api/bank-reports/<uuid:pk>/liable/",
+    "api/invoices/<uuid:pk>/follow-ups/"
   ],
   "amendments": [
     {
@@ -1880,6 +1881,16 @@
       "reason": "The bank report's liable assessor, set from the lead's assignee on generation and changeable, as the legacy Change liable FA.",
       "added_routes": [
         "api/bank-reports/<uuid:pk>/liable/"
+      ]
+    },
+    {
+      "date": "2026-10-14",
+      "migration": "none",
+      "changed_models": [],
+      "added_models": [],
+      "reason": "Recovery follow-up on an invoice, as the legacy save_followup.",
+      "added_routes": [
+        "api/invoices/<uuid:pk>/follow-ups/"
       ]
     }
   ]
