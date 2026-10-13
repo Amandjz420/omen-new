@@ -1234,6 +1234,7 @@
         "distress_value_amount_word": "models.CharField(blank=True, max_length=400)",
         "bank_certificate": "models.TextField(blank=True)",
         "legacy_liable_fa": "models.CharField(blank=True, max_length=40)",
+        "liable_employee": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.employee')",
         "revision": "models.PositiveIntegerField(default=0)",
         "superseded_at": "models.DateTimeField(blank=True, null=True)",
         "template": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.reporttemplate')",
@@ -1467,7 +1468,7 @@
         "created_at": "models.DateTimeField(auto_now_add=True)",
         "updated_at": "models.DateTimeField(auto_now=True)",
         "valuation": "models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='events', to='target_core.valuation')",
-        "kind": "models.CharField(choices=[('hold', 'Put on hold'), ('unhold', 'Taken off hold'), ('cancel', 'Cancelled'), ('approve', 'Final approval')], max_length=20)",
+        "kind": "models.CharField(choices=[('hold', 'Put on hold'), ('unhold', 'Taken off hold'), ('cancel', 'Cancelled'), ('approve', 'Final approval'), ('liable', 'Liable assessor changed')], max_length=20)",
         "from_status": "models.CharField(blank=True, max_length=80)",
         "to_status": "models.CharField(blank=True, max_length=80)",
         "reason": "models.TextField(blank=True)",
@@ -1648,7 +1649,8 @@
     "api/intake/lookups/ifsc/",
     "api/intake/lookups/offices/",
     "api/intake/lookups/orderer/",
-    "api/intake/leads/<uuid:pk>/<str:kind>/<uuid:cid>/"
+    "api/intake/leads/<uuid:pk>/<str:kind>/<uuid:cid>/",
+    "api/bank-reports/<uuid:pk>/liable/"
   ],
   "amendments": [
     {
@@ -1865,6 +1867,19 @@
       "reason": "Edit or delete a client's customer or a case, as the legacy intake allowed.",
       "added_routes": [
         "api/intake/leads/<uuid:pk>/<str:kind>/<uuid:cid>/"
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "migration": "0032_bankreport_liable_employee_alter_valuationevent_kind",
+      "changed_models": [
+        "BankReport",
+        "ValuationEvent"
+      ],
+      "added_models": [],
+      "reason": "The bank report's liable assessor, set from the lead's assignee on generation and changeable, as the legacy Change liable FA.",
+      "added_routes": [
+        "api/bank-reports/<uuid:pk>/liable/"
       ]
     }
   ]

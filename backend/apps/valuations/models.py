@@ -162,8 +162,9 @@ class ValuationEvent(Entity):
     The legacy system kept one reason field on the valuation and overwrote it, so
     only the latest hold or cancellation reason survived. Every change is kept
     here. Sends-back are recorded as Reversion."""
-    HOLD, UNHOLD, CANCEL, APPROVE = 'hold', 'unhold', 'cancel', 'approve'
-    KINDS = [(HOLD, 'Put on hold'), (UNHOLD, 'Taken off hold'), (CANCEL, 'Cancelled'), (APPROVE, 'Final approval')]
+    HOLD, UNHOLD, CANCEL, APPROVE, LIABLE = 'hold', 'unhold', 'cancel', 'approve', 'liable'
+    KINDS = [(HOLD, 'Put on hold'), (UNHOLD, 'Taken off hold'), (CANCEL, 'Cancelled'), (APPROVE, 'Final approval'),
+             (LIABLE, 'Liable assessor changed')]
     valuation = models.ForeignKey('Valuation', on_delete=models.PROTECT, related_name='events')
     kind = models.CharField(max_length=20, choices=KINDS)
     from_status = models.CharField(max_length=80, blank=True)

@@ -33,6 +33,11 @@ class BankReport(Entity):
     distress_value_amount_word = models.CharField(max_length=400, blank=True)
     bank_certificate = models.TextField(blank=True)
     legacy_liable_fa = models.CharField(max_length=40, blank=True)
+    # The field assessor liable for this report's billing and recovery. Legacy reports
+    # carry only legacy_liable_fa (a legacy employee id); one generated here takes it
+    # from the lead's assignee, as legacy reports did (98.7-100% from 2024), keeps it
+    # across revisions, and Change liable assessor corrects it.
+    liable_employee = models.ForeignKey('target_core.Employee', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     # Versions. The legacy system kept one report per valuation, updated it in
     # place and deleted it on a final revert, so a report a bank had received
     # could vanish. Here a final revert supersedes the current version instead,

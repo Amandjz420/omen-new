@@ -120,6 +120,21 @@ def office_bank(office):
     return branch.bank if branch and branch.bank_id else None
 
 
+def liable_for(valuation, report):
+    """Who a report's billing and recovery is credited to: a previous revision's (with
+    any correction), an imported report's legacy assessor, or the lead's assignee."""
+    earlier = (m.BankReport.objects.filter(valuation=valuation, liable_employee__isnull=False)
+               .exclude(pk=report.pk).order_by('-revision').first())
+    if earlier:
+        return earlier.liable_employee
+    if report.legacy_liable_fa:
+        from apps.analytics.mis import liable_assessors
+        found = liable_assessors()(report.legacy_liable_fa)
+        if found:
+            return m.Employee.objects.filter(pk=found[0]).first()
+    return valuation.case.lead.assigned_employee
+
+
 def resolve_template(valuation, bank):
     case = valuation.case
     office = case.lead.office
@@ -155,7 +170,7 @@ def report_json(valuation):
             'blockers': blockers(valuation), 'bank_client': bank_client,
             'template': template, 'template_error': error,
             'report': None if report is None else {
-                'id': report.pk, 'revision': report.revision, 'document': file_json(report.document),
+                'id': report.pk, 'revision': report.revision, 'document': file_json(report.document), 'liable': liable_json(report),
                 'stale': is_stale(report, valuation),
                 'generated_at': report.generated_at, 'generated_by': report.generated_by_name},
             'values': {'market_fair_amount': value('market_fair_amount'), 'realisable_value_amount': value('realisable_value_amount'),
@@ -172,6 +187,45 @@ def report_json(valuation):
             'superseded': [{'revision': r.revision, 'superseded_at': r.superseded_at, 'document': file_json(r.document)}
                            for r in m.BankReport.objects.filter(valuation=valuation, superseded_at__isnull=False)
                            .order_by('revision')]}
+
+
+def liable_json(report):
+    if report is None:
+        return None
+    employee = report.liable_employee
+    if employee is None and report.legacy_liable_fa:
+        from apps.analytics.mis import liable_assessors
+        found = liable_assessors()(report.legacy_liable_fa)
+        return found and {'id': found[0], 'name': found[1]}
+    return employee and {'id': employee.pk, 'name': employee.name}
+
+
+@endpoint(['POST'])
+def change_liable(request, pk):
+    """Change liable assessor (legacy /change_fa/update_fa): who a report's billing
+    and recovery is credited to. Recorded, with its reason, in the valuation's history."""
+    valuation = find(m.Valuation, pk)
+    in_scope(request.user, valuation.case)
+    data = payload(request, ['employee', 'reason'])
+    report = current(valuation)
+    if report is None:
+        raise IntakeError('Generate the bank report first', 409)
+    employee = find(m.Employee, data.get('employee'))
+    reason = str(data.get('reason') or '').strip()
+    if not reason:
+        raise IntakeError('Enter why the liable assessor is changing')
+    previous = liable_json(report)
+    if previous and str(previous['id']) == str(employee.pk):
+        raise IntakeError(f'{employee.name} is already the liable assessor')
+    before = snapshot(report)
+    report.liable_employee = employee
+    report.save(update_fields=['liable_employee', 'updated_at'])
+    account, name = actor(request.user)
+    m.ValuationEvent.objects.create(valuation=valuation, kind=m.ValuationEvent.LIABLE, on=timezone.localdate(),
+                                    from_status=(previous or {}).get('name', '')[:80], to_status=employee.name[:80],
+                                    reason=reason[:4000], by=account, by_name=name[:200])
+    record(request.user, report, before, action='change_liable_assessor')
+    return JsonResponse(report_json(valuation))
 
 
 @endpoint(['GET', 'PUT'])
@@ -243,6 +297,8 @@ def generate(request, valuation):
         setattr(report, field, str(data.get(field) or '').strip()[:150])
     report.bank_certificate = str(data.get('certificate') or '').strip()
     report.generated_by, report.generated_by_name, report.generated_at = account, name[:200], timezone.now()
+    if report.liable_employee_id is None:
+        report.liable_employee = liable_for(valuation, report)
     report.save()
 
     report.content_fingerprint = content_fingerprint(valuation)

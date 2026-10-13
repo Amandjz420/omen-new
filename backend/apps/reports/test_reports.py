@@ -1,3 +1,4 @@
+import json
 """The bank report: the gate, template choice, values, versions and the document."""
 import io
 import shutil
@@ -183,3 +184,52 @@ class QueueTests(BankReportTests):
     def test_branches_are_searchable_within_a_bank(self):
         rows = self.client.get(f'/api/bank-reports/branches/?bank={self.sbi.pk}&q=itarsi').json()['branches']
         self.assertEqual([r['name'] for r in rows], ['Main Branch Itarsi'])
+
+
+class LiableAssessorTests(BankReportTests):
+    """Who a report's billing and recovery is credited to: the lead's assignee when it is
+    generated (as legacy reports were, 98.7-100% from 2024), kept across revisions, and
+    changeable with a reason, as the legacy Change liable FA."""
+
+    def setUp(self):
+        super().setUp()
+        self.assignee = m.Employee.objects.create(name='Rahul Patidar', legacy_status='1')
+        m.Lead.objects.filter(case__valuation__pk=self.v).update(assigned_employee=self.assignee)
+
+    def change(self, employee, reason='Branch reassigned'):
+        return self.client.post(f'/api/bank-reports/{self.v}/liable/', {'employee': str(employee.pk), 'reason': reason},
+                                content_type='application/json')
+
+    def test_a_generated_report_is_credited_to_the_leads_assignee(self):
+        body = self.generate().json()
+        self.assertEqual(body['report']['liable'], {'id': str(self.assignee.pk), 'name': 'Rahul Patidar'})
+        self.assertEqual(m.BankReport.objects.get().liable_employee, self.assignee)
+
+    def test_the_billing_report_includes_a_report_generated_here(self):
+        """Regression: reports generated here named no liable assessor, so the MIS skipped them."""
+        self.generate()
+        rows = self.client.get('/api/mis/billing-by-assessor/').json()
+        self.assertIn('Rahul Patidar', json.dumps(rows))
+
+    def test_a_change_needs_a_reason_and_is_kept_in_the_history(self):
+        self.generate()
+        other = m.Employee.objects.create(name='Vijay Galphate', legacy_status='1')
+        self.assertEqual(self.change(other, reason=' ').status_code, 400)
+        self.assertEqual(self.change(self.assignee).status_code, 400)                  # already liable
+        r = self.change(other)
+        self.assertEqual((r.status_code, r.json()['report']['liable']['name']), (200, 'Vijay Galphate'))
+        event = m.ValuationEvent.objects.get(kind=m.ValuationEvent.LIABLE)
+        self.assertEqual((event.from_status, event.to_status, event.reason), ('Rahul Patidar', 'Vijay Galphate', 'Branch reassigned'))
+
+    def test_a_new_revision_keeps_a_correction(self):
+        self.generate()
+        other = m.Employee.objects.create(name='Vijay Galphate', legacy_status='1')
+        self.change(other)
+        from django.utils import timezone
+        m.BankReport.objects.update(superseded_at=timezone.now())                       # a corrected revision is due
+        self.generate()
+        current = m.BankReport.objects.get(superseded_at__isnull=True)
+        self.assertEqual((current.revision, current.liable_employee), (1, other))      # not back to the assignee
+
+    def test_there_is_nothing_to_change_before_a_report(self):
+        self.assertEqual(self.change(self.assignee).status_code, 409)

@@ -14,4 +14,5 @@ urlpatterns = [
     path('api/bank-reports/branches/', endpoint_1.branches),
     path('api/bank-reports/<uuid:pk>/', endpoint_1.report),
     path('api/bank-reports/<uuid:pk>/document/', endpoint_1.document),
+    path('api/bank-reports/<uuid:pk>/liable/', endpoint_1.change_liable),
 ]

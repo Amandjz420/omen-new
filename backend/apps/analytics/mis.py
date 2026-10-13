@@ -141,13 +141,17 @@ def bank_reports(user, f):
                 .values('valuation_id', 'number', 'issued_date', 'billed_amount')}
     rows = []
     for r in qs.values('pk', 'valuation_id', 'valuation__report_number', 'legacy_liable_fa', 'valuation__liable_employee_id',
-                       'valuation__liable_employee__name', 'valuation__case__lead__office__name', 'valuation__case__borrower__name'):
+                       'valuation__liable_employee__name', 'valuation__case__lead__office__name', 'valuation__case__borrower__name',
+                       'liable_employee_id', 'liable_employee__name'):
         # The bank report names who is liable, and it is the document of record: the
         # one the bank received. The valuation's own field is the fallback, for
         # reports generated here, which do not store one. Where the two disagree the
         # legacy reports followed the bank report.
-        fa = resolve(r['legacy_liable_fa']) or ((str(r['valuation__liable_employee_id']), r['valuation__liable_employee__name'])
-                                                if r['valuation__liable_employee_id'] else None)
+        # A report generated or corrected here names its assessor directly; it had none,
+        # so the report skipped every invoice issued in the new system.
+        fa = ((str(r['liable_employee_id']), r['liable_employee__name']) if r['liable_employee_id'] else None) \
+            or resolve(r['legacy_liable_fa']) or ((str(r['valuation__liable_employee_id']), r['valuation__liable_employee__name'])
+                                                  if r['valuation__liable_employee_id'] else None)
         if fa is None:
             continue
         inv = standing.get(r['valuation_id'])

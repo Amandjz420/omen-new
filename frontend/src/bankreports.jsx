@@ -38,7 +38,7 @@ function Queue({api, onOpen}) {
   </section>;
 }
 
-function ReportForm({api, id, onBack}) {
+export function ReportForm({api, id, onBack}) {
   const [data, setData] = useState(null);
   const [form, setForm] = useState({});
   const [banks, setBanks] = useState([]);
@@ -79,6 +79,7 @@ function ReportForm({api, id, onBack}) {
       ? <a href={`/api/bank-reports/${id}/document/`} target="_blank" rel="noopener">View the report (PDF)</a>
       : <span className="muted">The report's file could not be found in storage.</span>}
       {data.report.generated_at && <small className="muted"> · generated {new Date(data.report.generated_at).toLocaleString('en-IN')}{data.report.generated_by ? ` by ${data.report.generated_by}` : ''}</small>}</p>}
+    {data.report && <Liable api={api} id={id} liable={data.report.liable} onChanged={adopt}/>}
     {error && <p role="alert" className="error">{error}</p>}
     <form onSubmit={generate}>
       <h3>Assessed values</h3>
@@ -106,3 +107,39 @@ function ReportForm({api, id, onBack}) {
       Revision {s.revision} · superseded {new Date(s.superseded_at).toLocaleDateString('en-IN')}</li>)}</ul></>}
   </section>;
 }
+
+// Who the report's billing and recovery is credited to: the lead's assignee when it was
+// generated; changed here, with a reason, as the legacy Change liable FA.
+function Liable({api, id, liable, onChanged}) {
+  const [open, setOpen] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [form, setForm] = useState({employee: '', reason: ''});
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {if (open && !employees.length) api('intake/catalog/').then(c => setEmployees(c.employees || [])).catch(e => setError(e.message));}, [open]);
+  async function save(e) {
+    e.preventDefault(); setSaving(true); setError('');
+    try {onChanged(await api(`bank-reports/${id}/liable/`, {method: 'POST', body: JSON.stringify(form)})); setOpen(false); setForm({employee: '', reason: ''});}
+    catch (err) {setError(err.message);} finally {setSaving(false);}
+  }
+  return <div className="liable">
+    <p>Liable assessor: <strong>{liable?.name || 'Not recorded'}</strong>{' '}
+      {!open && <button type="button" className="link" onClick={() => setOpen(true)}>Change</button>}</p>
+    {open && <form className="panel inset" onSubmit={save}>
+      <h3>Change liable assessor</h3>
+      <div className="form-grid">
+        <label>New liable assessor<span className="required"> *</span>
+          <select required value={form.employee} onChange={e => setForm(f => ({...f, employee: e.target.value}))}>
+            <option value="">Select…</option>
+            {employees.filter(x => String(x.id) !== String(liable?.id)).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select></label>
+        <label>Reason<span className="required"> *</span>
+          <textarea required value={form.reason} onChange={e => setForm(f => ({...f, reason: e.target.value}))}/></label>
+      </div>
+      {error && <p role="alert" className="error">{error}</p>}
+      <button disabled={saving || !form.employee || !form.reason.trim()}>Save</button>{' '}
+      <button type="button" className="link" onClick={() => {setOpen(false); setError('');}}>Cancel</button>
+    </form>}
+  </div>;
+}
+
