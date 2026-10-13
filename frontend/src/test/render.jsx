@@ -1,4 +1,5 @@
 import {MantineProvider} from '@mantine/core';
+import {ModalsProvider} from '@mantine/modals';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {render} from '@testing-library/react';
 import {MemoryRouter} from 'react-router';
@@ -9,5 +10,5 @@ export function renderApp(ui, {route = '/'} = {}) {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   // env="test": Mantine without transitions or portals, so dropdowns open synchronously in jsdom.
   return render(<MantineProvider theme={theme} env="test"><QueryClientProvider client={client}>
-    <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter></QueryClientProvider></MantineProvider>);
+    <ModalsProvider><MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter></ModalsProvider></QueryClientProvider></MantineProvider>);
 }

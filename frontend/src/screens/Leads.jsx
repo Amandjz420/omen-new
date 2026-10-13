@@ -20,6 +20,15 @@ const STATUSES = [{value: '', label: 'All statuses'}, {value: '1', label: 'New l
                   {value: '3', label: 'Cancelled'}, {value: '4', label: 'Closed (previous system)'}];
 const tone = s => ({'Cancelled': 'refused', 'New lead': 'active', 'In process': 'waiting'}[s] ?? 'neutral');
 
+// Recorded against declared, as the legacy list showed it ("1/3"), marked while
+// intake still has some to enter.
+function Progress({recorded, declared, label}) {
+  if (recorded == null) return '—';
+  const short = declared != null && recorded < declared;
+  return <Text size="sm" className="num" c={short ? 'orange.8' : undefined} fw={short ? 600 : undefined}
+               aria-label={`${recorded} of ${declared ?? 'unknown'} ${label} entered`}>{recorded}/{declared ?? '?'}</Text>;
+}
+
 export function Leads() {
   // Search, status and page live in the address, so a filtered list can be shared or bookmarked.
   const [params, setParams] = useSearchParams();
@@ -40,12 +49,15 @@ export function Leads() {
     {list.isError ? <ErrorState error={list.error} onRetry={list.refetch}/> : !list.data ? <LoadingState label="Loading leads"/> : <>
       <ResponsiveTable>
         <Table>
-          <Table.Thead><Table.Tr><Table.Th>Lead</Table.Th><Table.Th>Commissioning office</Table.Th><Table.Th>Received</Table.Th><Table.Th>Status</Table.Th></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th>Lead</Table.Th><Table.Th>Commissioning office</Table.Th><Table.Th>Lead giver</Table.Th><Table.Th>Received</Table.Th><Table.Th>Parties</Table.Th><Table.Th>Cases</Table.Th><Table.Th>Status</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>{list.data.results.map(r => <Table.Tr key={r.id}>
             <Table.Td><Anchor component={Link} to={`/leads/${r.id}`} fw={600}>{r.number || 'No number'}</Anchor>
               <Text size="xs" c="dimmed">{r.source_id ? `Source ${r.source_id}` : 'Recorded here'}</Text></Table.Td>
             <Table.Td>{r.office?.name || 'Office not resolved'}<Text size="xs" c="dimmed">{r.office?.branch}</Text></Table.Td>
+            <Table.Td>{r.lead_giver?.name || '—'}<Text size="xs" c="dimmed">{r.lead_giver?.phone}</Text></Table.Td>
             <Table.Td>{date(r.received_date) || 'Unknown'}</Table.Td>
+            <Table.Td><Progress {...r.parties} label="parties"/></Table.Td>
+            <Table.Td><Progress {...r.cases} label="cases"/></Table.Td>
             <Table.Td><StatusBadge tone={tone(r.status_label)}>{r.status_label}</StatusBadge></Table.Td>
           </Table.Tr>)}</Table.Tbody>
         </Table>

@@ -95,6 +95,7 @@ export function NewLeadForm() {
     } catch (e) { setError(e.message); setBusy(false); }
   }
 
+  useEffect(() => { const me = lookups.data?.me?.employee_id; if (me && !receivedBy) setReceivedBy(String(me)); }, [lookups.data]);   // eslint-disable-line react-hooks/exhaustive-deps
   if (lookups.isError || catalog.isError) return <ErrorState error={lookups.error || catalog.error}/>;
   if (!lookups.data || !catalog.data) return <LoadingState label="Opening the lead form"/>;
   const L = lookups.data, C = catalog.data;
@@ -193,13 +194,14 @@ export function FollowUpForm({onSave}) {
   const lookups = useLookups();
   const [f, setF] = useState({status: null, date: today(), hour: '10', minute: '00', remark: ''});
   const [error, setError] = useState('');
-  const set = (k, v) => setF(x => ({...x, [k]: v}));
+  const [saved, setSaved] = useState(false);              // what was saved stays on screen; Save waits for a change
+  const set = (k, v) => { setSaved(false); setF(x => ({...x, [k]: v})); };
   const hours = Array.from({length: 24}, (_, i) => String(i).padStart(2, '0'));
   const minutes = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
   async function submit(e) {
     e.preventDefault(); setError('');
     try { await onSave({status: f.status, notify_date: f.date, notify_time: `${f.hour}:${f.minute}`, remark: f.remark});
-      setF(x => ({...x, status: null, remark: ''})); } catch (err) { setError(err.message); }
+      setSaved(true); } catch (err) { setError(err.message); }
   }
   if (!lookups.data) return null;
   return <form onSubmit={submit}><Section title="Follow up for lead">
@@ -211,21 +213,29 @@ export function FollowUpForm({onSave}) {
       <Select label="Minute" required data={minutes} value={f.minute} onChange={v => set('minute', v)} allowDeselect={false}/>
     </SimpleGrid>
     <Textarea label="Please specify the remark if any" required value={f.remark} onChange={e => set('remark', e.currentTarget.value)} autosize minRows={2}/>
-    <Group><Button type="submit">Save follow-up</Button></Group>
+    <Group><Button type="submit" disabled={saved}>Save follow-up</Button>{saved && <Text size="sm" c="green.8" role="status">Saved. Change anything to record another follow-up.</Text>}</Group>
   </Section></form>;
 }
 
 /** design/add_client.jsp: the client's customer and the fee agreement. Paid by the client:
  * the payer is the lead's client and lead giver, and payment responsibility defaults to
  * the lead giver. Fixed fee: the work order amount. */
-export function BorrowerForm({lead, onSave}) {
+export function BorrowerForm({lead, onSave, onUpdate, initial = null, onCancel}) {
   const lookups = useLookups();
+  const fromRecord = b => b && ({name: b.name || '', contact_number: b.contact_number || '', email: b.email || '', gst_number: b.gst_number || '',
+    property_count: String(b.property_count ?? 1), payer: String(b.payer ?? 1), fee_basis: String(b.fee_basis ?? 1),
+    agreed_fee: b.agreed_fee != null ? String(Number(b.agreed_fee)) : '', payment_reference_name: b.payment_reference_name || '',
+    payment_reference_number: b.payment_reference_number || '', pay_by_date: b.pay_by_date || '', customer_payment_method: String(b.customer_payment_method ?? 1)});
   const blank = {name: '', contact_number: '', email: '', gst_number: '', property_count: '1', payer: '1', fee_basis: '1', agreed_fee: '',
                  payment_reference_name: lead.contact?.name || '', payment_reference_number: lead.contact?.phone || '', pay_by_date: '',
                  customer_payment_method: '1'};
-  const [f, setF] = useState(blank);
+  const [f, setF] = useState(() => fromRecord(initial) || blank);
   const [error, setError] = useState('');
-  const set = (k, v) => setF(x => {
+  // Once saved, the form keeps the values and edits that same record, so saving again
+  // updates it instead of adding a duplicate.
+  const [recordId, setRecordId] = useState(initial?.id || null);
+  const [saved, setSaved] = useState(false);
+  const set = (k, v) => { setSaved(false); setF(x => {
     const next = {...x, [k]: v};
     if (k === 'payer') {                                   // the payment responsibility follows who pays, until edited
       const giver = {name: lead.contact?.name || '', phone: lead.contact?.phone || ''};
@@ -233,17 +243,21 @@ export function BorrowerForm({lead, onSave}) {
       if (v === '2' && x.payment_reference_name === giver.name) Object.assign(next, {payment_reference_name: x.name, payment_reference_number: x.contact_number});
     }
     return next;
-  });
+  }); };
   async function submit(e) {
     e.preventDefault(); setError('');
     const body = {...f, property_count: Number(f.property_count), payer: Number(f.payer), fee_basis: Number(f.fee_basis),
                   customer_payment_method: Number(f.customer_payment_method), agreed_fee: f.fee_basis === '2' ? f.agreed_fee : null,
                   email: f.email || '', gst_number: f.gst_number || ''};
-    try { await onSave(body); setF(blank); } catch (err) { setError(err.message); }
+    try {
+      if (recordId) await onUpdate(recordId, body);
+      else setRecordId((await onSave(body))?.id || null);
+      setSaved(true);
+    } catch (err) { setError(err.message); }
   }
   if (!lookups.data) return null;
   const L = lookups.data;
-  return <form onSubmit={submit}><Section title="Client's customer">
+  return <form onSubmit={submit}><Section title={recordId ? `Edit ${f.name || initial?.name || "client's customer"}` : "Client's customer"}>
     {error && <Alert color="red" variant="light" role="alert">{error}</Alert>}
     <SimpleGrid cols={{base: 1, sm: 3}}>
       <TextInput label="Name of client's customer" required value={f.name} onChange={e => set('name', e.currentTarget.value)}/>
@@ -266,13 +280,16 @@ export function BorrowerForm({lead, onSave}) {
     </SimpleGrid>
     <Radio.Group label="Payment by mode (client's customer)" required value={f.customer_payment_method} onChange={v => set('customer_payment_method', v)}>
       <Group mt={4}>{codes(L.payment_methods).map(o => <Radio key={o.value} value={o.value} label={o.label}/>)}</Group></Radio.Group>
-    <Group><Button type="submit">Save client's customer</Button></Group>
+    <Group><Button type="submit">{recordId ? 'Save changes' : "Save client's customer"}</Button>
+      {saved && <Text size="sm" c="green.8" role="status">Saved.</Text>}
+      {recordId && !initial && <Button variant="light" onClick={() => { setF(blank); setRecordId(null); setSaved(false); }}>Add another customer</Button>}
+      {onCancel && <Button variant="subtle" onClick={onCancel}>{saved ? 'Close' : 'Cancel'}</Button>}</Group>
   </Section></form>;
 }
 
 /** design/add_case.jsp: each choice narrows the next. The contact person defaults to the
  * customer, and the place to the client office's, as most properties are near it. */
-export function CaseForm({lead, catalog, onSave}) {
+export function CaseForm({lead, catalog, onSave, onUpdate, initial = null, onCancel}) {
   const lookups = useLookups();
   const L = lookups.data;
   const placeDefaults = useMemo(() => {
@@ -285,10 +302,26 @@ export function CaseForm({lead, catalog, onSave}) {
   const blank = () => ({borrower: null, requested: lead.services.length === 1 ? String(lead.services[0].id) : null, report_usages: [], scrutiny_documents: [],
                         expected_report_date: '', asset_amount: '', remarks: '', contact_person_name: '', contact_number: '', asset_address: '',
                         state: placeDefaults.state || null, district: placeDefaults.district || null, block: placeDefaults.block || null, asset_pin_code: ''});
-  const [f, setF] = useState(blank);
-  useEffect(() => setF(blank), [placeDefaults.state]);       // eslint-disable-line react-hooks/exhaustive-deps
+  const fromRecord = c => {
+    if (!c || !L) return null;
+    const byCode = (rows, codes) => String(codes || '').split(',').map(x => x.trim()).filter(Boolean)
+      .map(code => rows.find(r => String(r.code) === code)).filter(Boolean).map(r => String(r.id));
+    const state = L.states.find(x => x.name.trim().toLowerCase() === (c.asset_state || '').trim().toLowerCase());
+    const district = state && L.districts.find(d => String(d.state_id) === String(state.id) && d.name.trim().toLowerCase() === (c.asset_district || '').trim().toLowerCase());
+    const block = L.blocks.find(b => String(b.code) === String(c.asset_block_code));
+    const requested = lead.services.find(s => String(s.service_id) === String(c.service_id) && String(s.subtype_id ?? '') === String(c.subtype_id ?? ''));
+    return {borrower: String(c.borrower_id), requested: requested ? String(requested.id) : null, report_usages: byCode(L.report_usages, c.usage_of_report_code),
+            scrutiny_documents: byCode(L.scrutiny_documents, c.scrutiny_document_code), expected_report_date: c.expected_report_date || '',
+            asset_amount: c.asset_amount != null ? String(Number(c.asset_amount)) : '', remarks: c.remarks || '', contact_person_name: c.contact_person_name || '',
+            contact_number: c.contact_number || '', asset_address: c.asset_address || '', state: state ? String(state.id) : null,
+            district: district ? String(district.id) : null, block: block ? String(block.id) : null, asset_pin_code: c.asset_pin_code || ''};
+  };
+  const [f, setF] = useState(() => fromRecord(initial) || blank());
+  useEffect(() => setF(fromRecord(initial) || blank()), [placeDefaults.state, L]);   // eslint-disable-line react-hooks/exhaustive-deps       // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState('');
-  const set = (k, v) => setF(x => {
+  const [recordId, setRecordId] = useState(initial?.id || null);   // once saved, edits that same case
+  const [saved, setSaved] = useState(false);
+  const set = (k, v) => { setSaved(false); setF(x => {
     const next = {...x, [k]: v};
     if (k === 'borrower') {                                  // the contact person defaults to the customer
       const b = lead.borrowers.find(b => String(b.id) === v);
@@ -299,7 +332,7 @@ export function CaseForm({lead, catalog, onSave}) {
     if (k === 'state') Object.assign(next, {district: null, block: null});
     if (k === 'district') next.block = null;
     return next;
-  });
+  }); };
   if (!L) return null;
   const service = lead.services.find(s => String(s.id) === f.requested);
   const usages = L.report_usages.filter(u => service && String(u.subtype_id) === String(service.subtype_id));
@@ -308,9 +341,14 @@ export function CaseForm({lead, catalog, onSave}) {
   async function submit(e) {
     e.preventDefault(); setError('');
     const {requested, ...rest} = f;
-    try { await onSave({...rest, service: service?.service_id, subtype: service?.subtype_id}); setF(blank()); } catch (err) { setError(err.message); }
+    const body = {...rest, service: service?.service_id, subtype: service?.subtype_id};
+    try {
+      if (recordId) await onUpdate(recordId, body);
+      else setRecordId((await onSave(body))?.id || null);
+      setSaved(true);
+    } catch (err) { setError(err.message); }
   }
-  return <form onSubmit={submit}><Section title="Cases detail">
+  return <form onSubmit={submit}><Section title={recordId ? 'Edit case' : 'Cases detail'}>
     {error && <Alert color="red" variant="light" role="alert">{error}</Alert>}
     <SimpleGrid cols={{base: 1, sm: 3}}>
       <Select label="Client's customer name" required data={options(lead.borrowers)} value={f.borrower} onChange={v => set('borrower', v)} placeholder="Select…"/>
@@ -337,6 +375,9 @@ export function CaseForm({lead, catalog, onSave}) {
               onChange={v => set('block', v)} disabled={!f.district} placeholder={f.district ? 'Select…' : 'Choose a district first'}/>
       <TextInput label="PIN" required inputMode="numeric" maxLength={6} value={f.asset_pin_code} onChange={e => set('asset_pin_code', e.currentTarget.value)}/>
     </SimpleGrid>
-    <Group><Button type="submit">Save case</Button></Group>
+    <Group><Button type="submit">{recordId ? 'Save changes' : 'Save case'}</Button>
+      {saved && <Text size="sm" c="green.8" role="status">Saved.</Text>}
+      {recordId && !initial && <Button variant="light" onClick={() => { setF(blank()); setRecordId(null); setSaved(false); }}>Add another case</Button>}
+      {onCancel && <Button variant="subtle" onClick={onCancel}>{saved ? 'Close' : 'Cancel'}</Button>}</Group>
   </Section></form>;
 }

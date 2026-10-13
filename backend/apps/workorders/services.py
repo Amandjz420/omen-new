@@ -54,6 +54,13 @@ def active_borrowers(lead):
     return m.Borrower.objects.filter(lead=lead, legacy_deleted__in=LIVE)
 
 
+def live_cases(borrower):
+    """A borrower's cases not deleted (a case's legacy_status carries its delete flag).
+    Deleted ones once counted, so a borrower whose only case was deleted could still
+    be ordered."""
+    return m.Case.objects.filter(borrower=borrower, legacy_status__in=LIVE)
+
+
 def eligibility(borrower):
     """Reasons a work order cannot be issued for this borrower; empty if it can."""
     lead, reasons = borrower.lead, []
@@ -68,7 +75,7 @@ def eligibility(borrower):
     if borrower.work_orders.exists():
         reasons.append('This borrower already has a work order')
     # Every one of the 12,285 legacy orders was issued for a borrower with a case.
-    if not m.Case.objects.filter(borrower=borrower).exists():
+    if not live_cases(borrower).exists():
         reasons.append('Add at least one asset case before issuing a work order')
     return reasons
 
@@ -87,7 +94,9 @@ def lead_state(lead):
     for b in active_borrowers(lead).order_by('created_at', 'id'):
         order = b.work_orders.order_by('created_at').first()
         reasons = [] if order else eligibility(b)
-        borrowers.append({'id': b.pk, 'name': b.name, 'cases': m.Case.objects.filter(borrower=b).count(),
+        borrowers.append({'id': b.pk, 'name': b.name, 'cases': live_cases(b).count(), 'contact_number': b.contact_number,
+                          'email': b.email, 'payer': b.payer, 'fee_basis': b.fee_basis, 'agreed_fee': b.agreed_fee,
+                          'customer_payment_method': b.customer_payment_method, 'declared_cases': b.property_count,
                           'work_order': order_json(order) if order else None,
                           'eligible': order is None and not reasons, 'reasons': reasons})
     ordered = sum(1 for b in borrowers if b['work_order'])

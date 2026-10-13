@@ -179,7 +179,7 @@ def create_lead(request):
     return JsonResponse({'id': lead.pk, 'number': lead.number, 'replayed': False}, status=201)
 
 
-def add_borrower(lead, data, user):
+def add_borrower(lead, data, user, instance=None):
     """The client's customer with the fee agreement (design/add_client.jsp). Paid by
     the client: the payer is the lead's client and lead giver, filled in. A fixed fee
     needs the work order amount; a circular rate takes none."""
@@ -200,12 +200,16 @@ def add_borrower(lead, data, user):
         raise IntakeError('Enter the work order amount for a fixed fee')
     if data['fee_basis'] == 1:
         data['agreed_fee'] = None                         # by the client's circular
-    obj = add_child(lead, m.Borrower, BORROWER_FIELDS, data, user, save=False)
+    before = snapshot(instance) if instance else None
+    obj = (validated(m.Borrower, BORROWER_FIELDS, data, instance) if instance
+           else add_child(lead, m.Borrower, BORROWER_FIELDS, data, user, save=False))
     if obj.payer == 1:
         obj.payer_name = f"{lead.office.name}{', ' + lead.office.branch_name if lead.office.branch_name else ''}"[:200]
         obj.payer_mobile = lead.contact.phone if lead.contact_id else ''
+    else:
+        obj.payer_name = obj.payer_mobile = ''
     obj.save()
-    record(user, obj, action='borrower.create')
+    record(user, obj, before, 'borrower.update') if instance else record(user, obj, action='borrower.create')
     return obj
 
 
@@ -298,7 +302,7 @@ def lead_children(request, pk, kind):
         raise IntakeError('Unknown intake action', 404)
     return JsonResponse({'id': obj.pk}, status=201)
 
-def add_case(lead, data, user):
+def add_case(lead, data, user, instance=None):
     """A case (design/add_case.jsp): the borrower, service and subtype; the usages of
     report for that subtype; the scrutiny documents for those usages; the expected
     report date and output amount; the property's address and its state, district
@@ -324,7 +328,8 @@ def add_case(lead, data, user):
         raise IntakeError('The district must be in the state, and the city in the district')
     fields = ['borrower', 'service', 'subtype', 'expected_report_date', 'asset_amount', 'remarks', 'contact_person_name',
               'contact_number', 'asset_address', 'asset_pin_code']
-    obj = validated(m.Case, fields, {k: data.get(k) for k in fields if data.get(k) not in (None,)})
+    before = snapshot(instance) if instance else None
+    obj = validated(m.Case, fields, {k: data.get(k) for k in fields if data.get(k) not in (None,)}, instance)
     if obj.borrower.lead_id != lead.pk:
         raise IntakeError('The borrower belongs to another lead')
     service_check(obj)
@@ -349,7 +354,7 @@ def add_case(lead, data, user):
     obj.asset_state, obj.asset_district, obj.asset_block_code = state.name, district.name, block_code
     obj.lead, obj.legacy_status = lead, '0'
     obj.save()
-    record(user, obj, action='case.create')
+    record(user, obj, before, 'case.update') if instance else record(user, obj, action='case.create')
     return obj
 
 
@@ -374,6 +379,45 @@ def add_follow_up(lead, data, user):
                                     logged_date_text=notify.isoformat(), logged_time_text=data['notify_time'])
     record(user, obj, action='followup.create')
     return obj
+
+
+@endpoint(['PATCH', 'DELETE'])
+def lead_child(request, pk, kind, cid):
+    """Edit or delete a client's customer or a case, as the legacy edit_client,
+    client_delete, edit_case and case_delete did, while the lead is open to intake.
+    An edit goes through the same checks as adding. A deletion sets the delete flag
+    imported records carry; a customer with live cases keeps them until they are
+    deleted first, so no case is left without its customer."""
+    lead = require_lead(request.user, find(m.Lead, pk))
+    editable(lead)
+    if kind == 'borrowers':
+        obj = m.Borrower.objects.filter(pk=cid, lead=lead).exclude(legacy_deleted='1').first()
+        if obj is None:
+            raise IntakeError("Client's customer not found", 404)
+        if request.method == 'DELETE':
+            if m.Case.objects.filter(borrower=obj).exclude(legacy_status='1').exists():
+                raise IntakeError("Delete this customer's cases first", 409)
+            before = snapshot(obj)
+            obj.legacy_deleted = '1'
+            obj.save(update_fields=['legacy_deleted', 'updated_at'])
+            record(request.user, obj, before, 'borrower.delete')
+        else:
+            add_borrower(lead, payload(request, BORROWER_FIELDS), request.user, instance=obj)
+    elif kind == 'cases':
+        obj = m.Case.objects.filter(pk=cid, lead=lead).exclude(legacy_status='1').first()
+        if obj is None:
+            raise IntakeError('Case not found', 404)
+        if request.method == 'DELETE':
+            before = snapshot(obj)
+            obj.legacy_status = '1'
+            obj.save(update_fields=['legacy_status', 'updated_at'])
+            record(request.user, obj, before, 'case.delete')
+        else:
+            add_case(lead, payload(request, CASE_FIELDS), request.user, instance=obj)
+    else:
+        raise IntakeError('Only customers and cases can be edited or deleted here', 404)
+    lead.refresh_from_db()
+    return JsonResponse(lead_result(lead))
 
 
 # Public imports kept for callers of the original intake module.

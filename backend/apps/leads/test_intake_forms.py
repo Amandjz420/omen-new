@@ -177,3 +177,60 @@ class LookupTests(IntakeFixture, TestCase):
         self.office.state, self.office.district, self.office.block = 'Madhya Pradesh', 'Bhopal', self.block; self.office.save()
         detail = self.client.get(f'/api/intake/leads/{self.create().pk}/').json()['office_detail']
         self.assertEqual((detail['state'], detail['district'], detail['city']), ('Madhya Pradesh', 'Bhopal', 'Huzur'))
+
+
+class EditAndProgressTests(IntakeFixture, TestCase):
+    """Editing and deleting customers and cases, and the lead list's progress."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead = self.create(party_count=2)
+        self.base = f'/api/intake/leads/{self.lead.pk}/'
+        self.b = self.send(self.base + 'borrowers/', self.borrower()).json()['id']
+        self.c = self.send(self.base + 'cases/', self.case(self.b)).json()['id']
+
+    def test_an_edit_goes_through_the_same_checks_as_adding(self):
+        url = f'{self.base}borrowers/{self.b}/'
+        self.assertEqual(self.send(url, self.borrower(fee_basis=2), 'patch').status_code, 400)          # fixed, no amount
+        r = self.send(url, self.borrower(name='Asha V. Verma', fee_basis=2, agreed_fee='7500'), 'patch')
+        self.assertEqual(r.status_code, 200, r.content)
+        b = m.Borrower.objects.get(pk=self.b)
+        self.assertEqual((b.name, b.agreed_fee), ('Asha V. Verma', 7500))
+        self.assertTrue(m.IntakeAudit.objects.filter(action='borrower.update', target_id=self.b).exists())
+        r = self.send(f'{self.base}cases/{self.c}/', self.case(self.b, asset_pin_code='462001'), 'patch')
+        self.assertEqual((r.status_code, m.Case.objects.get(pk=self.c).asset_pin_code), (200, '462001'))
+        self.assertEqual(self.send(f'{self.base}cases/{self.c}/', self.case(self.b, asset_pin_code='0'), 'patch').status_code, 400)
+
+    def test_a_customer_keeps_their_cases_until_those_are_deleted(self):
+        borrower, case = f'{self.base}borrowers/{self.b}/', f'{self.base}cases/{self.c}/'
+        self.assertEqual(self.client.delete(borrower).status_code, 409)
+        self.assertEqual(self.client.delete(case).status_code, 200)
+        self.assertEqual(self.client.delete(borrower).status_code, 200)
+        detail = self.client.get(self.base).json()
+        self.assertEqual((detail['borrowers'], detail['cases']), ([], []))
+        self.assertEqual((m.Borrower.objects.get(pk=self.b).legacy_deleted, m.Case.objects.get(pk=self.c).legacy_status), ('1', '1'))
+
+    def test_a_borrower_whose_only_case_was_deleted_cannot_be_ordered(self):
+        """Regression: eligibility counted deleted cases."""
+        self.client.delete(f'{self.base}cases/{self.c}/')
+        state = self.client.get(f'/api/work-orders/leads/{self.lead.pk}/').json()['borrowers'][0]
+        self.assertEqual((state['cases'], state['eligible']), (0, False))
+        self.assertIn('Add at least one asset case before issuing a work order', state['reasons'])
+
+    def test_nothing_is_edited_once_a_work_order_exists(self):
+        self.assertEqual(self.send('/api/work-orders/', {'request_id': str(uuid.uuid4()), 'borrower': self.b}).status_code, 201)
+        self.assertEqual(self.send(f'{self.base}borrowers/{self.b}/', self.borrower(), 'patch').status_code, 409)
+        self.assertEqual(self.client.delete(f'{self.base}cases/{self.c}/').status_code, 409)
+
+    def test_the_lead_list_shows_progress_against_what_was_declared(self):
+        self.send(self.base + 'borrowers/', self.borrower(name='Second'))
+        self.client.delete(f'{self.base}cases/{self.c}/')
+        row = next(r for r in self.client.get('/api/leads/').json()['results'] if r['id'] == str(self.lead.pk))
+        self.assertEqual((row['parties'], row['cases']), ({'recorded': 2, 'declared': 2}, {'recorded': 0, 'declared': 1}))
+        self.assertEqual(row['lead_giver'], {'name': 'Test contact', 'phone': '9826012345'})
+
+    def test_received_by_defaults_to_whoever_is_signed_in(self):
+        self.assertIsNone(self.client.get('/api/intake/lookups/').json()['me']['employee_id'])
+        m.LegacyAccount.objects.create(name='Intake admin', login_id='intake-admin', user=self.user, employee=self.employee,
+                                       must_change_password=False)
+        self.assertEqual(self.client.get('/api/intake/lookups/').json()['me']['employee_id'], str(self.employee.pk))

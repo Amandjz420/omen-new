@@ -1,10 +1,14 @@
+import {useLookups} from './screens/IntakeForms.jsx';
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useRef, useState} from 'react';
 import {IntakeLead} from './intake.jsx';
 
 const when = value => value ? new Date(value).toLocaleString('en-IN') : '';
 
+const label = (rows, code) => (rows || []).find(r => String(r.code) === String(code))?.label;
+
 export function WorkOrders({api, leadId, onChange}) {
+  const {data: lookups} = useLookups();
   const [state, setState] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -43,9 +47,13 @@ export function WorkOrders({api, leadId, onChange}) {
     {state.closed && state.outstanding === 0 && <p className="notice">Every borrower is ordered and the lead is closed. Closure means the work has been ordered; it is not valuation approval or payment completion.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {total === 0 ? <p>Add a borrower before issuing work orders.</p> :
-    <ResponsiveTable><table><thead><tr><th>Borrower</th><th>Cases</th><th>Work order</th><th></th></tr></thead><tbody>
+    <ResponsiveTable><table><thead><tr><th>Name of customer / owner</th><th>Cases entered</th><th>Paid by</th><th>Payment by mode</th><th>Payment mode</th><th>Work order</th><th></th></tr></thead><tbody>
       {state.borrowers.map(b => <tr key={b.id}>
-        <td>{b.name}</td><td>{b.cases}</td>
+        <td>{b.name}{(b.contact_number || b.email) && <><br/><small>{[b.contact_number, b.email].filter(Boolean).join(' · ')}</small></>}</td>
+        <td className="num">{b.cases}{b.declared_cases ? `/${b.declared_cases}` : ''}</td>
+        <td>{label(lookups?.payers, b.payer) || '—'}</td>
+        <td>{b.fee_basis === 2 ? `Fixed ₹${Number(b.agreed_fee || 0).toLocaleString('en-IN')}` : label(lookups?.fee_bases, b.fee_basis) || '—'}</td>
+        <td>{label(lookups?.payment_methods, b.customer_payment_method) || '—'}</td>
         <td>{b.work_order ? <><strong>{b.work_order.number}</strong>{b.work_order.issued_at && <><br/><small>{when(b.work_order.issued_at)}{b.work_order.issued_by ? ` · ${b.work_order.issued_by}` : ''}</small></>}</> : <span className="muted">Not issued</span>}</td>
         <td>{b.work_order
           ? (b.work_order.document_available

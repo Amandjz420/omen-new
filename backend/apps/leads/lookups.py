@@ -47,7 +47,10 @@ def lookups(request):
     usage_code, document_code, block_code = (legacy_codes('lead_mngt', 'usage_of_reports'), legacy_codes('lead_mngt', 'scrutiny_document'),
                                              legacy_codes('uam_user', 'block'))
     rows = lambda qs, *fields: list(qs.values('id', 'name', *fields))
+    account = getattr(request.user, 'legacy_account', None)
     return JsonResponse({
+        # The signed-in person's employee record: "Lead received by" defaults to them.
+        'me': {'employee_id': account.employee_id if account else None},
         'modes': [{'code': c, 'label': n} for c, n in MODES],
         'follow_up_statuses': [{'code': c, 'label': n} for c, n in FOLLOW_UP_STATUSES],
         'payers': [{'code': c, 'label': n} for c, n in PAYERS],

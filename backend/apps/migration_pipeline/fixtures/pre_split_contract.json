@@ -1647,7 +1647,8 @@
     "api/intake/lookups/",
     "api/intake/lookups/ifsc/",
     "api/intake/lookups/offices/",
-    "api/intake/lookups/orderer/"
+    "api/intake/lookups/orderer/",
+    "api/intake/leads/<uuid:pk>/<str:kind>/<uuid:cid>/"
   ],
   "amendments": [
     {
@@ -1854,6 +1855,16 @@
         "api/intake/lookups/ifsc/",
         "api/intake/lookups/offices/",
         "api/intake/lookups/orderer/"
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "migration": "none",
+      "changed_models": [],
+      "added_models": [],
+      "reason": "Edit or delete a client's customer or a case, as the legacy intake allowed.",
+      "added_routes": [
+        "api/intake/leads/<uuid:pk>/<str:kind>/<uuid:cid>/"
       ]
     }
   ]

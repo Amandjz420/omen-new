@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Count, Q
 from apps.valuations.services import scope_leads
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_http_methods
@@ -15,13 +15,20 @@ def lead_json(obj,references):
             'status_label': {'1': 'New lead', '2': 'In process', '3': 'Cancelled', '4': 'Closed (legacy)'}.get(obj.legacy_status, 'Unknown'),
             'received_date': obj.received_date, 'date_basis': obj.date_basis,
             'office': office_json(obj.office,references) if obj.office else None,
-            'issues': reference.get('issues', [])}
+            'issues': reference.get('issues', []),
+            # Progress against what intake declared, as the legacy list showed it ("1/3").
+            'parties': {'recorded': getattr(obj, 'live_borrowers', None), 'declared': obj.party_count},
+            'cases': {'recorded': getattr(obj, 'live_cases', None), 'declared': obj.case_count},
+            'lead_giver': {'name': obj.contact.name, 'phone': obj.contact.phone} if obj.contact_id else None}
 
 
 @require_GET
 @staff_api
 def leads(request):
-    qs = scope_leads(request.user, Lead.objects.select_related('office__bank')).order_by('-received_date', '-id')
+    qs = (scope_leads(request.user, Lead.objects.select_related('office__bank', 'contact'))
+          .annotate(live_borrowers=Count('borrower', filter=~Q(borrower__legacy_deleted='1'), distinct=True),
+                    live_cases=Count('case', filter=~Q(case__legacy_status='1'), distinct=True))
+          .order_by('-received_date', '-id'))
     q = request.GET.get('q', '').strip()
     if q:
         ids=SourceIdentity.objects.filter(target_model=Lead._meta.label,environment='main',key=source_key(q)).values('target_id')
