@@ -4,7 +4,7 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000
 const option = (name, label, options, required = true) => ({name, label, options, required});
 const input = (name, label, type = 'text', required = true) => ({name, label, type, required});
 
-function Form({title, fields, initial = {}, save, button = 'Save', children}) {
+function Form({title, fields, initial = {}, save, button = 'Save', children, lead}) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(event) {
@@ -14,6 +14,7 @@ function Form({title, fields, initial = {}, save, button = 'Save', children}) {
     catch (e) {setError(e.message);} finally {setBusy(false);}
   }
   return <form onSubmit={submit} className="intake-form"><h3>{title}</h3><div className="intake-fields">
+    {lead}
     {fields.map(f => <label key={f.name}>{f.label}{f.options ?
       <select name={f.name} required={f.required} defaultValue={initial[f.name] ?? ''}>
         <option value="">Select…</option>{f.options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
@@ -87,14 +88,22 @@ function Contacts({api, office, catalog, value, onSelect}) {
       }}/>}</section>;
 }
 
-function ServiceForm({catalog, save}) {
+// The subtype list depends on the service, so the service comes first. It had come
+// after the subtype, which then showed an empty list before any service was chosen.
+export function ServiceForm({catalog, save}) {
   const [service,setService] = useState('');
-  return <Form title="Add requested service" save={save} fields={[
-    option('subtype','Asset subtype',catalog.subtypes.filter(s => s.service_id === service),false),
-    input('party_count','Expected parties','number',false),input('case_count','Expected cases','number',false)]}>
-    <label>Service<select name="service" required value={service} onChange={e => setService(e.target.value)}>
-      <option value="">Select…</option>{catalog.services.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}
-    </select></label></Form>;
+  const subtypes = catalog.subtypes.filter(s => s.service_id === service);
+  const hint = !service ? 'Choose a service first' : subtypes.length ? 'Select…' : 'This service has no subtypes';
+  return <Form title="Add requested service" save={save}
+    fields={[input('party_count','Expected parties','number',false),input('case_count','Expected cases','number',false)]}
+    lead={<>
+      <label>Service<select name="service" required value={service} onChange={e => setService(e.target.value)}>
+        <option value="">Select…</option>{catalog.services.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}
+      </select></label>
+      <label>Asset subtype<select name="subtype" key={service || 'none'} defaultValue="" disabled={!service || !subtypes.length}>
+        <option value="">{hint}</option>{subtypes.map(s => <option value={s.id} key={s.id}>{s.name}</option>)}
+      </select></label>
+    </>}/>;
 }
 
 export function IntakeLead({api, leadId, catalog: supplied, onChange}) {
