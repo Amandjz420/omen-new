@@ -246,6 +246,8 @@ def lead_result(lead):
                                                                                'logged_time_text', 'created_at'))
     result['contact'] = lead.contact_id and {'id': lead.contact_id, 'name': lead.contact.name, 'phone': lead.contact.phone}
     result['office_name'] = lead.office.name
+    from apps.leads.lookups import office_json
+    result['office_detail'] = office_json(lead.office)        # the case form's default place
     result['audit'] = list(m.IntakeAudit.objects.filter(target_model=lead._meta.label,target_id=lead.pk)
                            .order_by('-created_at').values('action','created_at','actor__username')[:30])
     return result

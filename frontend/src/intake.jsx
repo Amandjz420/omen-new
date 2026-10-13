@@ -1,3 +1,4 @@
+import {BorrowerForm, CaseForm, FollowUpForm, useLookups} from './screens/IntakeForms.jsx';
 import React, {useEffect, useState} from 'react';
 
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
@@ -106,7 +107,10 @@ export function ServiceForm({catalog, save}) {
     </>}/>;
 }
 
+const label = (rows, code) => (rows || []).find(r => String(r.code) === String(code))?.label;
+
 export function IntakeLead({api, leadId, catalog: supplied, onChange}) {
+  const {data: lookups} = useLookups();
   const [catalog,setCatalog] = useState(supplied);
   const [lead,setLead] = useState(null);
   const [error,setError] = useState('');
@@ -132,22 +136,19 @@ export function IntakeLead({api, leadId, catalog: supplied, onChange}) {
     <p>Status: {{'1':'New','2':'In process','3':'Cancelled','4':'Closed'}[lead.legacy_status] || 'Unknown'}</p>
     {!lead.editable && <p className="notice">Intake is locked because this lead is cancelled, closed, has an unknown status, or already has a work order.</p>}
     <h3>Requested services</h3><ul>{lead.services.map(s => <li key={s.id}>{named(catalog.services,s.service_id)} · {named(catalog.subtypes,s.subtype_id)}</li>)}</ul>
-    <h3>Borrowers</h3><ul>{lead.borrowers.map(b => <li key={b.id}>{b.name} · Fee: {b.agreed_fee ?? 'Not agreed'}</li>)}</ul>
-    <h3>Cases</h3><ul>{lead.cases.map(c => <li key={c.id}>{named(lead.borrowers,c.borrower_id)} · {c.asset_address}</li>)}</ul>
-    <h3>Follow-ups</h3>{lead.follow_ups.map(f => <article className="note" key={f.id}><strong>{f.call_status}</strong><p>{f.remark}</p><small>{f.logged_date_text} {f.logged_time_text}</small></article>)}
+    <h3>Client's customers</h3><ul>{lead.borrowers.map(b => <li key={b.id}>{b.name}{b.contact_number ? ` · ${b.contact_number}` : ''} · {b.property_count || 0} case(s) · {label(lookups?.payers, b.payer) || 'Payer not recorded'} · {b.fee_basis === 2 ? `Fixed ₹${Number(b.agreed_fee || 0).toLocaleString('en-IN')}` : label(lookups?.fee_bases, b.fee_basis) || ''}</li>)}</ul>
+    <h3>Cases</h3><ul>{lead.cases.map(c => <li key={c.id}>{named(lead.borrowers,c.borrower_id)} · {c.asset_address}{c.asset_district ? `, ${c.asset_district}` : ''}{c.asset_state ? `, ${c.asset_state}` : ''}{c.asset_pin_code ? ` ${c.asset_pin_code}` : ''}{c.expected_report_date ? ` · report by ${c.expected_report_date}` : ''}</li>)}</ul>
+    <h3>Follow-ups</h3>{lead.follow_ups.map(f => <article className="note" key={f.id}><strong>{label(lookups?.follow_up_statuses, f.call_status) || f.call_status}</strong><p>{f.remark}</p><small>{(f.logged_date_text || '').slice(0, 10) ? `Call back ${(f.logged_date_text || '').slice(0, 10)} ${f.logged_time_text || ''}` : ''}</small></article>)}
   </section>{lead.editable && <>
     <Contacts api={api} office={lead.office} catalog={catalog} value={contact} onSelect={setContact}/>
     <section className="panel"><Form key={lead.updated_at || lead.id} title="Assignment and intake date" initial={{assigned_employee:lead.assigned_employee,received_date:lead.received_date}}
       fields={[option('assigned_employee','Assigned employee',catalog.employees,false),input('received_date','Received date','date')]}
       save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify({...data,contact})});await reload();}}/>
     <ServiceForm catalog={catalog} save={data => add('services',data)}/>
-    <Form title="Add borrower" fields={[input('name','Borrower name'),input('agreed_fee','Agreed fee (INR)','number',false),input('property_count','Property count','number',false)]} save={data => add('borrowers',data)}/>
-    <Form title="Add asset case" fields={[option('borrower','Borrower',lead.borrowers),
-      option('requested_service','Requested service',lead.services.map(s => ({id:s.id,name:`${named(catalog.services,s.service_id)} · ${named(catalog.subtypes,s.subtype_id)}`}))),
-      input('asset_address','Asset address'),input('asset_district','Asset district','text',false),input('asset_state','Asset state','text',false)]}
-      save={data => {const s = lead.services.find(s => s.id === data.requested_service); const {requested_service,...fields}=data;
-        return add('cases',{...fields,service:s.service_id,subtype:s.subtype_id});}}/>
-    <Form title="Record follow-up" fields={[option('outcome','Outcome',['Contacted','No answer','Callback requested'].map(name => ({id:name,name}))),input('remark','Follow-up details')]} save={data => add('follow-ups',data)}/>
+    {/* The legacy intake sequence: follow-up, then each client's customer, then each case. */}
+    <FollowUpForm onSave={data => add('follow-ups', data)}/>
+    <BorrowerForm lead={lead} onSave={data => add('borrowers', data)}/>
+    {lead.borrowers.length > 0 && <CaseForm lead={lead} catalog={catalog} onSave={data => add('cases', data)}/>}
     <Form title="Cancel lead" button="Cancel lead" fields={[input('cancel_reason','Reason for cancellation')]}
       save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify(data)});await reload();}}/>
     </section></>}
@@ -166,11 +167,8 @@ export default function IntakeWorkspace({api}) {
   if(error) return <p role="alert" className="error">{error}</p>;
   if(!catalog) return <p>Loading intake options…</p>;
   if(leadId) return <><button onClick={() => {setLeadId(null);setKey(crypto.randomUUID());}}>Create another lead</button><IntakeLead api={api} leadId={leadId} catalog={catalog}/></>;
-  return <div className="intake"><p className="intro">Select or create a client and contact, then record the lead, services, borrowers and asset cases.</p>
+  return <div className="intake"><p className="intro">Add or edit client offices and their lead givers. Record new leads on the New lead form, which finds a lead giver by mobile number.</p>
     <OfficePicker api={api} selected={office} onSelect={id => {setOffice(id);setContact('');}} catalog={catalog}/>
     <Contacts api={api} office={office} catalog={catalog} value={contact} onSelect={setContact}/>
-    {office && <section className="panel"><Form title="Create lead" button="Create lead" initial={{received_date:today()}}
-      fields={[input('received_date','Received date','date'),option('assigned_employee','Assigned employee',catalog.employees,false)]}
-      save={async data => {const result=await api('intake/leads/',{method:'POST',body:JSON.stringify({...data,office,contact,request_id:key})});setLeadId(result.id);}}/></section>}
   </div>;
 }

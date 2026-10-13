@@ -122,6 +122,6 @@ def ifsc(request):
     offices_found = [office_json(o) for o in live(m.ClientOffice.objects).filter(ifsc__iexact=code)
                      .select_related('client_type', 'block', 'bank')]
     branch = m.BankBranch.objects.filter(ifsc__iexact=code).select_related('bank').first()
-    directory = branch and {'bank': branch.bank.name if branch.bank_id else '', 'branch': branch.name, 'address': branch.address,
+    directory = branch and {'bank': branch.bank.name if branch.bank_id else '', 'bank_id': branch.bank_id, 'branch': branch.name, 'address': branch.address,
                             'city': branch.city, 'district': branch.district, 'state': branch.state, 'ifsc': branch.ifsc}
     return JsonResponse({'ifsc': code, 'offices': offices_found, 'directory': directory})

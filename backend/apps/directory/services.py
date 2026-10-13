@@ -5,7 +5,8 @@ from apps.common.http import IntakeError, endpoint, payload, find
 from apps.common.validation import validated
 from apps.audit.services import record, snapshot
 
-OFFICE_FIELDS = ['name', 'branch_name', 'address', 'bank', 'client_type', 'state', 'district']
+# ifsc as on the legacy client form, so a client added from the bank directory keeps it.
+OFFICE_FIELDS = ['name', 'branch_name', 'address', 'bank', 'client_type', 'state', 'district', 'ifsc']
 
 
 CONTACT_FIELDS = ['name', 'office', 'designation', 'phone', 'alternate_phone']

@@ -32,7 +32,7 @@ export function Leads() {
                          placeholderData: keepPreviousData});
   return <Stack>
     <PageHeader title="Leads" description="Every lead, imported or recorded here."
-                actions={<Button component={Link} to="/leads/new">New lead or client</Button>}/>
+                actions={<Button component={Link} to="/leads/new">New lead</Button>}/>
     <Group align="flex-end" wrap="wrap" className="responsive-filters">
       <TextInput label="Search" placeholder="Lead number, source ID or office" value={typed} onChange={e => setTyped(e.currentTarget.value)} style={{flex: 1, minWidth: 240}}/>
       <Select label="Status" data={STATUSES} value={status} onChange={v => set({status: v, page: ''})} allowDeselect={false} w={220}/>

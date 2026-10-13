@@ -38,6 +38,7 @@ const Invoices = screen(() => import('./invoices.jsx'), 'Invoices');
 const Receipts = screen(() => import('./receipts.jsx'), 'Receipts');
 const Dispatch = screen(() => import('./dispatch.jsx'), 'Dispatch');
 const ValuationForm = screen(() => import('./screens/ValuationForm.jsx'), 'ValuationForm');
+const NewLeadForm = screen(() => import('./screens/IntakeForms.jsx'), 'NewLeadForm');
 
 // A failed request is shown to the person, not silently repeated: many of these
 // endpoints change money or state, and retrying them is the server's decision.
@@ -60,7 +61,8 @@ export function App() {
                 <Route element={<Shell/>}>
                   <Route index element={<Home/>}/>
                   <Route path="leads" element={<Leads/>}/>
-                  <Route path="leads/new" element={legacy('New lead or client', 'Record a client office, its contacts, and a new lead.', IntakeWorkspace)}/>
+                  <Route path="leads/new" element={<Suspense fallback={<LoadingState label="Opening the lead form"/>}><NewLeadForm/></Suspense>}/>
+                  <Route path="leads/clients" element={legacy('Clients and lead givers', 'Add or edit client offices and the lead givers at each.', IntakeWorkspace)}/>
                   <Route path="leads/:id" element={<LeadDetail/>}/>
                   <Route path="offices" element={<Offices/>}/>
                   <Route path="valuations" element={legacy('Valuations', 'Start a valuation, fill in its form, and submit it for verification.', Valuations)}/>

@@ -163,3 +163,17 @@ class LookupTests(IntakeFixture, TestCase):
         self.assertEqual([u['name'] for u in body['report_usages']], ['Loan purpose'])
         self.assertEqual((body['report_usages'][0]['code'], body['blocks'][0]['code']), ('148', '305'))
         self.assertEqual([s['code'] for s in body['follow_up_statuses']], ['1', '3', '4', '5', '6', '7'])
+
+    def test_a_client_added_from_the_bank_directory_keeps_its_ifsc(self):
+        bank = m.Bank.objects.create(name='Indian Bank')
+        m.BankBranch.objects.create(name='JHAJJAR', bank=bank, ifsc='IDIB000J031', address='Rohtak Road', city='JHAJJAR', district='JHAJJAR', state='HARYANA')
+        found = self.client.get('/api/intake/lookups/ifsc/', {'code': 'IDIB000J031'}).json()['directory']
+        r = self.send('/api/intake/offices/', {'name': found['bank'], 'branch_name': found['branch'], 'address': found['address'],
+                                               'bank': found['bank_id'], 'state': found['state'], 'district': found['district'], 'ifsc': found['ifsc']})
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(len(self.client.get('/api/intake/lookups/ifsc/', {'code': 'IDIB000J031'}).json()['offices']), 1)
+
+    def test_the_lead_carries_its_offices_place_for_the_case_form(self):
+        self.office.state, self.office.district, self.office.block = 'Madhya Pradesh', 'Bhopal', self.block; self.office.save()
+        detail = self.client.get(f'/api/intake/leads/{self.create().pk}/').json()['office_detail']
+        self.assertEqual((detail['state'], detail['district'], detail['city']), ('Madhya Pradesh', 'Bhopal', 'Huzur'))
