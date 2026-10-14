@@ -12,3 +12,12 @@ export const count = value => Number(value || 0).toLocaleString('en-IN');
 /** A calendar date: "2026-09-27" -> "27 Sep 2026". Empty stays empty. */
 export const date = value => (value ? dayjs(value).format('D MMM YYYY') : '');
 export const dateTime = value => (value ? dayjs(value).format('D MMM YYYY, h:mm a') : '');
+
+/** Today's date as YYYY-MM-DD on the user's own calendar. toISOString() gives the UTC
+ *  date, which in India is still yesterday from midnight until 5:30 in the morning:
+ *  every date field then defaulted to yesterday, and the server, which keeps Indian
+ *  time, refused a verification as dated before the valuation. */
+export function today(date = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}

@@ -6,6 +6,7 @@ import {PageHeader} from '../components/PageHeader.jsx';
 import {ErrorState, LoadingState} from '../components/States.jsx';
 import {api, post} from '../lib/api.js';
 import {uuid} from '../lib/uuid.js';
+import {today} from '../lib/format.js';
 
 // The legacy intake forms (design/add_lead, add_feedback, add_client, add_case), field
 // for field and in the same order, with everything the legacy forms filled in for the
@@ -16,7 +17,6 @@ export const useCatalog = () => useQuery({queryKey: ['intake', 'catalog'], query
 const options = (rows = [], label = 'name') => rows.map(r => ({value: String(r.id ?? r.code), label: String(r[label] ?? r.label ?? '').trim()}));
 const codes = (rows = []) => rows.map(r => ({value: String(r.code), label: r.label}));
 const digitsOf = v => String(v || '').replace(/\D/g, '').slice(-10);
-const today = () => new Date().toISOString().slice(0, 10);
 
 // A bank's own valuation form is its own subtype, named with its IFSC prefix, as in
 // L & B ( SBIN); a client office's bank is its IFSC's prefix (apps/catalog/banks.py).

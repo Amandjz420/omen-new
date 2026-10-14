@@ -1,9 +1,9 @@
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {Question} from './valuations.jsx';
+import {today} from './lib/format.js';
 
 const TRACKS = [['legal', 'Legal'], ['technical', 'Technical'], ['social', 'Social'], ['general', 'General']];
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function Verifications({api}) {
   const [track, setTrack] = useState('legal');

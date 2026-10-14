@@ -1,11 +1,11 @@
 import {uuid} from './lib/uuid.js';  // crypto.randomUUID exists only on secure pages
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
+import {today} from './lib/format.js';
 
 const TABS = [['awaiting', 'Awaiting dispatch'], ['lying', 'Lying at HO'], ['transit', 'In transit'], ['delivered', 'Delivered'], ['cancelled', 'Cancelled']];
 const MODES = [[2, 'Speed Post'], [1, 'Courier'], [3, 'By Hand'], [4, 'Pick up from HO'], [5, 'By E-Mail'], [6, 'Normal Post']];
 const COURIERS = [[1, 'Madhur Courier Services'], [2, 'India Post Services'], [3, 'Other']];
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function Dispatch({api}) {
   const [view, setView] = useState(null);       // {send: [reports], resend?} or {dispatch: id}

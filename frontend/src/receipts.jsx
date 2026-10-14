@@ -1,12 +1,12 @@
 import {uuid} from './lib/uuid.js';  // crypto.randomUUID exists only on secure pages
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
+import {today} from './lib/format.js';
 
 const STAGES = [['to_check', 'To check'], ['to_verify', 'To verify'], ['verified', 'Verified'], ['voided', 'Voided']];
 const AS = [[2, 'Recovery against an invoice'], [1, 'Advance'], [3, 'Other']];
 const MODES = [[4, 'Netbanking'], [5, 'UPI'], [1, 'Cash'], [2, 'Cheque'], [3, 'Draft']];
 const rs = v => `₹ ${Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-const today = () => new Date().toISOString().slice(0, 10);
 // The fields a receipt form may send, for creation and correction alike. It must
 // match FIELDS in backend/apps/billing/receipts.py; a backend test compares them.
 export const WRITE_FIELDS = ['received_as', 'invoice', 'amount', 'received_date', 'amount_received_on', 'payment_mode',

@@ -2,10 +2,10 @@ import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {FollowUpForm, useLookups} from './screens/IntakeForms.jsx';
 import {uuid} from './lib/uuid.js';
+import {today} from './lib/format.js';
 
 const BUCKETS = [['to_invoice', 'To invoice'], ['unpaid', 'Unpaid'], ['paid', 'Paid'], ['cancelled', 'Cancelled'], ['offline', 'Offline']];
 const rs = v => `₹ ${Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-const today = () => new Date().toISOString().slice(0, 10);
 
 export function Invoices({api}) {
   const [view, setView] = useState(null);       // {issue: valuationId} or {invoice: id}

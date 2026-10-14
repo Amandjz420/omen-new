@@ -60,3 +60,12 @@ describe('uuid', () => {
     expect(uuid()).toMatch(V4);
   });
 });
+
+describe('today', () => {
+  it('is the date on the local calendar, not in UTC', async () => {
+    const {today} = await import('./format.js');
+    // 1:18 in the morning in India is still the previous day in UTC.
+    expect(today(new Date(2026, 9, 15, 1, 18))).toBe('2026-10-15');
+    expect(today(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
+  });
+});
