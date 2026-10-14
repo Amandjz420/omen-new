@@ -8,13 +8,19 @@
   color: var(--mantine-color-omen-9);
   font-size: 14px;
 
-  & button:not([class*='mantine-']) { font: inherit; cursor: pointer; border: 0; border-radius: 4px; background: var(--mantine-color-omen-6); color: white; padding: 9px 16px; font-weight: 600; }
-  & button:not([class*='mantine-']):hover:not(:disabled) { background: var(--mantine-color-omen-7); }
-  & button:not([class*='mantine-']):disabled { opacity: .5; cursor: default; }
+  /* The base button and label rules sit inside :where(), which gives them no weight of
+     their own: every class rule below (.link, .choice, .sections button, .pagination
+     button, .mobile-section-picker) can then style its element. Without it these base
+     rules out-ranked them all, so link-style buttons showed as solid buttons, checkboxes
+     lost their spacing, a hovered section turned dark blue under dark text, and the
+     phone's section picker showed on desktop. */
+  & :where(button:not([class*='mantine-'])) { font: inherit; cursor: pointer; border: 0; border-radius: 4px; background: var(--mantine-color-omen-6); color: white; padding: 9px 16px; font-weight: 600; }
+  & :where(button:not([class*='mantine-']):hover:not(:disabled)) { background: var(--mantine-color-omen-7); }
+  & :where(button:not([class*='mantine-']):disabled) { opacity: .5; cursor: default; }
   & button:not([class*='mantine-']):focus-visible, & input:not([class*='mantine-']):focus-visible, & textarea:not([class*='mantine-']):focus-visible, & select:not([class*='mantine-']):focus-visible { outline: 2px solid var(--mantine-color-omen-6); outline-offset: 2px; }
   & input:not([class*='mantine-']), & textarea:not([class*='mantine-']), & select:not([class*='mantine-']) { font: inherit; display: block; width: 100%; padding: 9px 11px; border: 1px solid var(--mantine-color-gray-4); border-radius: 4px; background: white; color: inherit; margin-top: 6px; }
   & input:not([class*='mantine-'])[type='checkbox'], & input:not([class*='mantine-'])[type='radio'] { display: inline-block; width: auto; margin: 0; }
-  & label:not([class*='mantine-']) { display: block; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+  & :where(label:not([class*='mantine-'])) { display: block; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
   & textarea:not([class*='mantine-']) { min-height: 90px; resize: vertical; }
   & h2 { font-size: 20px; } & h3 { font-size: 16px; margin-top: 28px; }
   & .muted, & .intro { font-size: 13px; color: var(--mantine-color-gray-7); line-height: 1.6; }
@@ -35,6 +41,7 @@
   & .pagination { display: flex; gap: 10px; align-items: center; margin-top: 18px; font-size: 13px; }
   & .pagination span { margin-right: auto; color: var(--mantine-color-gray-7); }
   & .pagination button { background: var(--mantine-color-omen-0); color: var(--mantine-color-omen-8); padding: 7px 12px; }
+  & .pagination button:hover:not(:disabled) { background: var(--mantine-color-omen-1); }
   & .note { border-top: 1px solid var(--mantine-color-gray-2); margin-top: 18px; padding-top: 10px; }
   & .intake { display: grid; gap: 20px; }
   & .intake-form { padding: 20px 0; border-top: 1px solid var(--mantine-color-gray-2); }
@@ -44,11 +51,22 @@
   & .mobile-section-picker { display: none; }
   & .sections { display: flex; flex-direction: column; gap: .25rem; position: sticky; top: 80px; }
   & .sections button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: .1rem; background: transparent; color: inherit; padding: 8px 10px; }
+  & .sections button:hover:not(:disabled) { background: var(--mantine-color-omen-0); }
   & .sections button.active { font-weight: 650; background: var(--mantine-color-omen-0); color: var(--mantine-color-omen-9); }
   & .question { min-inline-size: 0; border: 1px solid var(--mantine-color-gray-3); border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .75rem; }
   & .question legend { max-width: 100%; overflow-wrap: anywhere; }
   & input:not([class*='mantine-'])[hidden] { display: none; }
   & .question legend { font-weight: 600; padding: 0 .25rem; }
+  /* In every table (queues, and the tables inside questions) words and numbers wrap
+     whole rather than letter by letter ("L-09261010683" no longer splits in three);
+     a table too wide for its box scrolls inside it. In a question each entry box
+     keeps a usable width. */
+  & th:not([class*='mantine-']), & td:not([class*='mantine-']) { overflow-wrap: normal; }
+  & .question th, & .question td { vertical-align: top; }
+  & .question td input { min-width: 7.5rem; margin-top: 0; }
+  & td .link { white-space: nowrap; }
+  /* Choosing a section brings its first question into view, clear of the top bar. */
+  & .section-body { scroll-margin-top: 80px; }
   & .choice { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; font-weight: 400; }
   & .required { color: #b42318; }
   & .actions { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }

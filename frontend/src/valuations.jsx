@@ -92,6 +92,14 @@ function ValuationForm({api, id, onBack}) {
   function choose(next) {
     if (dirty && !window.confirm('Leave this section without saving your changes?')) return;
     setKey(next);
+    // On a phone the questions start a screen below the picker, and on desktop a long
+    // section leaves the page scrolled far down: bring the chosen section's start into
+    // view whenever it is off screen.
+    requestAnimationFrame(() => {
+      const body = document.querySelector('.section-body');
+      const top = body?.getBoundingClientRect().top;
+      if (body && (top < 0 || top > window.innerHeight * 0.6)) body.scrollIntoView({block: 'start'});
+    });
   }
   // Only questions the user changed are sent; an untouched question is never
   // rewritten, so opening and saving a section cannot alter historical answers.
