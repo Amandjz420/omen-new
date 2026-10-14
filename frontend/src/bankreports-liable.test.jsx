@@ -33,3 +33,24 @@ describe('the liable assessor', () => {
     expect(calls.find(c => c.path === 'bank-reports/v1/liable/').body).toEqual({employee: 'e2', reason: 'Branch reassigned'});
   });
 });
+
+describe('the branch filled in from the office', () => {
+  it('is a real choice, so the report can be generated without picking it again', async () => {
+    const ADDRESSED = {...REPORT, bank_client: true, report: null, branch_name: 'Anand Nagar',
+                       values: {bank: 'sbi', branch: 'b-anand', market_value: '1', realisable_value: '1', distress_value: '1'}};
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      const path = String(url).replace('/api/', '');
+      // The branch search lists other branches first: the office's is not among them.
+      const body = path.startsWith('bank-reports/banks') ? {banks: [{id: 'sbi', name: 'State Bank of India'}]}
+        : path.startsWith('bank-reports/branches') ? {branches: [{id: 'b-other', name: 'Arera Colony'}]}
+        : path.startsWith('intake/catalog') ? {employees: []} : path.startsWith('bank-reports/v1') ? ADDRESSED : {};
+      return new Response(JSON.stringify(body), {status: 200, headers: {'Content-Type': 'application/json'}});
+    });
+    renderApp(<ReportForm api={api} id="v1" onBack={() => {}}/>);
+    const branch = await screen.findByLabelText(/^Branch/);
+    await waitFor(() => expect(branch.querySelectorAll('option').length).toBe(3));
+    expect(branch.value).toBe('b-anand');                                   // was "": the browser refused the form
+    expect(branch.selectedOptions[0].textContent).toBe('Anand Nagar');
+    expect(branch.checkValidity()).toBe(true);
+  });
+});

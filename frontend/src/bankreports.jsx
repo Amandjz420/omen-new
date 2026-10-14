@@ -1,7 +1,7 @@
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
+import {today} from './lib/format.js';
 
-const today = () => new Date().toISOString().slice(0, 10);
 const rupees = v => v === '' || v == null ? '' : Number(v).toLocaleString('en-IN', {maximumFractionDigits: 0});
 
 export function BankReports({api}) {
@@ -97,7 +97,12 @@ export function ReportForm({api, id, onBack}) {
             <option value="">Choose…</option>{banks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
           <label>Find branch<input value={branchQuery} disabled={blocked || !form.bank} placeholder="Name, IFSC or city" onChange={e => setBranchQuery(e.target.value)}/></label>
           <label>Branch<span className="required"> *</span><select value={form.branch || ''} disabled={blocked || !form.bank} required onChange={e => set('branch', e.target.value)}>
-            <option value="">{data.branch_name && form.branch ? data.branch_name : 'Choose…'}</option>
+            {/* The branch filled in from the office is a real option. It was shown on the
+                empty placeholder instead, so the form looked complete but sent no branch,
+                and the browser refused it: "Please select an item in the list". */}
+            <option value="">Choose…</option>
+            {form.branch && !branches.some(b => String(b.id) === String(form.branch)) &&
+              <option value={form.branch}>{data.branch_name || 'The chosen branch'}</option>}
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.ifsc ? ` · ${b.ifsc}` : ''}{b.city ? ` · ${b.city}` : ''}</option>)}</select></label>
         </div>
         <p className="muted">The report's bank chooses the template, and can differ from the office's bank.</p></>}

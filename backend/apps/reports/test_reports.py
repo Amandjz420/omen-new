@@ -121,6 +121,23 @@ class GenerationTests(BankReportTests):
             self.assertIn(expected, text)
         self.assertNotIn('Must not print', text)        # a retired heading's lines are omitted
 
+    def test_the_report_is_laid_out_as_the_previous_system_printed_it(self):
+        """The page banks know: room for the pre-printed letterhead (no banner image),
+        references at the top, the labelled addressee rows, the service as a title,
+        the valuer's guidance paragraph, and "n of N" at each page's foot; on A4."""
+        self.generate()
+        pdf = self.client.get(f'/api/bank-reports/{self.v}/document/')
+        reader = PdfReader(io.BytesIO(b''.join(pdf.streaming_content)))
+        text = self.document_text()
+        for expected in ('OUR REFERENCE : OA/2026/1', 'YOUR REFERENCE : SBIN0000389', 'Name & Address of Branch : To,',
+                         'Name of Customer (s)/ Borrower unit : (for which valuation report is sought): M/s Bhola Warehouse',
+                         'Valuation of asset- (L & B)', 'Here the approved valuer should discuss',
+                         'Screen shot of longitude/latitude', f'1 of {len(reader.pages)}'):
+            self.assertIn(expected, text)
+        self.assertNotIn('OMEN ID', text)                          # an empty reference is left out, not printed blank
+        self.assertEqual([round(x) for x in reader.pages[0].mediabox[2:]], [595, 842])    # A4, not the legacy US Letter
+        self.assertFalse(any(page.images for page in reader.pages))                       # no banner: no photos were taken
+
     def test_zero_values_are_allowed_and_book_value_is_optional(self):
         self.assertEqual(self.generate(market_fair_amount='0').status_code, 200)
         self.assertEqual(m.BankReport.objects.get().book_value_amount, Decimal('0.00'))
