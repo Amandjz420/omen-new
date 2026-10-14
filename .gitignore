@@ -15,3 +15,6 @@ storage/
 migration-required/database-backups/
 test-results/
 playwright-report/
+
+# Local database backup
+/backend/target.sqlite3.pre-expansion
