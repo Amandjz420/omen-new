@@ -179,7 +179,9 @@ function Question({q, editable, status, suggestions, onSave, onDecide, onSource}
 
 function Choice({q, editable, onSave}) {
   const answer = q.answer || {selected: [], custom: ''};
-  const [writing, setWriting] = useState(!!answer.custom);
+  // An option with no label is the written-in answer's slot, not a choice to show.
+  const options = q.options.filter(o => (o.label || '').trim());
+  const [writing, setWriting] = useState(!!answer.custom || !options.length);
   const [custom, setCustom] = useState(answer.custom || '');
   useEffect(() => { setCustom(answer.custom || ''); if (answer.custom) setWriting(true); }, [answer.custom]);
   const selected = new Set((answer.selected || []).map(String));
@@ -191,13 +193,13 @@ function Choice({q, editable, onSave}) {
   };
   return <>
     <div className={classes.options} role="group" aria-label={q.text}>
-      {q.options.map(o => <button key={o.id} type="button" className={classes.option} aria-pressed={selected.has(String(o.id))}
+      {options.map(o => <button key={o.id} type="button" className={classes.option} aria-pressed={selected.has(String(o.id))}
                                   disabled={!editable} onClick={() => pick(String(o.id))}>{o.label}</button>)}
     </div>
     {writing && <TextInput label="Your own answer" value={custom} disabled={!editable} placeholder="What you found"
       onChange={e => setCustom(e.currentTarget.value)}
       onBlur={() => custom !== (answer.custom || '') && onSave({selected: q.kind === 'single' && custom ? [] : [...selected], custom})}/>}
-    {editable && <button type="button" className={classes.link} onClick={() => {
+    {editable && options.length > 0 && <button type="button" className={classes.link} onClick={() => {
       if (writing && answer.custom) onSave({selected: [...selected], custom: ''});
       setWriting(!writing); if (writing) setCustom('');
     }}>{writing ? 'Use the options instead' : 'Write your own answer'}</button>}

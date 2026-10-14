@@ -67,6 +67,7 @@
   & td .link { white-space: nowrap; }
   /* Choosing a section brings its first question into view, clear of the top bar. */
   & .section-body { scroll-margin-top: 80px; }
+  & .write-in { margin: .5rem 0 .25rem; font-weight: 400; color: var(--mantine-color-gray-7); }
   & .choice { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; font-weight: 400; }
   & .required { color: #b42318; }
   & .actions { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }

@@ -2,6 +2,7 @@ import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {Standing} from './approvals.jsx';
 import {SiteChecklist} from './screens/SiteChecklist.jsx';
+import {today} from './lib/format.js';
 
 const FILTERS = [['', 'Active work'], ['not_started', 'Not started'], ['Pending', 'Pending'], ['Revert', 'Reverted'],
                  ['Hold', 'On hold'], ['Submit', 'Submitted'], ['Cancel', 'Cancelled']];
@@ -205,14 +206,24 @@ export function Question({q, value, readOnly, onChange, files}) {
   if (!value) return null;
   if (q.kind === 'single' || q.kind === 'multiple') {
     const selected = new Set(value.selected);
+    const custom = value.custom || '';
+    // An option with no label is the slot for a written-in answer ("Location of
+    // property", "Value by adopting GLR": 28 questions, 8 with no other option). It
+    // was shown as a radio button with no label, which saved nothing; the answer is
+    // typed instead. A single choice is an option or written text, never both.
+    const options = q.options.filter(o => (o.label || '').trim());
+    const writeIn = options.length < q.options.length || !!custom;
     const toggle = id => {
-      if (q.kind === 'single') return onChange({selected: selected.has(id) ? [] : [id]});
+      if (q.kind === 'single') return onChange({selected: selected.has(id) ? [] : [id], custom: ''});
       const next = new Set(selected); next.has(id) ? next.delete(id) : next.add(id);
-      onChange({selected: [...next]});
+      onChange({selected: [...next], custom});
     };
-    return <fieldset className="question">{title}{q.options.map(o => <label key={o.id} className="choice">
+    const write = text => onChange({selected: q.kind === 'single' && text.trim() ? [] : [...selected], custom: text});
+    return <fieldset className="question">{title}{options.map(o => <label key={o.id} className="choice">
       <input type={q.kind === 'single' ? 'radio' : 'checkbox'} name={q.id} disabled={readOnly}
         checked={selected.has(o.id)} onChange={() => toggle(o.id)}/>{o.label}</label>)}
+      {writeIn && <label className="write-in">{options.length ? 'Or write your own answer' : 'Your answer'}
+        <textarea rows={1} value={custom} disabled={readOnly} onChange={e => write(e.target.value)}/></label>}
       {files && <Documents q={q} selected={selected} readOnly={readOnly} files={files}/>}</fieldset>;
   }
   if (q.kind === 'text') {
@@ -363,7 +374,7 @@ function Submission({api, id, onJump, onDone}) {
     </div>}
     {!locked && data.keeps_report_number && <p className="muted">This valuation was sent back. Resubmitting keeps its report number, {data.report_number}.</p>}
     <div className="form-grid">
-      <label>Valuation date<input type="date" value={form.valuation_date || ''} disabled={locked} max={new Date().toISOString().slice(0, 10)} onChange={e => set('valuation_date', e.target.value)}/><small className="muted">Defaults to today</small></label>
+      <label>Valuation date<input type="date" value={form.valuation_date || ''} disabled={locked} max={today()} onChange={e => set('valuation_date', e.target.value)}/><small className="muted">Defaults to today</small></label>
       <label>Eligible loan amount<span className="required"> *</span><input inputMode="decimal" value={form.eligible_loan_amount || ''} disabled={locked} required onChange={e => set('eligible_loan_amount', e.target.value)}/></label>
       <label>Desired loan amount<span className="required"> *</span><input inputMode="decimal" value={form.desired_loan_amount || ''} disabled={locked} required onChange={e => set('desired_loan_amount', e.target.value)}/></label>
       {select('submitted_to', 'Liable assessor (FA)', data.options.employees)}
