@@ -8,6 +8,7 @@ upload, last, the local folder if this machine has it; otherwise nothing, meanin
 found. Idempotent; run after each import and after upload_uam_files:
 
     manage.py locate_legacy_files
+    manage.py locate_legacy_files --only uam    # just the user-management uploads
 """
 import html
 import re
@@ -54,15 +55,21 @@ def listing(prefix):
 class Command(BaseCommand):
     help = "Record where each of the previous system's files is: in the bucket or the local uploads folder."
 
+    def add_arguments(self, parser):
+        # Listing LeadUpload/ is ~150 requests; the user-management uploads need two.
+        parser.add_argument('--only', choices=['lead', 'uam'],
+                            help='Locate only the lead documents or only the user-management uploads.')
+
     def handle(self, *args, **options):
         if not s3.configured():
             raise CommandError('The S3 credentials are not configured (AWS_* in the repository .env).')
         self.stdout.write('Listing the bucket…')
-        found = {p: listing(p) for p in [*PREFIX.values(), UAM_COPY]}
-        self.stdout.write(f"  LeadUpload/ {len(found['LeadUpload/']):,} objects, UAMUpload/ {len(found['UAMUpload/']):,}, "
-                          f"{UAM_COPY} {len(found[UAM_COPY]):,}")
+        providers = {'lead': ['legacy_lead_s3'], 'uam': ['legacy_uam_local']}.get(options.get('only'), list(PREFIX))
+        prefixes = [PREFIX[p] for p in providers] + ([UAM_COPY] if 'legacy_uam_local' in providers else [])
+        found = {p: listing(p) for p in prefixes}
+        self.stdout.write('  ' + ', '.join(f'{p} {len(keys):,} objects' for p, keys in found.items()))
         now, outcome, changed = timezone.now(), Counter(), []
-        for doc in m.Document.objects.filter(storage_provider__in=PREFIX).only('id', 'storage_provider', 'storage_key',
+        for doc in m.Document.objects.filter(storage_provider__in=providers).only('id', 'storage_provider', 'storage_key',
                                                                                'legacy_location', 'legacy_checked_at').iterator(2000):
             prefix, key = PREFIX[doc.storage_provider], doc.storage_key.lstrip('/')
             location, how = '', 'not found'

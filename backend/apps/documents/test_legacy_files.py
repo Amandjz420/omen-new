@@ -147,6 +147,19 @@ class LocatingTests(TestCase):
 
 
 @mock.patch.dict(os.environ, AWS)
+class LocatingOneKindTests(TestCase):
+    def test_only_the_user_management_uploads_lists_only_their_folders(self):
+        lead = m.Document.objects.create(storage_provider='legacy_lead_s3', storage_key='a.jpeg')
+        uam = m.Document.objects.create(storage_provider='legacy_uam_local', storage_key='202411/e.jpg')
+        bucket = {'UAMUpload/': set(), 'OMEN/uamupload/': {'OMEN/uamupload/202411/e.jpg'}}
+        with mock.patch('apps.documents.management.commands.locate_legacy_files.listing', side_effect=lambda p: bucket[p]) as listing:
+            call_command('locate_legacy_files', only='uam', stdout=open(os.devnull, 'w'))
+        self.assertEqual(sorted(c.args[0] for c in listing.call_args_list), ['OMEN/uamupload/', 'UAMUpload/'])
+        lead.refresh_from_db(); uam.refresh_from_db()
+        self.assertEqual((lead.legacy_checked_at, uam.legacy_location), (None, 'OMEN/uamupload/202411/e.jpg'))
+
+
+@mock.patch.dict(os.environ, AWS)
 class ListingTests(TestCase):
     def test_a_page_that_times_out_is_requested_again(self):
         from apps.documents.management.commands import locate_legacy_files as locate
