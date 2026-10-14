@@ -146,6 +146,25 @@ class LocatingTests(TestCase):
         self.assertTrue(all(m.Document.objects.values_list('legacy_checked_at', flat=True)))
 
 
+@mock.patch.dict(os.environ, AWS)
+class ListingTests(TestCase):
+    def test_a_page_that_times_out_is_requested_again(self):
+        from apps.documents.management.commands import locate_legacy_files as locate
+        body = b'<ListBucketResult><Key>UAMUpload/a.jpg</Key></ListBucketResult>'
+        ok = mock.MagicMock()
+        ok.__enter__.return_value.read.return_value = body
+        with mock.patch.object(locate.urllib.request, 'urlopen', side_effect=[TimeoutError(), ok]) as urlopen, \
+             mock.patch.object(locate.time, 'sleep'):
+            self.assertEqual(locate.listing('UAMUpload/'), {'UAMUpload/a.jpg'})
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test_it_gives_up_after_repeated_failures(self):
+        from apps.documents.management.commands import locate_legacy_files as locate
+        with mock.patch.object(locate.urllib.request, 'urlopen', side_effect=TimeoutError()), \
+             mock.patch.object(locate.time, 'sleep'), self.assertRaises(TimeoutError):
+            locate.listing('UAMUpload/')
+
+
 class EnvironmentTests(TestCase):
     def test_the_env_file_never_overrides_a_variable_already_set(self):
         from config.settings import _load_env

@@ -11,6 +11,7 @@ found. Idempotent; run after each import and after upload_uam_files:
 """
 import html
 import re
+import time
 import urllib.request
 from collections import Counter
 
@@ -23,14 +24,27 @@ from apps.documents import s3
 from apps.documents.storage import LOCAL_MARK, PREFIX, UAM_COPY, contained
 
 
+def page(query, attempts=4):
+    """One page of a listing. Listing LeadUpload/ takes some 150 requests, and a slow
+    connection times out on one of them now and then; each page is retried, freshly
+    signed, rather than losing the whole run."""
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(s3.presign('', query=query), timeout=120) as r:
+                return r.read().decode()
+        except OSError:                                  # TimeoutError and URLError included
+            if attempt == attempts - 1:
+                raise
+            time.sleep(2 ** attempt)
+
+
 def listing(prefix):
     keys, token = set(), None
     while True:
         query = {'list-type': '2', 'prefix': prefix, 'max-keys': '1000'}
         if token:
             query['continuation-token'] = token
-        with urllib.request.urlopen(s3.presign('', query=query), timeout=60) as r:
-            body = r.read().decode()
+        body = page(query)
         keys.update(html.unescape(k) for k in re.findall(r'<Key>([^<]*)</Key>', body))
         token = (re.findall(r'<NextContinuationToken>([^<]*)', body) or [None])[0]
         if not token:
