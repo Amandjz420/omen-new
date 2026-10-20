@@ -115,7 +115,10 @@ export function ServiceForm({catalog, save, ifsc = ''}) {
 
 const label = (rows, code) => (rows || []).find(r => String(r.code) === String(code))?.label;
 
-export function IntakeLead({api, leadId, catalog: supplied, onChange}) {
+// layout, when given, receives the page's parts ({lead, details, customers, followUps, history})
+// so the host can arrange them, e.g. in tabs. Without it everything is stacked as before.
+// refresh reloads the lead in place (no remount), so a host's tabs and drafts survive it.
+export function IntakeLead({api, leadId, catalog: supplied, onChange, layout, refresh = 0}) {
   const {data: lookups} = useLookups();
   const [catalog,setCatalog] = useState(supplied);
   const [lead,setLead] = useState(null);
@@ -131,7 +134,7 @@ export function IntakeLead({api, leadId, catalog: supplied, onChange}) {
       if(active) {setCatalog(c);setLead(l);setContact(l.contact || '');setError('');}
     }).catch(e => active && setError(e.message));
     return () => {active = false;};
-  },[leadId]);
+  },[leadId, refresh]);
   async function add(kind, data) {
     const created = await api(`intake/leads/${leadId}/${kind}/`,{method:'POST',body:JSON.stringify(data)});await reload();
     return created;                                     // the form keeps editing the record it created
@@ -148,33 +151,54 @@ export function IntakeLead({api, leadId, catalog: supplied, onChange}) {
     try {await api(`intake/leads/${leadId}/${kind}/${record.id}/`,{method:'DELETE'});await reload();} catch (e) {setError(e.message);}
   }
   const named = (list,id) => list.find(x => x.id === id)?.name || 'Not specified';
-  if(error) return <p role="alert" className="error">{error}</p>;
-  if(!lead || !catalog) return <p>Loading lead intake…</p>;
-  return <div className="intake"><section className="panel"><h2>{lead.number} · {lead.office_name}</h2>
-    <p>Status: {{'1':'New','2':'In process','3':'Cancelled','4':'Closed'}[lead.legacy_status] || 'Unknown'}</p>
-    {!lead.editable && <p className="notice">Intake is locked because this lead is cancelled, closed, has an unknown status, or already has a work order.</p>}
-    <h3>Requested services</h3><ul>{lead.services.map(s => <li key={s.id}>{named(catalog.services,s.service_id)} · {named(catalog.subtypes,s.subtype_id)}</li>)}</ul>
-    <h3>Client's customers</h3><ul>{lead.borrowers.map(b => <li key={b.id}>{lead.editable && <span className="row-actions"><button type="button" className="link" onClick={() => setEditing({kind: 'borrowers', record: b})}>Edit</button> · <button type="button" className="link" onClick={() => remove('borrowers', b, b.name)}>Delete</button> · </span>}{b.name}{b.contact_number ? ` · ${b.contact_number}` : ''} · {b.property_count || 0} case(s) · {label(lookups?.payers, b.payer) || 'Payer not recorded'} · {b.fee_basis === 2 ? `Fixed ₹${Number(b.agreed_fee || 0).toLocaleString('en-IN')}` : label(lookups?.fee_bases, b.fee_basis) || ''}</li>)}</ul>
-    <h3>Cases</h3><ul>{lead.cases.map(c => <li key={c.id}>{lead.editable && <span className="row-actions"><button type="button" className="link" onClick={() => setEditing({kind: 'cases', record: c})}>Edit</button> · <button type="button" className="link" onClick={() => remove('cases', c, 'this case')}>Delete</button> · </span>}{named(lead.borrowers,c.borrower_id)} · {c.asset_address}{c.asset_district ? `, ${c.asset_district}` : ''}{c.asset_state ? `, ${c.asset_state}` : ''}{c.asset_pin_code ? ` ${c.asset_pin_code}` : ''}{c.expected_report_date ? ` · report by ${c.expected_report_date}` : ''}</li>)}</ul>
-    <h3>Follow-ups</h3>{lead.follow_ups.map(f => <article className="note" key={f.id}><strong>{label(lookups?.follow_up_statuses, f.call_status) || f.call_status}</strong><p>{f.remark}</p><small>{(f.logged_date_text || '').slice(0, 10) ? `Call back ${(f.logged_date_text || '').slice(0, 10)} ${f.logged_time_text || ''}` : ''}</small></article>)}
-  </section>{lead.editable && <>
-    <Contacts api={api} office={lead.office} catalog={catalog} value={contact} onSelect={setContact}/>
-    <section className="panel"><Form key={lead.updated_at || lead.id} title="Assignment and intake date" initial={{assigned_employee:lead.assigned_employee,received_date:lead.received_date}}
+  if(error || !lead || !catalog) {
+    const message = error ? <p role="alert" className="error">{error}</p> : <p>Loading lead intake…</p>;
+    return layout ? layout({lead: null, details: message, customers: message, followUps: null, history: null}) : message;
+  }
+  const head = <><h2>{lead.number} · {lead.office_name}</h2>
+    <p>Status: {{'1':'New','2':'In process','3':'Cancelled','4':'Closed'}[lead.legacy_status] || 'Unknown'}</p></>;
+  const locked = !lead.editable && <p className="notice">Intake is locked because this lead is cancelled, closed, has an unknown status, or already has a work order.</p>;
+  const services = <><h3>Requested services</h3><ul>{lead.services.map(s => <li key={s.id}>{named(catalog.services,s.service_id)} · {named(catalog.subtypes,s.subtype_id)}</li>)}</ul></>;
+  const customers = <><h3>Client's customers</h3><ul>{lead.borrowers.map(b => <li key={b.id}>{lead.editable && <span className="row-actions"><button type="button" className="link" onClick={() => setEditing({kind: 'borrowers', record: b})}>Edit</button> · <button type="button" className="link" onClick={() => remove('borrowers', b, b.name)}>Delete</button> · </span>}{b.name}{b.contact_number ? ` · ${b.contact_number}` : ''} · {b.property_count || 0} case(s) · {label(lookups?.payers, b.payer) || 'Payer not recorded'} · {b.fee_basis === 2 ? `Fixed ₹${Number(b.agreed_fee || 0).toLocaleString('en-IN')}` : label(lookups?.fee_bases, b.fee_basis) || ''}</li>)}</ul></>;
+  const cases = <><h3>Cases</h3><ul>{lead.cases.map(c => <li key={c.id}>{lead.editable && <span className="row-actions"><button type="button" className="link" onClick={() => setEditing({kind: 'cases', record: c})}>Edit</button> · <button type="button" className="link" onClick={() => remove('cases', c, 'this case')}>Delete</button> · </span>}{named(lead.borrowers,c.borrower_id)} · {c.asset_address}{c.asset_district ? `, ${c.asset_district}` : ''}{c.asset_state ? `, ${c.asset_state}` : ''}{c.asset_pin_code ? ` ${c.asset_pin_code}` : ''}{c.expected_report_date ? ` · report by ${c.expected_report_date}` : ''}</li>)}</ul></>;
+  const followUps = <><h3>Follow-ups</h3>{lead.follow_ups.map(f => <article className="note" key={f.id}><strong>{label(lookups?.follow_up_statuses, f.call_status) || f.call_status}</strong><p>{f.remark}</p><small>{(f.logged_date_text || '').slice(0, 10) ? `Call back ${(f.logged_date_text || '').slice(0, 10)} ${f.logged_time_text || ''}` : ''}</small></article>)}</>;
+  const contacts = <Contacts api={api} office={lead.office} catalog={catalog} value={contact} onSelect={setContact}/>;
+  const assignment = <Form key={lead.updated_at || lead.id} title="Assignment and intake date" initial={{assigned_employee:lead.assigned_employee,received_date:lead.received_date}}
       fields={[option('assigned_employee','Assigned employee',catalog.employees,false),input('received_date','Received date','date')]}
-      save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify({...data,contact})});await reload();}}/>
-    <ServiceForm catalog={catalog} ifsc={lead.office_detail?.ifsc} save={data => add('services',data)}/>
+      save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify({...data,contact})});await reload();}}/>;
+  const serviceForm = <ServiceForm catalog={catalog} ifsc={lead.office_detail?.ifsc} save={data => add('services',data)}/>;
+  const editForms = <>
     {editing?.kind === 'borrowers' && <BorrowerForm key={editing.record.id} lead={lead} initial={editing.record} onCancel={() => setEditing(null)}
       onUpdate={(id, data) => change('borrowers', id, data)}/>}
     {editing?.kind === 'cases' && <CaseForm key={editing.record.id} lead={lead} catalog={catalog} initial={editing.record} onCancel={() => setEditing(null)}
-      onUpdate={(id, data) => change('cases', id, data)}/>}
+      onUpdate={(id, data) => change('cases', id, data)}/>}</>;
+  const followUpForm = <FollowUpForm onSave={data => add('follow-ups', data)}/>;
+  const borrowerForm = <BorrowerForm lead={lead} onSave={data => add('borrowers', data)} onUpdate={(id, data) => change('borrowers', id, data)}/>;
+  const caseForm = lead.borrowers.length > 0 && <CaseForm lead={lead} catalog={catalog} onSave={data => add('cases', data)} onUpdate={(id, data) => change('cases', id, data)}/>;
+  const cancelForm = <Form title="Cancel lead" button="Cancel lead" fields={[input('cancel_reason','Reason for cancellation')]}
+      save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify(data)});await reload();}}/>;
+  const history = <section className="panel"><h3>Lead change history</h3>{lead.audit.map((a,i) => <p key={i}>{a.action} · {a.actor__username} · {new Date(a.created_at).toLocaleString()}</p>)}</section>;
+  if (layout) return layout({lead,
+    details: <div className="intake"><section className="panel">{head}{locked}{services}</section>
+      {lead.editable && <>{contacts}<section className="panel">{assignment}{serviceForm}{cancelForm}</section></>}</div>,
+    customers: <div className="intake"><section className="panel">{locked}{customers}{cases}
+      {lead.editable && <>{editForms}{borrowerForm}{caseForm}</>}</section></div>,
+    followUps: <div className="intake"><section className="panel">{followUps}{lead.editable && followUpForm}</section></div>,
+    history: <div className="intake">{history}</div>});
+  return <div className="intake"><section className="panel">{head}{locked}
+    {services}{customers}{cases}{followUps}
+  </section>{lead.editable && <>
+    {contacts}
+    <section className="panel">{assignment}
+    {serviceForm}
+    {editForms}
     {/* The legacy intake sequence: follow-up, then each client's customer, then each case. */}
-    <FollowUpForm onSave={data => add('follow-ups', data)}/>
-    <BorrowerForm lead={lead} onSave={data => add('borrowers', data)} onUpdate={(id, data) => change('borrowers', id, data)}/>
-    {lead.borrowers.length > 0 && <CaseForm lead={lead} catalog={catalog} onSave={data => add('cases', data)} onUpdate={(id, data) => change('cases', id, data)}/>}
-    <Form title="Cancel lead" button="Cancel lead" fields={[input('cancel_reason','Reason for cancellation')]}
-      save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify(data)});await reload();}}/>
+    {followUpForm}
+    {borrowerForm}
+    {caseForm}
+    {cancelForm}
     </section></>}
-    <section className="panel"><h3>Lead change history</h3>{lead.audit.map((a,i) => <p key={i}>{a.action} · {a.actor__username} · {new Date(a.created_at).toLocaleString()}</p>)}</section>
+    {history}
   </div>;
 }
 

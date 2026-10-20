@@ -50,6 +50,7 @@ describe('the lead page after a change inside it', () => {
     const track = await screen.findByRole('list', {name: 'Stages for Asha Verma'});
     expect(within(track).getAllByRole('listitem')[1].getAttribute('aria-current')).toBe('step');       // work order current
 
+    fireEvent.click(await screen.findByRole('tab', {name: /Work orders/}));                              // orders sit in their own tab
     fireEvent.click(await screen.findByRole('button', {name: 'Issue work order'}));
     expect(await screen.findByText('ORDER-1')).toBeTruthy();                                             // the panel itself
 

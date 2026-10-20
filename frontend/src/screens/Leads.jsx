@@ -1,5 +1,5 @@
 import {ResponsiveTable} from '../components/ResponsiveTable.jsx';
-import {Anchor, Button, Group, Pagination, Paper, Select, Stack, Table, Text, Textarea, TextInput, Title} from '@mantine/core';
+import {Anchor, Badge, Button, Group, Pagination, Paper, Select, Stack, Table, Tabs, Text, Textarea, TextInput, Title} from '@mantine/core';
 import {useDebouncedValue} from '@mantine/hooks';
 import {notifications} from '@mantine/notifications';
 import {keepPreviousData, useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
@@ -16,6 +16,7 @@ import {api, post} from '../lib/api.js';
 import {count, date, dateTime} from '../lib/format.js';
 
 const PAGE = 30;
+const TABS = ['details', 'customers', 'followups', 'orders'];
 const STATUSES = [{value: '', label: 'All statuses'}, {value: '1', label: 'New lead'}, {value: '2', label: 'In process'},
                   {value: '3', label: 'Cancelled'}, {value: '4', label: 'Closed (previous system)'}];
 const tone = s => ({'Cancelled': 'refused', 'New lead': 'active', 'In process': 'waiting'}[s] ?? 'neutral');
@@ -72,6 +73,10 @@ export function Leads() {
 export function LeadDetail() {
   const {id} = useParams();
   const client = useQueryClient();
+  // The open tab lives in the address, so a refresh or a shared link reopens it.
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.includes(params.get('tab')) ? params.get('tab') : TABS[0];
+  const openTab = value => setParams(p => {const next = new URLSearchParams(p); next.set('tab', value); return next;}, {replace: true});
   const lead = useQuery({queryKey: ['lead', id], queryFn: () => api(`leads/${id}/`)});
   const stages = useQuery({queryKey: ['lead', id, 'stages'], queryFn: () => api(`leads/${id}/stages/`)});
   const [note, setNote] = useState('');
@@ -88,6 +93,17 @@ export function LeadDetail() {
   if (lead.isError) return <ErrorState error={lead.error} onRetry={lead.refetch}/>;
   if (!lead.data) return <LoadingState label="Loading the lead"/>;
   const d = lead.data;
+  const notes = <section>
+      <Title order={2} mb={4}>Follow-up notes</Title>
+      <Text size="sm" c="dimmed" mb="sm">Notes are kept here and survive refreshes from the previous system.</Text>
+      <form onSubmit={e => {e.preventDefault(); save.mutate(note);}}><Stack gap="xs" maw={640}>
+        <Textarea label="Add a note" value={note} maxLength={4000} autosize minRows={3} onChange={e => setNote(e.currentTarget.value)} required/>
+        <Group><Button type="submit" loading={save.isPending} disabled={!note.trim()}>Save note</Button></Group>
+      </Stack></form>
+      <Stack gap="sm" mt="lg">{d.notes.map(n => <Paper key={n.id} withBorder p="sm">
+        <Text size="sm" style={{whiteSpace: 'pre-wrap'}}>{n.body}</Text>
+        <Text size="xs" c="dimmed" mt={4}>{n.author__username}, {dateTime(n.created_at)}</Text></Paper>)}</Stack>
+    </section>;
   return <Stack gap="xl">
     <div>
       <Anchor component={Link} to="/leads" size="sm">Back to leads</Anchor>
@@ -111,19 +127,20 @@ export function LeadDetail() {
           </Paper>)}</Stack>}
     </section>
 
-    <section className="legacy-screen"><Suspense fallback={<LoadingState label="Loading work orders"/>}>
-      <LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead}/></Suspense></section>
-
-    <section>
-      <Title order={2} mb={4}>Follow-up notes</Title>
-      <Text size="sm" c="dimmed" mb="sm">Notes are kept here and survive refreshes from the previous system.</Text>
-      <form onSubmit={e => {e.preventDefault(); save.mutate(note);}}><Stack gap="xs" maw={640}>
-        <Textarea label="Add a note" value={note} maxLength={4000} autosize minRows={3} onChange={e => setNote(e.currentTarget.value)} required/>
-        <Group><Button type="submit" loading={save.isPending} disabled={!note.trim()}>Save note</Button></Group>
-      </Stack></form>
-      <Stack gap="sm" mt="lg">{d.notes.map(n => <Paper key={n.id} withBorder p="sm">
-        <Text size="sm" style={{whiteSpace: 'pre-wrap'}}>{n.body}</Text>
-        <Text size="xs" c="dimmed" mt={4}>{n.author__username}, {dateTime(n.created_at)}</Text></Paper>)}</Stack>
-    </section>
+    <Suspense fallback={<LoadingState label="Loading the lead workspace"/>}>
+      <LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead} layout={parts => <Tabs value={tab} onChange={openTab} keepMounted>
+        <Tabs.List>
+          <Tabs.Tab value="details">Lead details</Tabs.Tab>
+          <Tabs.Tab value="customers" rightSection={parts.lead && <Badge size="sm" variant="light" title={`${parts.lead.borrowers.length} customers, ${parts.lead.cases.length} cases`}>{parts.lead.borrowers.length} · {parts.lead.cases.length}</Badge>}>Client's customers &amp; cases</Tabs.Tab>
+          <Tabs.Tab value="followups" rightSection={<Badge size="sm" variant="light" title="Follow-ups and notes">{d.notes.length + (parts.lead?.follow_ups.length || 0)}</Badge>}>Follow-ups &amp; notes</Tabs.Tab>
+          <Tabs.Tab value="orders">Work orders &amp; history</Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="details" pt="md"><div className="legacy-screen">{parts.details}</div></Tabs.Panel>
+        <Tabs.Panel value="customers" pt="md"><div className="legacy-screen">{parts.customers}</div></Tabs.Panel>
+        <Tabs.Panel value="followups" pt="md"><Stack gap="xl">
+          {parts.followUps && <div className="legacy-screen">{parts.followUps}</div>}
+          {notes}</Stack></Tabs.Panel>
+        <Tabs.Panel value="orders" pt="md"><div className="legacy-screen"><div className="intake">{parts.workOrders}{parts.history}</div></div></Tabs.Panel>
+      </Tabs>}/></Suspense>
   </Stack>;
 }
