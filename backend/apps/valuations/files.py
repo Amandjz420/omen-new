@@ -17,7 +17,16 @@ The legacy delete removed the photo row outright. On an imported valuation that
 leaves a source identity pointing at nothing, which aborts the next import, so
 photos of an edited valuation are owned by it (PARENT_OWNED in sync.py). The file
 itself is kept as evidence; only the link is removed.
+
+Site photos (review of October 2026). A photo taken with the phone camera from the
+form carries where and when it was taken: the phone's position and accuracy and
+the moment of capture, stored with it and stamped on the image by the phone, so
+the stamp prints on the report. Photos chosen from files carry neither, since the
+phone's position at upload says nothing about where they were taken.
 """
+import datetime
+from decimal import Decimal, InvalidOperation
+
 from django.utils import timezone
 from django.http import JsonResponse
 
@@ -40,8 +49,42 @@ def editable(valuation):
 
 def photo_json(photo):
     code = int(photo.attachment_type) if (photo.attachment_type or '').isdigit() else None
+    located = photo.latitude is not None and photo.longitude is not None
     return {'id': photo.pk, 'type': code, 'type_label': PHOTO_LABELS.get(code, 'Unclassified'),
-            'caption': photo.name, 'file': file_json(photo.document)}
+            'caption': photo.name, 'file': file_json(photo.document),
+            'captured_at': photo.captured_at,
+            'location': {'latitude': str(photo.latitude), 'longitude': str(photo.longitude),
+                         'accuracy': photo.location_accuracy} if located else None}
+
+
+def where_and_when(data):
+    """The optional position and capture time sent with a camera photo."""
+    out = {}
+    lat, lng = (data.get('latitude') or '').strip(), (data.get('longitude') or '').strip()
+    if lat or lng:
+        try:
+            lat, lng = Decimal(lat).quantize(Decimal('0.000001')), Decimal(lng).quantize(Decimal('0.000001'))
+        except (InvalidOperation, ValueError):
+            raise IntakeError('The photo location is not a valid position')
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            raise IntakeError('The photo location is not a valid position')
+        out['latitude'], out['longitude'] = lat, lng
+        try:
+            accuracy = round(float(data.get('accuracy'))) if data.get('accuracy') else None
+        except ValueError:
+            accuracy = None
+        out['location_accuracy'] = accuracy if accuracy is not None and 0 <= accuracy < 10 ** 6 else None
+    if data.get('captured_at'):
+        try:
+            when = datetime.datetime.fromisoformat(data['captured_at'].replace('Z', '+00:00'))
+        except ValueError:
+            raise IntakeError('The photo time is not valid')
+        if timezone.is_naive(when):
+            when = timezone.make_aware(when)
+        if when > timezone.now() + datetime.timedelta(minutes=5):
+            raise IntakeError('The photo time cannot be in the future')
+        out['captured_at'] = when
+    return out
 
 
 def photos_json(valuation):
@@ -68,11 +111,12 @@ def photos(request, pk):
         if code not in PHOTO_LABELS:
             raise IntakeError('Choose what the photo shows')
         caption = (request.POST.get('caption') or '').strip()[:500]
+        taken = where_and_when(request.POST)
         before = snapshot(valuation)
         record(request.user, valuation, before, action='add_valuation_photo')
         document = store(request.FILES.get('file'), 'photo', f'valuations/{valuation.pk}/photos')
         m.ValuationAttachment.objects.create(valuation=valuation, document=document, name=caption,
-                                             attachment_type=str(code))
+                                             attachment_type=str(code), **taken)
         return JsonResponse(photos_json(valuation), status=201)
     return JsonResponse(photos_json(valuation))
 

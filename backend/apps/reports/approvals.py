@@ -149,7 +149,7 @@ def queue(request):
                          'counts': {'pending': pending.count(), 'approved': approved.count()},
                          'results': [{'id': v.pk, 'report_number': v.report_number, 'lead_number': v.case.lead.number,
                                       'borrower': v.case.borrower.name if v.case.borrower_id else '',
-                                      'service': v.case.service.name, 'submitted_on': v.valuation_date}
+                                      'service': v.case.service.name, 'submitted_on': v.valuation_date, 'submitted_at': v.submitted_at}
                                      for v in rows[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]]})
 
 

@@ -31,5 +31,6 @@ urlpatterns = [
     path('api/verifications/', endpoint_3.queue),
     path('api/verifications/<uuid:pk>/', endpoint_3.detail),
     path('api/verifications/<uuid:pk>/revert/', endpoint_3.revert),
+    path('api/verifications/<uuid:pk>/<str:track>/answers/', endpoint_3.correct),
     path('api/verifications/<uuid:pk>/<str:track>/', endpoint_3.verify),
 ]

@@ -1,6 +1,7 @@
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
-import {today} from './lib/format.js';
+import {dateTime, today} from './lib/format.js';
+import {confirmAction} from './components/confirm.jsx';
 
 const rupees = v => v === '' || v == null ? '' : Number(v).toLocaleString('en-IN', {maximumFractionDigits: 0});
 
@@ -29,7 +30,7 @@ function Queue({api, onOpen}) {
     {!list ? <p>Loading…</p> : <>
       <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.id}><td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td>
-        <td>{r.service}</td><td>{r.submitted_on || '—'}</td><td><button className="link" onClick={() => onOpen(r.id)}>{state === 'pending' ? 'Prepare →' : 'Open →'}</button></td></tr>)}</tbody></table></ResponsiveTable>
+        <td>{r.service}</td><td>{r.submitted_at ? dateTime(r.submitted_at) : (r.submitted_on || '—')}</td><td><button className="link" onClick={() => onOpen(r.id)}>{state === 'pending' ? 'Prepare →' : 'Open →'}</button></td></tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>Nothing here.</p>}
       <div className="pagination"><span>{list.total.toLocaleString('en-IN')} · Page {page}</span>
         <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
@@ -59,7 +60,10 @@ export function ReportForm({api, id, onBack}) {
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
   const blocked = data.blockers.length > 0;
   async function generate(e) {
-    e.preventDefault(); setSaving(true); setError('');
+    e.preventDefault();
+    if (!(await confirmAction({title: 'Are you sure you want to submit the report?', confirmLabel: data.report ? 'Regenerate report' : 'Generate report',
+      consequence: data.report ? 'The bank report is generated again from the values below, replacing the current version.' : 'The bank report is generated from the values below.'}))) return;
+    setSaving(true); setError('');
     try {adopt(await api(`bank-reports/${id}/`, {method: 'PUT', body: JSON.stringify(form)}));}
     catch (err) {setError(err.message);} finally {setSaving(false);}
   }
@@ -79,13 +83,15 @@ export function ReportForm({api, id, onBack}) {
     {data.report?.document && <p>{data.report.document.available
       ? <a href={`/api/bank-reports/${id}/document/`} target="_blank" rel="noopener">View the report (PDF)</a>
       : <span className="muted">The report's file could not be found in storage.</span>}
-      {data.report.generated_at && <small className="muted"> · generated {new Date(data.report.generated_at).toLocaleString('en-IN')}{data.report.generated_by ? ` by ${data.report.generated_by}` : ''}</small>}</p>}
+      {data.report.generated_at && <small className="muted"> · generated {dateTime(data.report.generated_at)}{data.report.generated_by ? ` by ${data.report.generated_by}` : ''}</small>}</p>}
     {data.report && <Liable api={api} id={id} liable={data.report.liable} onChanged={adopt}/>}
     {error && <p role="alert" className="error">{error}</p>}
     <form onSubmit={generate}>
       <h3>Assessed values</h3>
       <div className="form-grid">{amount('market_fair_amount', 'Fair market value')}{amount('realisable_value_amount', 'Realisable value')}
         {amount('distress_value_amount', 'Distress value')}{amount('book_value_amount', 'Book value', false)}</div>
+      {!data.report && Object.keys(data.prefilled_from || {}).length > 0 && <p className="notice">
+        Filled in from the valuation form ({[...new Set(Object.values(data.prefilled_from))].join('; ')}). Check them before generating; they can be changed.</p>}
       <p className="muted">Values are written out in words on the report automatically.</p>
       <h3>References</h3>
       <div className="form-grid">{text('our_reference', 'Our reference', true)}{text('your_reference', "Bank's reference", true)}
@@ -104,6 +110,8 @@ export function ReportForm({api, id, onBack}) {
             {form.branch && !branches.some(b => String(b.id) === String(form.branch)) &&
               <option value={form.branch}>{data.branch_name || 'The chosen branch'}</option>}
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}{b.ifsc ? ` · ${b.ifsc}` : ''}{b.city ? ` · ${b.city}` : ''}</option>)}</select></label>
+          <label>IFSC code<input value={(branches.find(b => String(b.id) === String(form.branch))?.ifsc
+            || (String(form.branch || '') === String(data.values.branch || '') ? data.ifsc : '') || '').toUpperCase()} readOnly disabled/></label>
         </div>
         <p className="muted">The report's bank chooses the template, and can differ from the office's bank.</p></>}
       <label>Certificate<textarea rows={3} value={form.certificate || ''} disabled={blocked} onChange={e => set('certificate', e.target.value)}/></label>

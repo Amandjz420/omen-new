@@ -108,6 +108,41 @@ class IssueTests(Invoicing):
             self.assertIn(expected, text)
 
 
+class InvoiceDiscountTests(Invoicing):
+    """Review 2026-10: a discount head on the invoice screen."""
+    def draft(self, **params):
+        query = '&'.join(f'{k}={v}' for k, v in params.items())
+        return self.client.get(f'/api/invoices/valuations/{self.v}/?{query}').json()
+
+    def test_the_draft_starts_from_the_valuations_discount(self):
+        self.assertEqual(self.draft()['discount'], '100.00')
+
+    def test_a_discount_given_on_the_invoice_replaces_the_valuations(self):
+        body = self.draft(discount='250', place='intra')
+        disc = [l for l in body['lines'] if l['description'].startswith('Discount')]
+        self.assertEqual([l['amount'] for l in disc], ['-250.00'])
+        self.assertEqual(body['taxable'], '850.00')
+        issued = self.issue(discount='250').json()
+        self.assertEqual(issued['total'], '1003.00')
+        charges = m.ValuationCharge.objects.filter(valuation_id=self.v, charge_type=self.discount)
+        self.assertEqual([c.amount for c in charges], [Decimal('-250.00')])
+
+    def test_a_discount_can_be_added_where_the_valuation_had_none(self):
+        m.ValuationCharge.objects.filter(valuation_id=self.v, charge_type=self.discount).delete()
+        self.assertEqual(self.issue(discount='100').json()['total'], '1180.00')
+        self.assertEqual(m.ValuationCharge.objects.get(valuation_id=self.v, charge_type=self.discount).amount, Decimal('-100.00'))
+
+    def test_a_discount_of_zero_removes_it_from_the_invoice(self):
+        issued = self.issue(discount='0').json()
+        self.assertFalse([l for l in issued['lines'] if l['description'].startswith('Discount')])
+        self.assertEqual(issued['total'], '1298.00')
+
+    def test_a_discount_above_the_charges_or_negative_is_refused(self):
+        self.assertEqual(self.issue(discount='5000').status_code, 400)
+        self.assertEqual(self.issue(discount='-5').status_code, 400)
+        self.assertFalse(m.Invoice.objects.filter(local_sequence__isnull=False).exists())
+
+
 class PaymentTests(Invoicing):
     def test_partial_then_full_payment(self):
         invoice = self.issue().json()['id']

@@ -39,6 +39,12 @@ empty for no payment yet. The separate payment_type column is empty on every
 imported invoice and is not used. 334 partial payments were closed by writing
 off the remainder, which the write-off action supports.
 
+Discount on the invoice (review of October 2026). Billing locks once a valuation is
+invoiced, so the discount can also be set when the invoice is issued. It replaces
+the valuation's "Discount (if any)" line on the invoice, always as a reduction, is
+taxed like any line (a negative taxable amount), and is written back to the
+valuation's discount charge so the billing and the invoice agree.
+
 Credit notes. The legacy system could not reverse an invoice: 21 valuations were
 cancelled with their invoice still standing. An invoice is never edited or
 deleted; it is reversed in full by a credit note (CN- + MMYYDD + counter), which
@@ -102,11 +108,36 @@ def suggested_place(gstin):
     return 'intra' if not gstin or gstin[:2] == FIRM_GSTIN[:2] else 'inter'
 
 
-def draft_lines(valuation, place):
+def given_discount(value):
+    """The discount entered on the invoice screen: None when not given."""
+    if value in (None, ''):
+        return None
+    amount = money(value, 'Discount')
+    if amount < 0:
+        raise IntakeError('Enter the discount as a positive amount; it is always taken off the bill')
+    return amount
+
+
+def valuation_discount(valuation):
+    discount = discount_id()
+    return q(sum((abs(c.amount or ZERO) for c in m.ValuationCharge.objects.filter(valuation=valuation, charge_type_id=discount)), ZERO))
+
+
+def draft_lines(valuation, place, override=None):
+    """The invoice lines from the valuation's charges. `override`, when given,
+    replaces the discount the valuation carries."""
     discount = discount_id()
     lines = []
-    for n, charge in enumerate(m.ValuationCharge.objects.filter(valuation=valuation).select_related('charge_type')
-                               .order_by('charge_type__source_sequence', 'charge_type__name')):
+    charges = list(m.ValuationCharge.objects.filter(valuation=valuation).select_related('charge_type')
+                   .order_by('charge_type__source_sequence', 'charge_type__name'))
+    if override is not None:
+        kept = [c for c in charges if c.charge_type_id != discount]
+        head = m.ChargeType.objects.filter(pk=discount).first() if discount else None
+        position = next((i for i, c in enumerate(charges) if c.charge_type_id == discount), min(1, len(kept)))
+        charges = kept
+        if override and head is not None:
+            charges.insert(position, m.ValuationCharge(valuation=valuation, charge_type=head, amount=override))
+    for n, charge in enumerate(charges):
         amount = q(charge.amount)
         if charge.charge_type_id == discount:
             amount = -abs(amount)          # a discount always reduces the bill
@@ -238,7 +269,8 @@ def for_valuation(request, pk):
     party = int(request.GET.get('party') or 1)
     gstin = party_gstin(valuation, party, request.GET.get('other_gstin', ''))
     place = request.GET.get('place') or suggested_place(gstin)
-    lines, taxable, tax, total = draft_lines(valuation, place)
+    override = given_discount(request.GET.get('discount'))
+    lines, taxable, tax, total = draft_lines(valuation, place, override)
     advance = q(valuation.advance_collected)
     remaining, excess = balances(total, advance, ZERO)
     borrower = valuation.case.borrower if valuation.case.borrower_id else None
@@ -246,6 +278,8 @@ def for_valuation(request, pk):
                          'blockers': issue_blockers(valuation), 'standing': invoice_json(standing(valuation)) if standing(valuation) else None,
                          'party': party, 'gstin': gstin, 'place': place, 'suggested_place': suggested_place(gstin),
                          'firm_gstin': FIRM_GSTIN,
+                         'discount': str(override if override is not None else valuation_discount(valuation)),
+                         'charges': str(q(sum((l['amount'] for l in lines if l['amount'] > 0), ZERO))),
                          'lines': [{**l, **{k: str(l[k]) for k in ('amount', 'cgst', 'sgst', 'igst', 'total')}} for l in lines],
                          'taxable': str(taxable), 'tax': str(tax), 'total': str(total), 'advance': str(advance),
                          'remaining': str(remaining), 'excess': str(excess),
@@ -259,7 +293,7 @@ def issue(request, valuation):
     reasons = issue_blockers(valuation)
     if reasons:
         raise IntakeError('; '.join(reasons), 409)
-    data = payload(request, ['place', 'party', 'other_gstin', 'account', 'due_date', 'payer'])
+    data = payload(request, ['place', 'party', 'other_gstin', 'account', 'due_date', 'payer', 'discount'])
     if data.get('place') not in ('intra', 'inter'):
         raise IntakeError('Choose intra-state or inter-state supply')
     try:
@@ -287,9 +321,10 @@ def issue(request, valuation):
     payer = data.get('payer')
     payer = int(payer) if str(payer or '').isdigit() and int(payer) in (1, 2) else None
 
-    lines, taxable, tax, total = draft_lines(valuation, data['place'])
+    override = given_discount(data.get('discount'))
+    lines, taxable, tax, total = draft_lines(valuation, data['place'], override)
     if total < 0:
-        raise IntakeError('The invoice total cannot be negative')
+        raise IntakeError('The discount cannot be more than the charges')
     advance = q(valuation.advance_collected)
     remaining, excess = balances(total, advance, ZERO)
     online = m.Invoice.objects.filter(Q(origin='legacy_invoice') | Q(local_sequence__isnull=False))
@@ -309,6 +344,16 @@ def issue(request, valuation):
         total_amount=l['total'], position=l['position']) for l in lines])
     # Keep the valuation's billing consistent with what was invoiced.
     before = snapshot(valuation)
+    if override is not None and override != valuation_discount(valuation) and discount_id():
+        existing = list(m.ValuationCharge.objects.filter(valuation=valuation, charge_type_id=discount_id()).order_by('id'))
+        if existing:
+            existing[0].amount = -override
+            existing[0].save(update_fields=['amount'])
+            # Extra legacy discount lines are zeroed, not deleted: an imported row's
+            # source identity must keep pointing at something.
+            m.ValuationCharge.objects.filter(pk__in=[c.pk for c in existing[1:]]).update(amount=ZERO)
+        elif override:
+            m.ValuationCharge.objects.create(valuation=valuation, charge_type_id=discount_id(), amount=-override)
     for charge in m.ValuationCharge.objects.filter(valuation=valuation):
         match = next((l for l in lines if l['charge_type'] == charge.charge_type_id), None)
         if match:

@@ -2,7 +2,8 @@ import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {Standing} from './approvals.jsx';
 import {SiteChecklist} from './screens/SiteChecklist.jsx';
-import {today} from './lib/format.js';
+import {dateTime, today} from './lib/format.js';
+import {confirmAction} from './components/confirm.jsx';
 
 const FILTERS = [['', 'Active work'], ['not_started', 'Not started'], ['Pending', 'Pending'], ['Revert', 'Reverted'],
                  ['Hold', 'On hold'], ['Submit', 'Submitted'], ['Cancel', 'Cancelled']];
@@ -192,7 +193,7 @@ function Documents({q, selected, readOnly, files}) {
       {file ? (file.available
         ? <a href={`/api/valuations/${files.id}/documents/${file.id}/file/`} target="_blank" rel="noopener">{file.name || 'Document'}</a>
         : <small className="muted">{file.name || 'Document'} (file not found)</small>) : <small className="muted">No document</small>}
-      {!readOnly && <>
+      {!readOnly && !files.readOnly && <>
         <label className="link">{file ? 'Replace' : 'Attach'}<input type="file" hidden disabled={files.dirty || busy === o.id}
           accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp" onChange={e => e.target.files[0] && attach(o.id, e.target.files[0])}/></label>
         {file && <button className="link" disabled={busy === o.id} onClick={() => detach(o.id)}>Remove</button>}</>}
@@ -304,6 +305,33 @@ function Billing({api, id}) {
   </div>;
 }
 
+// The phone's position, or null when it is refused, unavailable or slow.
+const position = () => new Promise(resolve => {
+  if (!navigator.geolocation) return resolve(null);
+  navigator.geolocation.getCurrentPosition(p => resolve(p.coords), () => resolve(null),
+    {enableHighAccuracy: true, timeout: 15000, maximumAge: 60000});
+});
+
+// The photo with a band across the bottom stating when and where it was taken, as a
+// site camera stamps it, so the stamp prints with the photo on the report.
+async function stamped(file, when, coords) {
+  try {
+    const bitmap = await createImageBitmap(file, {imageOrientation: 'from-image'});
+    const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+    const g = canvas.getContext('2d');
+    g.drawImage(bitmap, 0, 0, w, h);
+    const lines = [dateTime(when), coords ? `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}${coords.accuracy ? ` (±${Math.round(coords.accuracy)} m)` : ''}` : 'Location not available'];
+    const size = Math.max(14, Math.round(w / 40)), pad = Math.round(size / 2);
+    g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(0, h - lines.length * (size + pad) - pad, w, lines.length * (size + pad) + pad);
+    g.fillStyle = '#fff'; g.font = `${size}px sans-serif`; g.textBaseline = 'bottom';
+    lines.forEach((t, i) => g.fillText(t, pad, h - pad - (lines.length - 1 - i) * (size + pad)));
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+    return blob ? new File([blob], (file.name || 'photo').replace(/\.\w+$/, '') + '.jpg', {type: 'image/jpeg'}) : file;
+  } catch {return file;}       // a browser that cannot draw it sends the photo unstamped
+}
+
 function Photos({api, id}) {
   const [data, setData] = useState(null);
   const [type, setType] = useState('1');
@@ -311,9 +339,19 @@ function Photos({api, id}) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {api(`valuations/${id}/photos/`).then(setData).catch(e => setError(e.message));}, [id]);
-  async function upload(file) {
-    setBusy(true); setError('');
+  const [note, setNote] = useState('');
+  async function upload(file, camera = false) {
+    setBusy(true); setError(''); setNote('');
     const form = new FormData();
+    if (camera) {
+      // Taken now, on site: record where and when, and stamp it on the image.
+      const when = new Date();
+      const coords = await position();
+      if (!coords) setNote('The location could not be read, so the photo was saved with its time only. Allow location access for this site to record it.');
+      file = await stamped(file, when, coords);
+      form.append('captured_at', when.toISOString());
+      if (coords) {form.append('latitude', coords.latitude); form.append('longitude', coords.longitude); form.append('accuracy', coords.accuracy ?? '');}
+    }
     form.append('type', type); form.append('caption', caption); form.append('file', file);
     try {setData(await api(`valuations/${id}/photos/`, {method: 'POST', body: form})); setCaption('');}
     catch (e) {setError(e.message);} finally {setBusy(false);}
@@ -330,14 +368,21 @@ function Photos({api, id}) {
     {data.editable && <div className="toolbar">
       <label>Shows<select value={type} onChange={e => setType(e.target.value)}>{data.types.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}</select></label>
       <label>Caption<input value={caption} maxLength={500} onChange={e => setCaption(e.target.value)}/></label>
+      <label className="button">{busy ? 'Saving…' : 'Take photo'}<input type="file" hidden disabled={busy} accept="image/jpeg,image/png,image/webp"
+        capture="environment" aria-label="Take a photo with the camera" onChange={e => {const f = e.target.files[0]; e.target.value = ''; f && upload(f, true);}}/></label>
       <label className="link">{busy ? 'Uploading…' : 'Choose photo'}<input type="file" hidden disabled={busy} accept="image/jpeg,image/png,image/webp,image/bmp"
-        onChange={e => e.target.files[0] && upload(e.target.files[0])}/></label>
+        onChange={e => {const f = e.target.files[0]; e.target.value = ''; f && upload(f);}}/></label>
     </div>}
+    {data.editable && <p className="muted">Take photo opens the camera on a phone and records where and when it was taken.</p>}
+    {note && <p className="notice">{note}</p>}
     <div className="photo-grid">{data.photos.map(p => <figure key={p.id}>
       {p.file?.available ? <a href={`/api/valuations/${id}/photos/${p.id}/file/`} target="_blank" rel="noopener">
           <img src={`/api/valuations/${id}/photos/${p.id}/file/`} alt={`${p.type_label} photo`} loading="lazy" decoding="async"/></a>
         : <div className="photo-placeholder">Photo not found</div>}
       <figcaption><strong>{p.type_label}</strong>{p.caption && <small> · {p.caption}</small>}
+        {(p.captured_at || p.location) && <small className="muted photo-meta">{p.captured_at ? `Taken ${dateTime(p.captured_at)}` : ''}
+          {p.location && <> · <a href={`https://www.google.com/maps?q=${p.location.latitude},${p.location.longitude}`} target="_blank" rel="noopener">
+            {Number(p.location.latitude).toFixed(5)}, {Number(p.location.longitude).toFixed(5)}</a>{p.location.accuracy != null ? ` ±${p.location.accuracy} m` : ''}</>}</small>}
         {data.editable && <button className="link" onClick={() => remove(p)}>Remove</button>}</figcaption>
     </figure>)}</div>
     {data.photos.length === 0 && <p>No photos yet.</p>}
@@ -357,7 +402,8 @@ function Submission({api, id, onJump, onDone}) {
   async function submit(e) {
     e.preventDefault();
     const note = data.keeps_report_number ? `It keeps report number ${data.report_number}.` : 'A report number will be assigned.';
-    if (!window.confirm(`Submit this valuation for verification? ${note}\n\nIt can no longer be edited unless it is sent back.`)) return;
+    if (!(await confirmAction({title: 'Are you sure you want to submit the report?', confirmLabel: 'Submit report',
+      consequence: `The valuation goes for verification. ${note} It can no longer be edited unless it is sent back.`}))) return;
     setSaving(true); setError('');
     try {const result = await api(`valuations/${id}/submission/`, {method: 'POST', body: JSON.stringify(form)}); adopt(result.submission); onDone(result);}
     catch (e) {setError(e.message);} finally {setSaving(false);}
@@ -367,6 +413,7 @@ function Submission({api, id, onJump, onDone}) {
       <option value="">Choose…</option>{options.map(o => <option key={o.code ?? o.id} value={o.code ?? o.id}>{o.label ?? o.name}</option>)}</select></label>;
   return <form onSubmit={submit}>
     <h3>{data.status === 'Submit' ? `Submitted as ${data.report_number}` : 'Submit for verification'}</h3>
+    {data.submitted_at && <p className="muted">Submitted on {dateTime(data.submitted_at)}</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!locked && data.missing_required.length > 0 && <div className="notice">
       <p>Answer these required questions before submitting:</p>
@@ -375,8 +422,8 @@ function Submission({api, id, onJump, onDone}) {
     {!locked && data.keeps_report_number && <p className="muted">This valuation was sent back. Resubmitting keeps its report number, {data.report_number}.</p>}
     <div className="form-grid">
       <label>Valuation date<input type="date" value={form.valuation_date || ''} disabled={locked} max={today()} onChange={e => set('valuation_date', e.target.value)}/><small className="muted">Defaults to today</small></label>
-      <label>Eligible loan amount<span className="required"> *</span><input inputMode="decimal" value={form.eligible_loan_amount || ''} disabled={locked} required onChange={e => set('eligible_loan_amount', e.target.value)}/></label>
-      <label>Desired loan amount<span className="required"> *</span><input inputMode="decimal" value={form.desired_loan_amount || ''} disabled={locked} required onChange={e => set('desired_loan_amount', e.target.value)}/></label>
+      <label>Eligible loan amount<input inputMode="decimal" value={form.eligible_loan_amount || ''} disabled={locked} onChange={e => set('eligible_loan_amount', e.target.value)}/></label>
+      <label>Desired loan amount<input inputMode="decimal" value={form.desired_loan_amount || ''} disabled={locked} onChange={e => set('desired_loan_amount', e.target.value)}/></label>
       {select('submitted_to', 'Liable assessor (FA)', data.options.employees)}
       <small className="muted form-note">Who this report's billing and recovery is credited to. It starts as the lead's assignee.</small>
       {select('dispatch_at', 'To be dispatched at', data.options.dispatch_at)}
@@ -404,7 +451,7 @@ export function DocumentHistory({api, id}) {
     {open && rows?.length > 0 && <ul>{rows.map(r => <li key={r.document}>
       <a href={`/api/valuations/${id}/documents/${r.document}/file/`} target="_blank" rel="noopener">{r.name || 'Document'}</a>
       {' · '}{VERSION_LABEL[r.status] || r.status}{r.question ? ` · ${r.question}` : ''}
-      {r.on ? ` · ${new Date(r.on).toLocaleDateString('en-IN')}` : ''}{r.by ? ` · ${r.by}` : ''}</li>)}</ul>}
+      {r.on ? ` · ${dateTime(r.on)}` : ''}{r.by ? ` · ${r.by}` : ''}</li>)}</ul>}
   </section>;
 }
 

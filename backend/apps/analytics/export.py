@@ -20,7 +20,7 @@ def workbook(spec, f, group_label, groups, totals):
     summary.title = 'Summary'
     period = ' to '.join(d.strftime('%d %b %Y') for d in (f['from'], f['to']) if d) or 'All dates'
     lines = [f"Omen Assessors: {spec['title']}", f"{spec['date_label']}: {period}",
-             f"Generated {timezone.localtime():%d %b %Y, %I:%M %p}"]
+             f"Generated {timezone.localtime():%d %b %Y, %H:%M}"]
     lines += [f'{k.title()}: {v}' for k, v in f.items() if v and k not in ('from', 'to')]
     for i, text in enumerate(lines, 1):
         summary.cell(row=i, column=1, value=text).font = Font(bold=(i == 1), size=13 if i == 1 else 10)

@@ -182,7 +182,19 @@ def report_json(valuation):
             template = {'id': chosen.pk, 'lines': template_lines(chosen).count()}
     except IntakeError as exc:
         error = exc.message
-    value = lambda f: str(getattr(report, f)) if report and getattr(report, f) is not None else ''
+    # Before the first report, the assessed values come from the valuation's own
+    # answers (apps.reports.autofill); once a report exists, from the report.
+    from apps.reports.autofill import assessed_values
+    suggested = assessed_values(valuation) if report is None else {'values': {}, 'sources': {}}
+    value = lambda f: (str(getattr(report, f)) if report and getattr(report, f) is not None
+                       else suggested['values'].get(f, ''))
+    if report and report.branch_id:
+        branch = report.branch
+    elif office.directory_branch_id:
+        branch = office.directory_branch
+    else:
+        branch = (m.BankBranch.objects.filter(ifsc__iexact=(office.ifsc or '').strip(), bank=bank).first()
+                  if bank_client and bank and (office.ifsc or '').strip() else None)
     return {'valuation': valuation.pk, 'report_number': valuation.report_number,
             'blockers': blockers(valuation), 'bank_client': bank_client, 'values_required': values_required(valuation),
             'template': template, 'template_error': error,
@@ -196,11 +208,12 @@ def report_json(valuation):
                        'unique_reference': report.unique_reference if report else '', 'omen_id': report.omen_id if report else '',
                        'report_date': report.report_date if report else None,
                        'bank': str(bank.pk) if bank else None,
-                       'branch': str((report.branch_id if report and report.branch_id else office.directory_branch_id) or '') or None,
+                       'branch': str(branch.pk) if branch else None,
                        'certificate': report.bank_certificate if report else ''},
             'bank_name': bank.name if bank else '',
-            'branch_name': (report.branch.name if report and report.branch_id else
-                            (office.directory_branch.name if office.directory_branch_id else '')),
+            'branch_name': branch.name if branch else '',
+            'ifsc': ((branch.ifsc if branch else '') or (office.ifsc or '')).strip().upper() if bank_client else '',
+            'prefilled_from': suggested['sources'],
             'superseded': [{'revision': r.revision, 'superseded_at': r.superseded_at, 'document': file_json(r.document)}
                            for r in m.BankReport.objects.filter(valuation=valuation, superseded_at__isnull=False)
                            .order_by('revision')]}
@@ -368,7 +381,7 @@ def queue(request):
                                     'generated': ready.filter(pk__in=with_report).count()},
                          'results': [{'id': v.pk, 'report_number': v.report_number, 'lead_number': v.case.lead.number,
                                       'borrower': v.case.borrower.name if v.case.borrower_id else '',
-                                      'service': v.case.service.name, 'submitted_on': v.valuation_date}
+                                      'service': v.case.service.name, 'submitted_on': v.valuation_date, 'submitted_at': v.submitted_at}
                                      for v in rows[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]]})
 
 

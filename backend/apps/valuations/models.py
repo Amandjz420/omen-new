@@ -40,6 +40,9 @@ class Valuation(Entity):
     # system always unheld to Pending, which would send a held submission back to
     # the assessor. Unknown for the 24 imported holds, which unhold to Pending.
     held_from_status = models.CharField(max_length=80, blank=True)
+    # When the assessor submitted it, to the minute. Not kept by the legacy system,
+    # so empty on imported valuations, which show their valuation date only.
+    submitted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         app_label = "target_core"
@@ -50,6 +53,12 @@ class ValuationAttachment(Entity):
     document = models.ForeignKey('target_core.Document', null=True, on_delete=models.PROTECT)
     name = models.CharField(max_length=500, blank=True)
     attachment_type = models.CharField(max_length=40, blank=True)
+    # Where and when a photo was taken with the phone camera on site. Not known for
+    # photos chosen from files, nor for any imported photo.
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    location_accuracy = models.PositiveIntegerField(null=True, blank=True)       # metres
+    captured_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         app_label = "target_core"

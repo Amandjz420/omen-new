@@ -94,10 +94,24 @@ class SubmissionTests(Form, TestCase):
 
     def test_every_required_field_is_enforced(self):
         self.answer_required()
-        for field in ('eligible_loan_amount', 'desired_loan_amount', 'submitted_to', 'dispatch_at',
-                      'dispatch_by', 'report_category'):
+        for field in ('submitted_to', 'dispatch_at', 'dispatch_by', 'report_category'):
             self.assertEqual(self.submit(**{field: ''}).status_code, 400, field)
         self.assertEqual(m.Valuation.objects.get(pk=self.v).legacy_status, 'Pending')
+
+    def test_the_loan_amounts_are_optional(self):
+        """Review 2026-10: not mandatory at final submission; blank is stored as not given."""
+        self.answer_required()
+        self.assertEqual(self.submit(eligible_loan_amount='', desired_loan_amount='').status_code, 200)
+        v = m.Valuation.objects.get(pk=self.v)
+        self.assertEqual((v.eligible_loan_amount, v.desired_loan_amount, v.legacy_status), (None, None, 'Submit'))
+
+    def test_the_moment_of_submission_is_recorded(self):
+        self.answer_required()
+        before = timezone.now()
+        body = self.submit().json()
+        v = m.Valuation.objects.get(pk=self.v)
+        self.assertTrue(before <= v.submitted_at <= timezone.now())
+        self.assertIsNotNone(body['submission']['submitted_at'])
 
     def test_codes_outside_their_enum_are_refused(self):
         self.answer_required()

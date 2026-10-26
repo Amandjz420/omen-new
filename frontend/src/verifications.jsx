@@ -1,15 +1,25 @@
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
 import {Question} from './valuations.jsx';
-import {today} from './lib/format.js';
+import {dateTime, today} from './lib/format.js';
 
 const TRACKS = [['legal', 'Legal'], ['technical', 'Technical'], ['social', 'Social'], ['general', 'General']];
 
 export function Verifications({api}) {
   const [track, setTrack] = useState('legal');
   const [open, setOpen] = useState(null);
-  if (open) return <Review api={api} id={open} track={track} onBack={() => setOpen(null)}/>;
-  return <Queue api={api} track={track} setTrack={setTrack} onOpen={setOpen}/>;
+  const [flash, setFlash] = useState('');
+  // After a track is verified, the same valuation's next unverified track opens in
+  // its place (Legal, Social, Technical, General); after the last, the queue returns.
+  const advance = (done, next) => {
+    const label = k => TRACKS.find(([t]) => t === k)[1];
+    if (next) {setFlash(`${label(done)} verification saved. Now showing ${label(next).toLowerCase()} verification.`); setTrack(next);}
+    else {setFlash(`${label(done)} verification saved. Every track of this valuation is verified.`); setOpen(null);}
+  };
+  if (open) return <Review api={api} id={open} track={track} flash={flash} onVerified={advance}
+    onBack={() => {setOpen(null); setFlash('');}}/>;
+  return <>{flash && <p className="notice" role="status">{flash}</p>}
+    <Queue api={api} track={track} setTrack={t => {setTrack(t); setFlash('');}} onOpen={id => {setOpen(id); setFlash('');}}/></>;
 }
 
 function Queue({api, track, setTrack, onOpen}) {
@@ -32,7 +42,7 @@ function Queue({api, track, setTrack, onOpen}) {
       <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th>Tracks done</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.id}>
         <td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td>
-        <td>{r.service}<small>{r.subtype}</small></td><td>{r.submitted_on || '—'}<small>{r.assessor}</small></td>
+        <td>{r.service}<small>{r.subtype}</small></td><td>{r.submitted_at ? dateTime(r.submitted_at) : (r.submitted_on || '—')}<small>{r.assessor}</small></td>
         <td>{TRACKS.filter(([k]) => r.tracks[k]).map(([, l]) => l).join(', ') || 'None yet'}</td>
         <td><button className="link" onClick={() => onOpen(r.id)}>Review →</button></td></tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>Nothing waiting for {TRACKS.find(([k]) => k === track)[1].toLowerCase()} verification.</p>}
@@ -43,20 +53,45 @@ function Queue({api, track, setTrack, onOpen}) {
   </section>;
 }
 
-function Review({api, id, track, onBack}) {
+function Review({api, id, track, flash, onVerified, onBack}) {
   const [data, setData] = useState(null);
   const [remark, setRemark] = useState('');
   const [date, setDate] = useState(today());
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
-  const load = () => api(`verifications/${id}/?track=${track}`).then(setData).catch(e => setError(e.message));
-  useEffect(() => {load();}, [id, track]);
+  const [draft, setDraft] = useState({});
+  const [changed, setChanged] = useState(new Set());
+  const [saved, setSaved] = useState('');
+  const adoptQuestions = d => {
+    const all = [...d.sections.flatMap(s => s.questions), ...d.unassigned];
+    setDraft(Object.fromEntries(all.map(q => [q.id, structuredClone(q.answer)]))); setChanged(new Set());
+  };
+  const load = () => api(`verifications/${id}/?track=${track}`).then(d => {setData(d); adoptQuestions(d);}).catch(e => setError(e.message));
+  useEffect(() => {setData(null); setRemark(''); setSaved(''); setError(''); load(); document.querySelector('main')?.scrollIntoView?.({block: 'start'});}, [id, track]);
   const label = TRACKS.find(([k]) => k === track)[1];
+  const dirty = changed.size > 0;
 
+  async function saveAnswers() {
+    const all = [...data.sections.flatMap(s => s.questions), ...data.unassigned];
+    const answers = all.filter(q => changed.has(q.id)).map(q => ({question: q.id, ...draft[q.id], ...(q.conflicts?.length ? {resolve: true} : {})}));
+    setBusy('save'); setError(''); setSaved('');
+    try {
+      const r = await api(`verifications/${id}/${track}/answers/`, {method: 'PUT', body: JSON.stringify({answers})});
+      const next = {...data, sections: r.sections, unassigned: r.unassigned};
+      setData(next); adoptQuestions(next); setSaved('Corrections saved');
+      return true;
+    } catch (err) {setError(err.message); return false;} finally {setBusy('');}
+  }
   async function verify(e) {
-    e.preventDefault(); setBusy('verify'); setError('');
-    try {await api(`verifications/${id}/${track}/`, {method: 'POST', body: JSON.stringify({remark, date})}); setRemark(''); await load();}
+    e.preventDefault();
+    if (dirty && !window.confirm('Your corrections are not saved yet. Save them and verify?')) return;
+    if (dirty && !(await saveAnswers())) return;
+    setBusy('verify'); setError('');
+    try {
+      const r = await api(`verifications/${id}/${track}/`, {method: 'POST', body: JSON.stringify({remark, date})});
+      setRemark(''); onVerified(track, r.next_track);
+    }
     catch (err) {setError(err.message);} finally {setBusy('');}
   }
   async function sendBack(e) {
@@ -67,28 +102,35 @@ function Review({api, id, track, onBack}) {
     catch (err) {setError(err.message);} finally {setBusy('');}
   }
   if (!data) return <section className="panel">{error ? <p role="alert" className="error">{error}</p> : <p>Loading…</p>}</section>;
-  const files = {api, id, dirty: false, reload: () => {}};
-  const show = q => <Question key={q.id} q={q} value={q.answer} readOnly onChange={() => {}} files={q.document ? files : null}/>;
+  const editable = !!data.can_edit;
+  const files = {api, id, dirty: false, reload: load, readOnly: true};
+  const edit = (qid, answer) => {setDraft(d => ({...d, [qid]: answer})); setChanged(c => new Set(c).add(qid)); setSaved('');};
+  const show = q => <Question key={q.id} q={q} value={draft[q.id]} readOnly={!editable} onChange={a => edit(q.id, a)} files={q.document ? files : null}/>;
   return <section className="panel">
-    <button className="link" onClick={onBack}>← Back to the {label.toLowerCase()} queue</button>
+    <button className="link" onClick={() => {if (!dirty || window.confirm('Leave without saving your corrections?')) onBack();}}>← Back to the {label.toLowerCase()} queue</button>
+    {flash && <p className="notice" role="status">{flash}</p>}
     <h2>{data.report_number} · {label} verification</h2>
     <p>{data.lead_number} · {data.borrower} · {data.service}{data.subtype ? ` / ${data.subtype}` : ''}</p>
-    <p className="muted">Assessor: {data.assessor || '—'} · Submitted {data.submitted_on || '—'} · Status {data.status}</p>
+    <p className="muted">Assessor: {data.assessor || '—'} · Submitted {data.submitted_at ? dateTime(data.submitted_at) : (data.submitted_on || '—')} · Status {data.status}</p>
     <div className="track-status">{[...TRACKS, ['final', 'Final approval']].map(([k, l]) => {const t = data.tracks[k]; return <div key={k} className={t.verified ? 'done' : ''}>
       <strong>{l}</strong><small>{t.verified ? `Verified${t.by ? ' by ' + t.by : ''}${t.date ? ' · ' + t.date : ''}` : (t.status === 'UnVerified' ? `Sent back${t.by ? ' (was ' + t.by + ')' : ''}` : 'Pending')}</small></div>;})}</div>
     {error && <p role="alert" className="error">{error}</p>}
 
     <h3>{label} questions</h3>
-    {data.sections.length === 0 && <p className="muted">This form has no {label.toLowerCase()} questions.</p>}
+    {editable && <p className="muted">You can correct any answer below before verifying. Corrections are recorded against your name.</p>}
+    {data.sections.length === 0 && data.unassigned.length === 0 && <p className="muted">This form has no {label.toLowerCase()} questions.</p>}
     {data.sections.map(s => <div key={s.key}><h4>{s.name}</h4>{s.questions.map(show)}</div>)}
     {data.unassigned.length > 0 && <div><h4>Not assigned to any track</h4>
-      <p className="muted">These questions belong to no verification track, so no queue owns them. They are shown to every verifier.</p>
+      <p className="muted">These questions belong to no verification track. They are checked here, in the general verification.</p>
       {data.unassigned.map(show)}</div>}
+    {editable && <p className="actions"><button type="button" disabled={busy === 'save' || !dirty} onClick={saveAnswers}>{busy === 'save' ? 'Saving…' : 'Save corrections'}</button>
+      {saved && <span className="muted">{saved}</span>}{dirty && <span className="muted">Unsaved corrections</span>}</p>}
 
     {data.can_verify && <form onSubmit={verify} className="panel inset"><h3>Give {label.toLowerCase()} verification</h3>
       <label>Remark<span className="required"> *</span><textarea rows={2} value={remark} required onChange={e => setRemark(e.target.value)}/></label>
       <label>Date<input type="date" value={date} max={today()} onChange={e => setDate(e.target.value)}/></label>
-      <button disabled={busy === 'verify' || !remark.trim()}>{busy === 'verify' ? 'Saving…' : `Verify ${label.toLowerCase()}`}</button></form>}
+      <button disabled={busy === 'verify' || !remark.trim()}>{busy === 'verify' ? 'Saving…' : `Verify ${label.toLowerCase()}`}</button>
+      {data.next_track && <small className="muted"> The {TRACKS.find(([k]) => k === data.next_track)[1].toLowerCase()} verification opens next.</small>}</form>}
     {!data.can_verify && data.tracks[track].verified && <p className="notice">{label} verification is complete.</p>}
 
     {data.can_revert && <form onSubmit={sendBack} className="panel inset"><h3>Send back to the assessor</h3>

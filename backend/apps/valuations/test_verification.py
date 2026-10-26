@@ -81,10 +81,12 @@ class TrackViewTests(Verification):
         self.assertNotIn(str(self.text.pk), self.ids(legal))
         self.assertEqual(self.ids(technical), {str(self.text.pk)})
 
-    def test_questions_in_no_track_are_shown_to_every_track(self):
+    def test_questions_in_no_track_are_shown_once_in_the_general_track(self):
+        """Review 2026-10: Date of inspection, in no track, repeated in every track."""
         for track in TRACKS:
             body = self.client.get(f'/api/verifications/{self.v}/?track={track}').json()
-            self.assertEqual([q['id'] for q in body['unassigned']], [str(self.calc.pk)])
+            expected = [str(self.calc.pk)] if track == 'general' else []
+            self.assertEqual([q['id'] for q in body['unassigned']], expected)
 
     def test_the_verifier_sees_the_recorded_answers(self):
         body = self.client.get(f'/api/verifications/{self.v}/?track=technical').json()
@@ -123,6 +125,48 @@ class VerifyTests(Verification):
 
     def test_an_unknown_track_is_refused(self):
         self.assertEqual(self.verify('financial').status_code, 404)
+
+
+class NextTrackTests(Verification):
+    def test_verifying_moves_to_the_next_track_in_order(self):
+        self.assertEqual(self.verify('legal').json()['next_track'], 'social')
+        self.assertEqual(self.verify('social').json()['next_track'], 'technical')
+        self.assertEqual(self.verify('technical').json()['next_track'], 'general')
+        self.assertIsNone(self.verify('general').json()['next_track'])
+
+    def test_a_track_already_verified_is_skipped(self):
+        self.verify('social')
+        self.assertEqual(self.verify('legal').json()['next_track'], 'technical')
+        body = self.client.get(f'/api/verifications/{self.v}/?track=general').json()
+        self.assertEqual(body['next_track'], 'technical')     # wraps round, skipping legal and social
+
+
+class CorrectionTests(Verification):
+    def correct(self, track, answers):
+        return self.client.put(f'/api/verifications/{self.v}/{track}/answers/', {'answers': answers},
+                               content_type='application/json')
+
+    def test_a_verifier_corrects_an_answer_of_their_track(self):
+        r = self.correct('technical', [{'question': str(self.text.pk), 'value': '2001'}])
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['sections'][0]['questions'][0]['answer']['value'], '2001')
+        self.assertEqual(m.ValuationAnswer.objects.get(valuation=self.v, question=self.text).value, '2001')
+        self.assertEqual(m.Valuation.objects.get(pk=self.v).legacy_status, 'Submit')
+        self.assertTrue(m.IntakeAudit.objects.filter(action='verifier_correct_technical_answers').exists())
+
+    def test_another_tracks_question_cannot_be_changed(self):
+        self.assertEqual(self.correct('legal', [{'question': str(self.text.pk), 'value': '2001'}]).status_code, 400)
+
+    def test_unassigned_questions_are_corrected_from_the_general_track(self):
+        self.assertEqual(self.correct('legal', [{'question': str(self.calc.pk), 'rows': []}]).status_code, 400)
+
+    def test_a_verified_track_can_no_longer_be_corrected(self):
+        self.verify('technical')
+        self.assertEqual(self.correct('technical', [{'question': str(self.text.pk), 'value': '2001'}]).status_code, 409)
+
+    def test_only_a_submitted_valuation_is_corrected_here(self):
+        m.Valuation.objects.filter(pk=self.v).update(legacy_status='Pending')
+        self.assertEqual(self.correct('technical', [{'question': str(self.text.pk), 'value': '2001'}]).status_code, 409)
 
 
 class RevertTests(Verification):

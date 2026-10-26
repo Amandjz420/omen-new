@@ -177,7 +177,7 @@ export function IntakeLead({api, leadId, catalog: supplied, onChange, layout, re
   const caseForm = lead.borrowers.length > 0 && <CaseForm lead={lead} catalog={catalog} onSave={data => add('cases', data)} onUpdate={(id, data) => change('cases', id, data)}/>;
   const cancelForm = <Form title="Cancel lead" button="Cancel lead" fields={[input('cancel_reason','Reason for cancellation')]}
       save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify(data)});await reload();}}/>;
-  const history = <section className="panel"><h3>Lead change history</h3>{lead.audit.map((a,i) => <p key={i}>{a.action} · {a.actor__username} · {new Date(a.created_at).toLocaleString()}</p>)}</section>;
+  const history = <section className="panel"><h3>Lead change history</h3>{lead.audit.map((a,i) => <p key={i}>{a.action} · {a.actor__username} · {new Date(a.created_at).toLocaleString('en-IN', {hour12: false})}</p>)}</section>;
   if (layout) return layout({lead,
     details: <div className="intake"><section className="panel">{head}{locked}{services}</section>
       {lead.editable && <>{contacts}<section className="panel">{assignment}{serviceForm}{cancelForm}</section></>}</div>,

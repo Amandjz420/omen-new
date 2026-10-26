@@ -66,9 +66,9 @@ class Extras(Form, TestCase):
             'lines': [{'charge_type': str(self.heads[k].pk), 'amount': a} for k, a in lines.items()],
             'advance': advance}, content_type='application/json')
 
-    def upload_photo(self, content=JPEG, kind='1', name='front.jpg'):
+    def upload_photo(self, content=JPEG, kind='1', name='front.jpg', **extra):
         return self.client.post(f'/api/valuations/{self.v}/photos/',
-                                {'type': kind, 'file': SimpleUploadedFile(name, content)})
+                                {'type': kind, 'file': SimpleUploadedFile(name, content), **extra})
 
     def choose_documents(self, *options):
         return self.client.put(f'/api/valuations/{self.v}/sections/{self.site.pk}/', {'answers': [
@@ -140,6 +140,19 @@ class PhotoTests(Extras):
         response = self.upload_photo(content=b'<html><script>alert(1)</script>', name='front.jpg')
         self.assertEqual(response.status_code, 400)
         self.assertFalse(m.Document.objects.exists())
+
+    def test_a_camera_photo_keeps_where_and_when_it_was_taken(self):
+        body = self.upload_photo(latitude='22.612345', longitude='77.769012', accuracy='14.6',
+                                 captured_at='2026-01-15T08:35:00.000Z').json()
+        photo = body['photos'][0]
+        self.assertEqual(photo['location'], {'latitude': '22.612345', 'longitude': '77.769012', 'accuracy': 15})
+        self.assertTrue(photo['captured_at'].startswith('2026-01-15T08:35'))
+
+    def test_a_chosen_photo_has_no_location(self):
+        self.assertIsNone(self.upload_photo().json()['photos'][0]['location'])
+
+    def test_an_impossible_location_is_refused(self):
+        self.assertEqual(self.upload_photo(latitude='122', longitude='77').status_code, 400)
 
     def test_an_unknown_photo_type_is_refused(self):
         self.assertEqual(self.upload_photo(kind='99').status_code, 400)

@@ -25,8 +25,18 @@ Legacy defects not carried over:
   * revert_back had one row per valuation and overwrote it, so only the latest of
     several reverts survives in the imported data. Every revert is kept here.
   * 36 live questions, 14 of them mandatory, belong to no track, so no legacy
-    queue ever showed them to a verifier. They are shown to every track, labelled
-    as unassigned, rather than left unseen.
+    queue ever showed them to a verifier. They are shown in the General track,
+    labelled as unassigned, rather than left unseen. (They were first shown in every
+    track, which repeated questions such as Date of inspection in each one; the
+    review of October 2026 asked for them once.)
+
+Corrections. A verifier may correct the answers of their own track (the General
+verifier also the unassigned ones) while the valuation is submitted and that track
+is not yet verified. The change goes through the assessor's own save, with its
+validation and answer-level audit, recorded as a verifier correction.
+
+After verifying, the screen moves on to the same valuation's next unverified track,
+in the order Legal, Social, Technical, General (next_track).
 
 Scope: a verifier restricted to their own leads (Field Assessors, LMS Valuators)
 sees only those, as in the legacy lists; everyone else sees all.
@@ -40,10 +50,12 @@ from django.utils import timezone
 from target_core import models as m
 from apps.common.http import IntakeError, endpoint, find, payload
 from apps.audit.services import record, snapshot
-from apps.valuations.services import form_questions, in_scope, question_json, scope_cases, section_key
+from apps.valuations.services import form_questions, in_scope, question_json, save_section, scope_cases, section_key
 
 TRACKS = {'legal': (1, 'Legal'), 'technical': (2, 'Technical'), 'social': (3, 'Social'), 'general': (4, 'General')}
 VERIFIED, UNVERIFIED = 'Verified', 'UnVerified'
+SEQUENCE = ('legal', 'social', 'technical', 'general')     # the order the screen moves through
+UNASSIGNED_TRACK = 'general'                               # where questions of no track are shown
 PAGE_SIZE = 25
 
 
@@ -107,13 +119,32 @@ def queue(request):
                          'results': [{'id': v.pk, 'report_number': v.report_number, 'lead_number': v.case.lead.number,
                                       'borrower': v.case.borrower.name if v.case.borrower_id else '',
                                       'service': v.case.service.name, 'subtype': v.case.subtype.name if v.case.subtype else '',
-                                      'submitted_on': v.valuation_date, 'assessor': v.assessor_name,
+                                      'submitted_on': v.valuation_date, 'submitted_at': v.submitted_at, 'assessor': v.assessor_name,
                                       'tracks': {t: state(records.get(v.pk), t)['verified'] for t in TRACKS}}
                                      for v in items]})
 
 
+def next_track(verification, after):
+    """The next track of this valuation still to verify, following SEQUENCE from
+    `after` and wrapping round; None when every track is verified."""
+    start = SEQUENCE.index(after) + 1
+    for t in SEQUENCE[start:] + SEQUENCE[:start]:
+        if t != after and not state(verification, t)['verified']:
+            return t
+    return None
+
+
+def owns(question, track):
+    """Whether this track's verifier sees, and may correct, this question."""
+    if question.question_type in (None, 0):
+        return track == UNASSIGNED_TRACK
+    return question.question_type == TRACKS[track][0]
+
+
 def track_questions(valuation, code):
-    """Sections of this track's questions, plus those assigned to no track."""
+    """Sections of this track's questions, plus, for the General track, those
+    assigned to no track."""
+    show_unassigned = code == TRACKS[UNASSIGNED_TRACK][0]
     answers = {}
     for a in m.ValuationAnswer.objects.filter(valuation=valuation).select_related('document').order_by('answer_group', 'id'):
         answers.setdefault(a.question_id, []).append(a)
@@ -124,7 +155,7 @@ def track_questions(valuation, code):
                                                           'order': q.category.source_sequence if q.category else 10 ** 9,
                                                           'questions': []})
             entry['questions'].append(question_json(q, answers.get(q.pk, [])))
-        elif q.question_type in (None, 0):
+        elif q.question_type in (None, 0) and show_unassigned:
             unassigned.append(question_json(q, answers.get(q.pk, [])))
     return sorted(sections.values(), key=lambda s: (s['order'] or 0, s['name'])), unassigned
 
@@ -142,8 +173,11 @@ def detail(request, pk):
         'lead_number': case.lead.number, 'borrower': case.borrower.name if case.borrower_id else '',
         'service': case.service.name, 'subtype': case.subtype.name if case.subtype else '',
         'assessor': valuation.assessor_name, 'submitted_on': valuation.valuation_date,
+        'submitted_at': valuation.submitted_at,
         'tracks': tracks_json(verification),
         'can_verify': valuation.legacy_status == 'Submit' and not state(verification, track)['verified'],
+        'can_edit': valuation.legacy_status == 'Submit' and not state(verification, track)['verified'],
+        'next_track': next_track(verification, track),
         'can_revert': valuation.legacy_status == 'Submit' and not approved(verification),
         'sections': sections, 'unassigned': unassigned,
         'reversions': [{'on': r.reverted_on, 'by': r.reverted_by_name, 'remark': r.remark, 'stage': r.stage or 'legacy'}
@@ -191,7 +225,25 @@ def verify(request, pk, track):
     # Recorded with a before-snapshot when the record already existed, so an
     # imported verification becomes locally owned and a re-import keeps this.
     record(request.user, verification, before, action=f'verify_{track}')
-    return JsonResponse({'id': valuation.pk, 'track': track, 'tracks': tracks_json(verification)})
+    return JsonResponse({'id': valuation.pk, 'track': track, 'tracks': tracks_json(verification),
+                         'next_track': next_track(verification, track)})
+
+
+@endpoint(['PUT'])
+def correct(request, pk, track):
+    """A verifier's correction of their own track's answers, before verifying it."""
+    track = track_named(track)
+    valuation = find(m.Valuation, pk)
+    in_scope(request.user, valuation.case)
+    verification = m.ValuationVerification.objects.filter(valuation=valuation).first()
+    if valuation.legacy_status != 'Submit':
+        raise IntakeError('Only a submitted valuation can be corrected in verification', 409)
+    if state(verification, track)['verified']:
+        raise IntakeError(f'{TRACKS[track][1]} verification is already given; its answers can no longer be changed here', 409)
+    questions = [q for q in form_questions(valuation) if owns(q, track)]
+    save_section(request, valuation, questions, statuses=('Submit',), action=f'verifier_correct_{track}')
+    sections, unassigned = track_questions(valuation, TRACKS[track][0])
+    return JsonResponse({'id': valuation.pk, 'track': track, 'sections': sections, 'unassigned': unassigned})
 
 
 @endpoint(['POST'])

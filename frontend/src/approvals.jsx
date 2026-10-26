@@ -1,5 +1,7 @@
 import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useState} from 'react';
+import {confirmAction} from './components/confirm.jsx';
+import {dateTime} from './lib/format.js';
 
 export function Approvals({api}) {
   const [open, setOpen] = useState(null);
@@ -25,7 +27,7 @@ function Queue({api, onOpen}) {
     {!list ? <p>Loading…</p> : <>
       <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.id}><td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td>
-        <td>{r.service}</td><td>{r.submitted_on || '—'}</td><td><button className="link" onClick={() => onOpen(r.id)}>Review →</button></td></tr>)}</tbody></table></ResponsiveTable>
+        <td>{r.service}</td><td>{r.submitted_at ? dateTime(r.submitted_at) : (r.submitted_on || '—')}</td><td><button className="link" onClick={() => onOpen(r.id)}>Review →</button></td></tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>Nothing here.</p>}
       <div className="pagination"><span>{list.total.toLocaleString('en-IN')} · Page {page}</span>
         <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
@@ -42,7 +44,9 @@ function Review({api, id, onBack}) {
   const load = () => api(`approvals/${id}/`).then(setData).catch(e => setError(e.message));
   useEffect(() => {load();}, [id]);
   async function act(path, body, confirmText) {
-    if (confirmText && !window.confirm(confirmText)) return;
+    if (confirmText && !(path === 'approve'
+      ? await confirmAction({title: 'Are you sure you want to submit the report?', consequence: confirmText, confirmLabel: 'Give final approval'})
+      : window.confirm(confirmText))) return;
     setBusy(path); setError('');
     try {setData(await api(`approvals/${id}/${path}/`, {method: 'POST', body: JSON.stringify(body)})); setReason('');}
     catch (e) {setError(e.message);} finally {setBusy('');}

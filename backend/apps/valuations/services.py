@@ -261,6 +261,7 @@ def valuation_json(valuation, user):
     case = valuation.case
     order = valuation.work_order
     return {'id': valuation.pk, 'status': valuation.legacy_status, 'report_number': valuation.report_number,
+            'submitted_at': valuation.submitted_at,
             'editable': valuation.legacy_status in EDITABLE,
             'case': case.pk, 'lead': case.lead_id, 'lead_number': case.lead.number,
             'borrower': case.borrower.name if case.borrower_id else '',
@@ -377,11 +378,12 @@ def section(request, pk, key):
                          'questions': listed, 'suggestions': pending, 'sections': sections(valuation)})
 
 
-def save_section(request, valuation, questions, submitted=None):
+def save_section(request, valuation, questions, submitted=None, statuses=EDITABLE, action='save_valuation_section'):
     """Save answers to these questions: from the request, or, for an accepted
-    suggestion, given directly, through the same validation and audit."""
+    suggestion, given directly, through the same validation and audit. A verifier
+    correcting a submitted valuation passes statuses=('Submit',)."""
     valuation = m.Valuation.objects.select_for_update().get(pk=valuation.pk)
-    if valuation.legacy_status not in EDITABLE:
+    if valuation.legacy_status not in statuses:
         raise IntakeError(f'A {valuation.legacy_status or "closed"} valuation cannot be edited', 409)
     if submitted is None:
         submitted = payload(request, ['answers']).get('answers')
@@ -477,11 +479,11 @@ def save_section(request, valuation, questions, submitted=None):
     before = snapshot(valuation)
     # Local ownership first: once an imported valuation is edited, its answers are
     # this edit's to replace, and the importer no longer compares them.
-    record(request.user, valuation, before, action='save_valuation_section')
+    record(request.user, valuation, before, action=action)
     # Answer-level evidence of what each changed question held before and after.
     row = lambda option, group, value, document=None: [str(option or ''), group, value, str(document or '')]
     m.IntakeAudit.objects.create(
-        actor=request.user, action='change_valuation_answers', target_model=valuation._meta.label, target_id=valuation.pk,
+        actor=request.user, action='change_valuation_answers' if action == 'save_valuation_section' else f'{action}_answers', target_model=valuation._meta.label, target_id=valuation.pk,
         before={str(q.pk): [row(a.option_id, a.answer_group, a.value, a.document_id) for a in have] for q, have, _ in touched},
         after={str(q.pk): [row(w.option_id, w.answer_group, w.value) for w in wanted] for q, _, wanted in touched})
     reconcile(valuation, [q for q, _, _ in touched], rows)

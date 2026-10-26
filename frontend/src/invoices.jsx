@@ -64,24 +64,26 @@ function Lines({lines, place}) {
 }
 
 function Issue({api, valuation, onBack, onIssued}) {
-  const [form, setForm] = useState({party: 1, place: '', other_gstin: '', account: '', due_date: '', payer: ''});
+  const [form, setForm] = useState({party: 1, place: '', other_gstin: '', account: '', due_date: '', payer: '', discount: null});
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    const qs = `party=${form.party}&other_gstin=${encodeURIComponent(form.other_gstin)}${form.place ? `&place=${form.place}` : ''}`;
-    api(`invoices/valuations/${valuation}/?${qs}`).then(d => {
-      setDraft(d);
-      setForm(f => ({...f, place: f.place || d.place, account: f.account || (d.accounts.find(a => a.code === 2)?.id ?? d.accounts[0]?.id ?? ''),
+    const qs = `party=${form.party}&other_gstin=${encodeURIComponent(form.other_gstin)}${form.place ? `&place=${form.place}` : ''}`
+      + (form.discount !== null && String(form.discount).trim() !== '' && Number.isFinite(Number(form.discount)) ? `&discount=${encodeURIComponent(form.discount)}` : '');
+    const t = setTimeout(() => api(`invoices/valuations/${valuation}/?${qs}`).then(d => {
+      setDraft(d); setError('');
+      setForm(f => ({...f, place: f.place || d.place, discount: f.discount === null ? (Number(d.discount) ? d.discount : '') : f.discount, account: f.account || (d.accounts.find(a => a.code === 2)?.id ?? d.accounts[0]?.id ?? ''),
                      payer: f.payer || (d.default_payer ? String(d.default_payer) : '')}));
-    }).catch(e => setError(e.message));
-  }, [valuation, form.party, form.place, form.other_gstin]);
+    }).catch(e => setError(e.message)), 300);
+    return () => clearTimeout(t);
+  }, [valuation, form.party, form.place, form.other_gstin, form.discount]);
   if (!draft) return <section className="panel">{error ? <p role="alert" className="error">{error}</p> : <p>Loading…</p>}</section>;
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
   async function issue() {
     if (!window.confirm(`Issue a tax invoice for ${rs(draft.total)}? An issued invoice cannot be edited; it can only be reversed by a credit note.`)) return;
     setBusy(true); setError('');
-    try {onIssued((await api(`invoices/valuations/${valuation}/`, {method: 'POST', body: JSON.stringify(form)})).id);}
+    try {onIssued((await api(`invoices/valuations/${valuation}/`, {method: 'POST', body: JSON.stringify({...form, discount: form.discount ?? ''})})).id);}
     catch (e) {setError(e.message);} finally {setBusy(false);}
   }
   const blocked = draft.blockers.length > 0;
@@ -102,6 +104,9 @@ function Issue({api, valuation, onBack, onIssued}) {
       <label>Due date<input type="date" value={form.due_date} min={today()} disabled={blocked} onChange={e => set('due_date', e.target.value)}/><small className="muted">Defaults to 15 days</small></label>
       <label>Paid by<select value={form.payer} disabled={blocked} onChange={e => set('payer', e.target.value)}>
         <option value="">—</option><option value="1">By Client</option><option value="2">By Client Customer</option></select></label>
+      <label>Discount (₹)<input inputMode="decimal" value={form.discount ?? ''} disabled={blocked} placeholder="0.00"
+        onChange={e => set('discount', e.target.value.replace(/[^0-9.]/g, ''))}/>
+        <small className="muted">Taken off the charges before GST; also saved to the valuation's billing.</small></label>
     </div>
     <Lines lines={draft.lines} place={form.place}/>
     <table className="totals"><tbody>

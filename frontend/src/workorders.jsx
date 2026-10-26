@@ -4,7 +4,7 @@ import {ResponsiveTable} from './components/ResponsiveTable.jsx';
 import React, {useEffect, useRef, useState} from 'react';
 import {IntakeLead} from './intake.jsx';
 
-const when = value => value ? new Date(value).toLocaleString('en-IN') : '';
+const when = value => value ? new Date(value).toLocaleString('en-IN', {hour12: false}) : '';
 
 const label = (rows, code) => (rows || []).find(r => String(r.code) === String(code))?.label;
 

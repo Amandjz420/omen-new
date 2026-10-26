@@ -4,7 +4,8 @@ Traced to ValuationController /final and /saveFinal, generateReportNo and
 valuation_final.jsp.
 
 Submission records the assessor's conclusions (eligible and desired loan amounts,
-comment, non-cost factors, Safe/Risky category), who the report is submitted to,
+both optional since the review of October 2026, comment, non-cost factors,
+Safe/Risky category), the moment of submission (submitted_at), who the report is submitted to,
 where and how it is to be dispatched, and the valuation date. It assigns the
 report number R- + MMYYDD + a global counter, and moves the valuation to Submit.
 
@@ -83,6 +84,7 @@ def submission_json(valuation):
     return {'valuation': valuation.pk, 'status': valuation.legacy_status,
             'editable': valuation.legacy_status in EDITABLE,
             'report_number': valuation.report_number,
+            'submitted_at': valuation.submitted_at,
             'keeps_report_number': keeps,
             'missing_required': unanswered_required(valuation),
             'values': {'valuation_date': valuation.valuation_date,
@@ -127,12 +129,11 @@ def submit(request, valuation):
 
     data = payload(request, ['valuation_date', 'eligible_loan_amount', 'desired_loan_amount', 'assessor_comment',
                              'non_cost_factor', 'submitted_to', 'dispatch_at', 'dispatch_by', 'report_category'])
-    for field, label in (('eligible_loan_amount', 'the eligible loan amount'), ('desired_loan_amount', 'the desired loan amount')):
-        if data.get(field) in (None, ''):
-            raise IntakeError(f'Enter {label}')
-    eligible = money(data.get('eligible_loan_amount'), 'Eligible loan amount')
-    desired = money(data.get('desired_loan_amount'), 'Desired loan amount')
-    if eligible < 0 or desired < 0:
+    # Optional: left blank, they are stored as not given rather than as zero.
+    amount = lambda field, label: None if str(data.get(field) or '').strip() == '' else money(data.get(field), label)
+    eligible = amount('eligible_loan_amount', 'Eligible loan amount')
+    desired = amount('desired_loan_amount', 'Desired loan amount')
+    if any(a is not None and a < 0 for a in (eligible, desired)):
         raise IntakeError('Loan amounts cannot be negative')
     if not data.get('submitted_to'):
         raise IntakeError('Choose who the valuation is submitted to')
@@ -158,6 +159,7 @@ def submit(request, valuation):
     valuation.dispatch_by_code = choice(data.get('dispatch_by'), DISPATCH_BY, 'how the report is dispatched')
     valuation.report_category = choice(data.get('report_category'), CATEGORIES, 'the report category')
     valuation.legacy_status = 'Submit'
+    valuation.submitted_at = timezone.now()
     valuation.status_reason = ''
     valuation.save()
     record(request.user, valuation, before, action='submit_valuation')
