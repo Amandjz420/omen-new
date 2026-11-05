@@ -4,7 +4,7 @@ import {useDebouncedValue} from '@mantine/hooks';
 import {notifications} from '@mantine/notifications';
 import {keepPreviousData, useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {lazy, Suspense, useEffect, useState} from 'react';
-import {Link, useParams, useSearchParams} from 'react-router';
+import {Link, useNavigate, useParams, useSearchParams} from 'react-router';
 import {PageHeader} from '../components/PageHeader.jsx';
 import {StageTrack} from '../components/StageTrack.jsx';
 import {EmptyState, ErrorState, LoadingState} from '../components/States.jsx';
@@ -50,7 +50,7 @@ export function Leads() {
     {list.isError ? <ErrorState error={list.error} onRetry={list.refetch}/> : !list.data ? <LoadingState label="Loading leads"/> : <>
       <ResponsiveTable>
         <Table>
-          <Table.Thead><Table.Tr><Table.Th>Lead</Table.Th><Table.Th>Commissioning office</Table.Th><Table.Th>Lead giver</Table.Th><Table.Th>Received</Table.Th><Table.Th>Parties</Table.Th><Table.Th>Cases</Table.Th><Table.Th>Status</Table.Th></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th>Lead</Table.Th><Table.Th>Commissioning office</Table.Th><Table.Th>Orderer</Table.Th><Table.Th>Received</Table.Th><Table.Th>Parties</Table.Th><Table.Th>Cases</Table.Th><Table.Th>Status</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>{list.data.results.map(r => <Table.Tr key={r.id}>
             <Table.Td><Anchor component={Link} to={`/leads/${r.id}`} fw={600}>{r.number || 'No number'}</Anchor>
               <Text size="xs" c="dimmed">{r.source_id ? `Source ${r.source_id}` : 'Recorded here'}</Text></Table.Td>
@@ -72,6 +72,7 @@ export function Leads() {
 
 export function LeadDetail() {
   const {id} = useParams();
+  const navigate = useNavigate();
   const client = useQueryClient();
   // The open tab lives in the address, so a refresh or a shared link reopens it.
   const [params, setParams] = useSearchParams();
@@ -111,7 +112,7 @@ export function LeadDetail() {
                   description={[d.office?.name || 'Office not resolved', d.office?.branch].filter(Boolean).join(', ')}
                   actions={<StatusBadge tone={tone(d.status_label)}>{d.status_label}</StatusBadge>}/>
       <Text size="sm">{d.date_basis === 'actual_intake' ? 'Received' : 'Entered in the previous system'} {date(d.received_date) || 'on an unknown date'}.
-        {d.contact?.name && ` Contact: ${d.contact.name}${d.contact.phone ? `, ${d.contact.phone}` : ''}.`}</Text>
+        {d.contact?.name && ` Orderer: ${d.contact.name}${d.contact.phone ? `, ${d.contact.phone}` : ''}.`}</Text>
       {d.issues.length > 0 && <Text size="sm" c="orange.8" mt="xs">{d.issues.join('; ')}</Text>}
     </div>
 
@@ -128,7 +129,7 @@ export function LeadDetail() {
     </section>
 
     <Suspense fallback={<LoadingState label="Loading the lead workspace"/>}>
-      <LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead} layout={parts => <Tabs value={tab} onChange={openTab} keepMounted>
+      <LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead} onEdit={() => navigate(`/leads/${d.id}/edit`)} layout={parts => <Tabs value={tab} onChange={openTab} keepMounted>
         <Tabs.List>
           <Tabs.Tab value="details">Lead details</Tabs.Tab>
           <Tabs.Tab value="customers" rightSection={parts.lead && <Badge size="sm" variant="light" title={`${parts.lead.borrowers.length} customers, ${parts.lead.cases.length} cases`}>{parts.lead.borrowers.length} · {parts.lead.cases.length}</Badge>}>Client's customers &amp; cases</Tabs.Tab>

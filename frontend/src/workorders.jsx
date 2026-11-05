@@ -76,11 +76,11 @@ export function WorkOrders({api, leadId, onChange}) {
 // on the lead page left its header and stage track stale (review BF5).
 // With layout (the lead page's tabs), intake reloads in place rather than remounting,
 // so the tabs, the work order panel and unsaved drafts in other tabs are kept.
-export function LeadWorkspace({api, leadId, onChanged, layout}) {
+export function LeadWorkspace({api, leadId, onChanged, layout, onEdit}) {
   const [version, setVersion] = useState(0);
   if (layout) {
     const workOrders = <WorkOrders api={api} leadId={leadId} onChange={() => {setVersion(v => v + 1); onChanged?.();}}/>;
-    return <IntakeLead api={api} leadId={leadId} refresh={version} onChange={onChanged} layout={parts => layout({...parts, workOrders})}/>;
+    return <IntakeLead api={api} leadId={leadId} refresh={version} onChange={onChanged} onEdit={onEdit} layout={parts => layout({...parts, workOrders})}/>;
   }
   return <>
     <IntakeLead key={`${leadId}-${version}`} api={api} leadId={leadId} onChange={onChanged}/>

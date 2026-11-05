@@ -56,7 +56,7 @@ def lookups(request):
         'payers': [{'code': c, 'label': n} for c, n in PAYERS],
         'fee_bases': [{'code': c, 'label': n} for c, n in FEE_BASES],
         'payment_methods': [{'code': c, 'label': n} for c, n in PAYMENT_METHODS],
-        'client_types': rows(m.ClientType.objects.order_by('name')),
+        'client_types': rows(m.ClientType.objects.filter(active=True).order_by('name')),
         'designations': rows(m.ContactDesignation.objects.order_by('name')),
         'divisions': rows(live(m.LeadDivision.objects).order_by('name')),
         'subdivisions': rows(live(m.LeadSubdivision.objects).order_by('name'), 'division_id'),
@@ -76,7 +76,7 @@ def office_json(o):
         return None
     return {'id': o.pk, 'name': o.name, 'branch': o.branch_name, 'client_type_id': o.client_type_id,
             'client_type': o.client_type.name if o.client_type_id else '', 'address': o.address, 'ifsc': o.ifsc,
-            'gstin': o.gstin, 'state': o.state, 'district': o.district, 'city': o.block.name if o.block_id else '',
+            'gstin': o.gstin, 'pan': o.pan, 'state': o.state, 'district': o.district, 'city': o.block.name if o.block_id else '',
             'block_id': o.block_id, 'bank': o.bank.name if o.bank_id else ''}
 
 

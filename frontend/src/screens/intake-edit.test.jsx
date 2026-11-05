@@ -102,7 +102,7 @@ describe('the new lead form', () => {
   it('puts the signed-in person as the one who received the lead', async () => {
     backend();
     renderApp(<Routes><Route path="/leads/new" element={<NewLeadForm/>}/></Routes>, {route: '/leads/new'});
-    await screen.findByText('Lead giver information');
+    await screen.findByText('Orderer information');
     await waitFor(() => expect(field('Lead received by').value).toBe('Vijay Galphate'));
   });
 });

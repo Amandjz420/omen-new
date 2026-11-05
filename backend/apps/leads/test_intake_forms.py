@@ -116,8 +116,14 @@ class CaseFormTests(IntakeFixture, TestCase):
 
     def test_the_legacy_required_fields(self):
         for missing in ('report_usages', 'scrutiny_documents', 'expected_report_date', 'asset_amount', 'asset_address',
-                        'state', 'district', 'block', 'asset_pin_code'):
+                        'state', 'district', 'block'):
             self.assertEqual(self.send(self.base, self.case(self.b, **{missing: None})).status_code, 400, missing)
+
+    def test_the_pin_code_is_optional(self):
+        # Client review 2026-11-05: a case may be saved without its PIN.
+        r = self.send(self.base, self.case(self.b, asset_pin_code=''))
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(m.Case.objects.get(pk=r.json()['id']).asset_pin_code, '')
 
     def test_deleted_and_uncoded_choices_are_refused(self):
         m.ReportUsage.objects.filter(pk=self.usage.pk).update(legacy_deleted='1')

@@ -53,8 +53,8 @@ describe('the new lead form', () => {
   it('fills in a known lead giver from their mobile number and saves with them', async () => {
     const calls = backend({'intake/lookups/orderer': {matches: [POONAM]}, 'intake/leads/': {id: 'L1', number: 'L-1'}});
     open();
-    fireEvent.change(await screen.findByLabelText(/Lead giver mobile no/), {target: {value: '98260 12345'}});
-    const details = await screen.findByLabelText("The lead giver's details");
+    fireEvent.change(await screen.findByLabelText(/Orderer mobile no/), {target: {value: '98260 12345'}});
+    const details = await screen.findByLabelText("The orderer's details");
     expect(within(details).getByDisplayValue('Poonam Salve')).toBeTruthy();
     expect(within(details).getByDisplayValue('Main Branch Hoshangabad')).toBeTruthy();
     expect(within(details).getByDisplayValue('Retail / PB / PBD')).toBeTruthy();
@@ -74,8 +74,8 @@ describe('the new lead form', () => {
   it('registers a new lead giver, with the sub-division following the division', async () => {
     const calls = backend({'intake/lookups/orderer': {matches: []}, 'intake/lookups/offices': {results: [OFFICE]}, 'intake/leads/': {id: 'L2'}});
     open();
-    fireEvent.change(await screen.findByLabelText(/Lead giver mobile no/), {target: {value: '9826077777'}});
-    await screen.findByText('No lead giver has this number. Register them with the lead.');
+    fireEvent.change(await screen.findByLabelText(/Orderer mobile no/), {target: {value: '9826077777'}});
+    await screen.findByText('No orderer has this number. Register them with the lead.');
     await choose('Client type', 'Financial Institution');
     await choose('Client name', 'State Bank of India, Main Branch Hoshangabad');
     expect(screen.getByDisplayValue('Huzur')).toBeTruthy();                  // the client's city fills in
@@ -83,8 +83,8 @@ describe('the new lead form', () => {
     fireEvent.click(field('Sub division'));
     expect(screen.queryByRole('option', {name: 'PBD'})).toBeNull();          // only the division's sub-divisions
     fireEvent.click(await screen.findByRole('option', {name: 'SME Hub'}));
-    fireEvent.change(screen.getByRole('textbox', {name: 'Lead giver name'}), {target: {value: 'Anil Rao'}});
-    await choose('Lead giver designation', 'Field Officer');
+    fireEvent.change(screen.getByRole('textbox', {name: 'Orderer name'}), {target: {value: 'Anil Rao'}});
+    await choose('Orderer designation', 'Field Officer');
     await choose('Mode', 'Email');
     await choose('Service 1', 'Valuation of asset');
     await choose('Lead received by', 'Rahul Patidar');
@@ -102,8 +102,8 @@ describe('the new lead form', () => {
       'intake/lookups/ifsc': () => (added ? {offices: [{...OFFICE, id: 'new', name: 'Indian Bank', branch: 'JHAJJAR'}], directory} : {offices: [], directory}),
       'intake/offices/': () => { added = true; return {id: 'new'}; }});
     open();
-    fireEvent.change(await screen.findByLabelText(/Lead giver mobile no/), {target: {value: '9826077777'}});
-    await screen.findByText('No lead giver has this number. Register them with the lead.');
+    fireEvent.change(await screen.findByLabelText(/Orderer mobile no/), {target: {value: '9826077777'}});
+    await screen.findByText('No orderer has this number. Register them with the lead.');
     await choose('Client type', 'Financial Institution');
     fireEvent.change(screen.getByRole('textbox', {name: 'IFSC code'}), {target: {value: 'idib000j031'}});
     fireEvent.click(screen.getByRole('button', {name: 'Find'}));
@@ -154,7 +154,7 @@ describe('the case form', () => {
     fireEvent.change(screen.getByLabelText(/Expected date of report/), {target: {value: '2026-10-20'}});
     fireEvent.change(screen.getByRole('textbox', {name: 'Output amount'}), {target: {value: '3850000'}});
     fireEvent.change(screen.getByRole('textbox', {name: 'Property address'}), {target: {value: 'Plot 47'}});
-    fireEvent.change(screen.getByRole('textbox', {name: 'PIN'}), {target: {value: '462042'}});
+    fireEvent.change(screen.getByRole('textbox', {name: 'PIN (optional)'}), {target: {value: '462042'}});
     fireEvent.click(screen.getByRole('button', {name: 'Save case'}));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0][0]).toMatchObject({borrower: 'b1', service: 'val', subtype: 'lb', report_usages: ['loan'], scrutiny_documents: ['deed'],
@@ -182,13 +182,77 @@ describe("a bank's own form", () => {
   it("is chosen for that bank's leads, and another bank's is not offered", async () => {
     backend({'intake/lookups/orderer': {matches: [POONAM]}, 'intake/catalog': {...CATALOG, subtypes: SUBTYPES}});
     renderApp(<Routes><Route path="/leads/new" element={<NewLeadForm/>}/></Routes>, {route: '/leads/new'});
-    fireEvent.change(await screen.findByLabelText(/Lead giver mobile no/), {target: {value: '9826012345'}});    // an SBI branch
-    await screen.findByLabelText("The lead giver's details");
+    fireEvent.change(await screen.findByLabelText(/Orderer mobile no/), {target: {value: '9826012345'}});    // an SBI branch
+    await screen.findByLabelText("The orderer's details");
     await choose('Service 1', 'Valuation of asset');
     expect(field('Sub service 1').value).toBe('L & B ( SBIN)');
     expect(screen.getByText("SBIN's own form is chosen; the general form is also allowed.")).toBeTruthy();
     fireEvent.click(field('Sub service 1'));
     expect(screen.getByRole('option', {name: 'L & B'})).toBeTruthy();
     expect(screen.queryByRole('option', {name: 'L & B ( CNRB)'})).toBeNull();
+  });
+});
+
+describe('client review 2026-11-05', () => {
+  const TYPES = [{id: 'corp', name: 'Corporate'}, {id: 'ct', name: 'Financial Institution'}, {id: 'ind', name: 'Individual'}];
+  const open = () => renderApp(<Routes><Route path="/leads/new" element={<NewLeadForm/>}/></Routes>, {route: '/leads/new'});
+
+  it('asks for an IFSC only for a financial institution, and adds a client on the form itself', async () => {
+    let created = false;
+    const calls = backend({'intake/lookups/orderer': {matches: []},
+      'intake/lookups/offices': () => ({results: created ? [{...OFFICE, id: 'acme', name: 'Acme Ltd', branch: '', client_type: 'Corporate', ifsc: '', gstin: '23ABCDE1234F1Z5'}] : []}),
+      'intake/lookups/': {...LOOKUPS, client_types: TYPES}, 'intake/offices/': () => { created = true; return {id: 'acme'}; }});
+    open();
+    fireEvent.change(await screen.findByLabelText(/Orderer mobile no/), {target: {value: '9826077777'}});
+    await screen.findByText('No orderer has this number. Register them with the lead.');
+    await choose('Client type', 'Financial Institution');
+    expect(screen.getByRole('textbox', {name: 'IFSC code'})).toBeTruthy();
+    await choose('Client type', 'Corporate');
+    expect(screen.queryByRole('textbox', {name: 'IFSC code'})).toBeNull();
+    fireEvent.click(screen.getByRole('button', {name: 'New client'}));
+    const panel = await screen.findByLabelText('New client');
+    expect(within(panel).queryByRole('textbox', {name: 'IFSC code'})).toBeNull();
+    fireEvent.change(within(panel).getByRole('textbox', {name: 'Client name'}), {target: {value: 'Acme Ltd'}});
+    fireEvent.change(within(panel).getByRole('textbox', {name: 'Address'}), {target: {value: 'MP Nagar'}});
+    fireEvent.change(within(panel).getByRole('textbox', {name: 'GST no.'}), {target: {value: '23abcde1234f1z5'}});
+    fireEvent.click(within(panel).getByRole('button', {name: 'Save client'}));
+    await waitFor(() => expect(posted(calls, 'intake/offices/')[0]).toMatchObject({name: 'Acme Ltd', address: 'MP Nagar', client_type: 'corp', gstin: '23ABCDE1234F1Z5', ifsc: ''}));
+    await waitFor(() => expect(field('Client name').value).toBe('Acme Ltd'));
+    expect(screen.queryByLabelText('New client')).toBeNull();
+  });
+
+  it('records who contacted us apart from the orderer', async () => {
+    const calls = backend({'intake/lookups/orderer': {matches: [POONAM]}, 'intake/leads/': {id: 'L9'}});
+    open();
+    fireEvent.change(await screen.findByLabelText(/Orderer mobile no/), {target: {value: '9826012345'}});
+    await screen.findByLabelText("The orderer's details");
+    await choose('Mode', 'Phone');
+    await choose('Service 1', 'Valuation of asset');
+    await choose('Lead received by', 'Vijay Galphate');
+    await choose('Lead assigned to', 'Rahul Patidar');
+    const section = screen.getByText('Contacted by (optional)').closest('div');
+    fireEvent.change(within(section).getByRole('textbox', {name: 'Name'}), {target: {value: 'Ravi'}});
+    fireEvent.change(within(section).getByRole('textbox', {name: 'Mobile no.'}), {target: {value: '9826011111'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Save the lead'}));
+    await waitFor(() => expect(posted(calls, 'intake/leads/')[0]).toMatchObject({contact: 'c1', contacted_by_name: 'Ravi', contacted_by_phone: '9826011111'}));
+  });
+
+  it('edits a saved lead on the same form, filled with what was entered', async () => {
+    const SAVED = {id: 'L1', number: 'L-1', editable: true, enquiry_mode: 2, orderer: POONAM, contacted_by_name: 'Ravi', contacted_by_phone: '', contacted_by_remark: '',
+                   services: [{id: 'rs1', service_id: 'val', subtype_id: 'lb', case_count: 3}], party_count: 2, received_by: 'e2', assigned_employee: 'e1',
+                   received_date: '2026-11-01'};
+    const calls = backend({'intake/lookups/orderer': {matches: [POONAM]}, 'intake/leads/L1/': SAVED});
+    renderApp(<Routes><Route path="/leads/:id/edit" element={<NewLeadForm/>}/><Route path="/leads/:id" element={<p>Lead page</p>}/></Routes>, {route: '/leads/L1/edit'});
+    await screen.findByText('Edit lead L-1');
+    expect(screen.getByRole('textbox', {name: /Orderer mobile no/}).value).toBe('9826012345');
+    await screen.findByLabelText("The orderer's details");
+    expect(field('Mode').value).toBe('Email');
+    expect(screen.getByRole('textbox', {name: 'Cases 1'}).value).toBe('3');
+    fireEvent.change(screen.getByRole('textbox', {name: 'Cases 1'}), {target: {value: '4'}});
+    fireEvent.click(screen.getByRole('button', {name: 'Save changes'}));
+    await waitFor(() => expect(calls.find(c => c.method === 'PATCH')?.body).toMatchObject(
+      {enquiry_mode: 2, contacted_by_name: 'Ravi', services: [{id: 'rs1', service: 'val', subtype: 'lb', case_count: 4}], received_date: '2026-11-01'}));
+    expect(calls.find(c => c.method === 'PATCH').body.contact).toBeUndefined();     // the same orderer is not sent again
+    await screen.findByText('Lead page');
   });
 });

@@ -27,6 +27,11 @@ class Lead(Entity):
     received_by = models.ForeignKey('target_core.Employee', null=True, on_delete=models.PROTECT, related_name='leads_received')
     client_type = models.ForeignKey('target_core.ClientType', null=True, on_delete=models.PROTECT)
     legacy_number_old = models.CharField(max_length=45, blank=True)
+    # Who passed the lead on without ordering the work (client review 2026-11-05).
+    # The orderer is the contact; this person is recorded for reference only.
+    contacted_by_name = models.CharField(max_length=300, blank=True)
+    contacted_by_phone = models.CharField(max_length=20, blank=True)
+    contacted_by_remark = models.TextField(blank=True)
 
     class Meta:
         app_label = "target_core"

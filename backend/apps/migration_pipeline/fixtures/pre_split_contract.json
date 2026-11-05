@@ -84,7 +84,8 @@
         "id": "models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)",
         "created_at": "models.DateTimeField(auto_now_add=True)",
         "updated_at": "models.DateTimeField(auto_now=True)",
-        "name": "models.CharField(max_length=500)"
+        "name": "models.CharField(max_length=500)",
+        "active": "models.BooleanField(default=True)"
       },
       "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
     },
@@ -121,7 +122,8 @@
         "district": "models.CharField(blank=True, max_length=150)",
         "block": "models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to='target_core.block')",
         "gstin": "models.CharField(blank=True, max_length=200)",
-        "ifsc": "models.CharField(blank=True, max_length=45)"
+        "ifsc": "models.CharField(blank=True, max_length=45)",
+        "pan": "models.CharField(blank=True, max_length=20)"
       },
       "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
     },
@@ -199,7 +201,10 @@
         "case_count": "models.PositiveIntegerField(null=True)",
         "received_by": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, related_name='leads_received', to='target_core.employee')",
         "client_type": "models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to='target_core.clienttype')",
-        "legacy_number_old": "models.CharField(blank=True, max_length=45)"
+        "legacy_number_old": "models.CharField(blank=True, max_length=45)",
+        "contacted_by_name": "models.CharField(blank=True, max_length=300)",
+        "contacted_by_phone": "models.CharField(blank=True, max_length=20)",
+        "contacted_by_remark": "models.TextField(blank=True)"
       },
       "options": "{'abstract': False, 'constraints': [], 'indexes': []}"
     },

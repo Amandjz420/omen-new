@@ -27,7 +27,10 @@ class BankBranch(NamedEntity):
 
 
 class ClientType(NamedEntity):
-    pass
+    # Only Corporate, Financial Institution and Individual are offered (client review
+    # 2026-11-05). The others imported from the previous system are kept, inactive,
+    # so a source refresh still resolves them, but nothing points at them any more.
+    active = models.BooleanField(default=True)
 
     class Meta:
         app_label = "target_core"
@@ -47,6 +50,7 @@ class ClientOffice(NamedEntity):
     block = models.ForeignKey('target_core.Block', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     gstin = models.CharField(max_length=200, blank=True)          # printed on invoices billed to the client
     ifsc = models.CharField(max_length=45, blank=True)
+    pan = models.CharField(max_length=20, blank=True)
 
     class Meta:
         app_label = "target_core"

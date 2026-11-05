@@ -9,6 +9,6 @@ def catalog(request):
         return list(model.objects.order_by('name', 'id').values('id', 'name', *extra))
     employees = m.Employee.objects.exclude(user__is_active=False).order_by('name').values('id', 'name', 'employee_code')
     return JsonResponse({'services': choices(m.ServiceType), 'subtypes': choices(m.ServiceSubtype, ['service_id']),
-                         'employees': list(employees), 'client_types': choices(m.ClientType),
+                         'employees': list(employees), 'client_types': list(m.ClientType.objects.filter(active=True).order_by('name').values('id', 'name')),
                          'designations': choices(m.ContactDesignation), 'banks': choices(m.Bank)})
 

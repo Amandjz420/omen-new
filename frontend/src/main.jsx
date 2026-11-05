@@ -62,7 +62,8 @@ export function App() {
                   <Route index element={<Home/>}/>
                   <Route path="leads" element={<Leads/>}/>
                   <Route path="leads/new" element={<Suspense fallback={<LoadingState label="Opening the lead form"/>}><NewLeadForm/></Suspense>}/>
-                  <Route path="leads/clients" element={legacy('Clients and lead givers', 'Add or edit client offices and the lead givers at each.', IntakeWorkspace)}/>
+                  <Route path="leads/:id/edit" element={<Suspense fallback={<LoadingState label="Opening the lead form"/>}><NewLeadForm key="edit"/></Suspense>}/>
+                  <Route path="leads/clients" element={legacy('Clients and orderers', 'Add or edit client offices and the orderers at each.', IntakeWorkspace)}/>
                   <Route path="leads/:id" element={<LeadDetail/>}/>
                   <Route path="offices" element={<Offices/>}/>
                   <Route path="valuations" element={legacy('Valuations', 'Start a valuation, fill in its form, and submit it for verification.', Valuations)}/>

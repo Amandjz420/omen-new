@@ -15,7 +15,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from target_core import models as m
 from apps.migration_pipeline.services import source_key
@@ -56,6 +56,51 @@ def grid(header, rows, widths):
     return table
 
 
+def money(value):
+    return f'Rs. {value:,.2f}' if value is not None else ''
+
+
+def payment_terms(borrower, lead):
+    """Client review 2026-11-05: the terms of payment, from the fee agreement recorded
+    with the client's customer: who pays, the fee, how, by whom and by when."""
+    if borrower.payer == 1:
+        payer = f'The client{": " + borrower.payer_name if borrower.payer_name else ""}'
+    elif borrower.payer == 2:
+        payer = f"The client's customer (applicant): {borrower.name}"
+    else:
+        payer = ''
+    if borrower.fee_basis == 2:
+        fee = f'Fixed amount of {money(borrower.agreed_fee)}, GST extra as applicable'
+    elif borrower.fee_basis == 1:
+        fee = "As per the client's circular / approved fee schedule, GST extra as applicable"
+    else:
+        fee = ''
+    responsible = ', '.join(x for x in (borrower.payment_reference_name, borrower.payment_reference_number) if x)
+    rows = [('Payable by', payer), ('Fee', fee),
+            ('Mode of payment', borrower.get_customer_payment_method_display() if borrower.customer_payment_method else ''),
+            ('Person responsible for payment', responsible),
+            ('Payment due by', borrower.pay_by_date.strftime('%d-%m-%Y') if borrower.pay_by_date else ''),
+            ('GST No. for billing', borrower.gst_number)]
+    return [(label, value) for label, value in rows if value]
+
+
+def signature_block(lead, width):
+    """A blank block for the client's authorised signatory, signed on paper."""
+    office = lead.office
+    client = ', '.join(x for x in (office.name, office.branch_name) if x) if office else ''
+    lines = [Paragraph(f'<b>For {text(client)}</b>' if client else '<b>For the client</b>', BODY), Spacer(1, 30),
+             Paragraph('Authorised Signatory', BODY), Spacer(1, 6),
+             Paragraph('Name: ____________________________', BODY), Spacer(1, 4),
+             Paragraph('Designation: _______________________', BODY), Spacer(1, 4),
+             Paragraph('Date: ____________________________', BODY), Spacer(1, 4),
+             Paragraph('Seal:', BODY)]
+    table = Table([['', lines]], colWidths=[width * .45, width * .55])
+    table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BOX', (1, 0), (1, 0), 0.5, colors.black),
+                               ('LEFTPADDING', (1, 0), (1, 0), 8), ('TOPPADDING', (1, 0), (1, 0), 6),
+                               ('BOTTOMPADDING', (1, 0), (1, 0), 8)]))
+    return table
+
+
 def render(work_order):
     borrower, lead = work_order.borrower, work_order.lead
     contact = lead.contact
@@ -72,7 +117,7 @@ def render(work_order):
               Paragraph(f'With reference to the {text(work_order.number)} cited above, we are pleased to place '
                         f'an order for the service mentioned below:', BODY)]
 
-    story += [Paragraph('(1). Lead Giver Information:', HEAD),
+    story += [Paragraph('(1). Orderer Information:', HEAD),
               grid(['Name', 'Mobile No'], [[contact.name if contact else '', contact.phone if contact else '']],
                    [full * .6, full * .4])]
     story += [Paragraph('(2). Client Customer Detail:', HEAD),
@@ -98,6 +143,11 @@ def render(work_order):
                    [[n, c.asset_state, c.asset_district, c.asset_pin_code, c.asset_address]
                     for n, c in enumerate(cases, 1)],
                    [full * w for w in (.06, .16, .18, .12, .48)])]
+    terms = payment_terms(borrower, lead)
+    story += [Paragraph('(6). Terms of Payment:', HEAD),
+              grid(['Term', 'Detail'], terms, [full * .32, full * .68]) if terms
+              else Paragraph('Not recorded.', BODY)]
+    story += [Spacer(1, 18), KeepTogether([signature_block(lead, full)])]
 
     buffer = io.BytesIO()
     SimpleDocTemplate(buffer, pagesize=A4, leftMargin=17 * mm, rightMargin=17 * mm,

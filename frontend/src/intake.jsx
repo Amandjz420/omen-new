@@ -115,10 +115,64 @@ export function ServiceForm({catalog, save, ifsc = ''}) {
 
 const label = (rows, code) => (rows || []).find(r => String(r.code) === String(code))?.label;
 
+// Client review 2026-11-05: the lead details tab shows what was entered on the lead form,
+// read-only; Edit opens that form again, filled in.
+function Field({name, value}) {
+  return <div className="readonly-field"><dt>{name}</dt><dd>{value || '—'}</dd></div>;
+}
+
+function LeadSummary({lead, catalog, lookups}) {
+  const named = (list, id) => (list || []).find(x => String(x.id) === String(id))?.name || '';
+  const o = lead.orderer, office = lead.office_detail || {};
+  const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN') : '';
+  return <div className="lead-summary">
+    <h3>Orderer information</h3>
+    <dl className="readonly-grid">
+      <Field name="Mode" value={label(lookups?.modes, lead.enquiry_mode)}/>
+      <Field name="Orderer name" value={o?.name}/>
+      <Field name="Orderer mobile no." value={o?.phone}/>
+      <Field name="Alternate contact number" value={o?.alternate_phone}/>
+      <Field name="Designation" value={o?.designation}/>
+      <Field name="Division" value={[o?.division, o?.subdivision].filter(Boolean).join(' / ')}/>
+    </dl>
+    <h3>Client</h3>
+    <dl className="readonly-grid">
+      <Field name="Client type" value={office.client_type}/>
+      <Field name="Client name" value={office.name}/>
+      <Field name="Client branch" value={office.branch}/>
+      <Field name="Address" value={office.address}/>
+      <Field name="City / district / state" value={[office.city, office.district, office.state].filter(Boolean).join(', ')}/>
+      <Field name="GST No." value={office.gstin}/>
+      <Field name="PAN" value={office.pan}/>
+      {office.client_type === 'Financial Institution' && <Field name="IFSC" value={office.ifsc}/>}
+    </dl>
+    <h3>Contacted by</h3>
+    <dl className="readonly-grid">
+      <Field name="Name" value={lead.contacted_by_name}/>
+      <Field name="Mobile no." value={lead.contacted_by_phone}/>
+      <Field name="Remark" value={lead.contacted_by_remark}/>
+    </dl>
+    <h3>Lead information</h3>
+    <table><thead><tr><th>Type of service</th><th>Type of sub service</th><th>No. of case / property</th></tr></thead>
+      <tbody>{lead.services.map(s => <tr key={s.id}><td>{named(catalog.services, s.service_id)}</td><td>{named(catalog.subtypes, s.subtype_id) || '—'}</td>
+        <td className="num">{s.case_count ?? '—'}</td></tr>)}</tbody></table>
+    <dl className="readonly-grid">
+      <Field name="No. of cases / properties" value={lead.case_count != null ? String(lead.case_count) : ''}/>
+      <Field name="No. of clients" value={lead.party_count != null ? String(lead.party_count) : ''}/>
+    </dl>
+    <h3>Other details</h3>
+    <dl className="readonly-grid">
+      <Field name="Lead received by" value={named(catalog.employees, lead.received_by)}/>
+      <Field name="Lead assigned to" value={named(catalog.employees, lead.assigned_employee)}/>
+      <Field name="Received date" value={fmt(lead.received_date)}/>
+    </dl>
+  </div>;
+}
+
 // layout, when given, receives the page's parts ({lead, details, customers, followUps, history})
 // so the host can arrange them, e.g. in tabs. Without it everything is stacked as before.
 // refresh reloads the lead in place (no remount), so a host's tabs and drafts survive it.
-export function IntakeLead({api, leadId, catalog: supplied, onChange, layout, refresh = 0}) {
+export function IntakeLead({api, leadId, catalog: supplied, onChange, layout, refresh = 0, onEdit}) {
   const {data: lookups} = useLookups();
   const [catalog,setCatalog] = useState(supplied);
   const [lead,setLead] = useState(null);
@@ -179,8 +233,10 @@ export function IntakeLead({api, leadId, catalog: supplied, onChange, layout, re
       save={async data => {await api(`intake/leads/${leadId}/`,{method:'PATCH',body:JSON.stringify(data)});await reload();}}/>;
   const history = <section className="panel"><h3>Lead change history</h3>{lead.audit.map((a,i) => <p key={i}>{a.action} · {a.actor__username} · {new Date(a.created_at).toLocaleString('en-IN', {hour12: false})}</p>)}</section>;
   if (layout) return layout({lead,
-    details: <div className="intake"><section className="panel">{head}{locked}{services}</section>
-      {lead.editable && <>{contacts}<section className="panel">{assignment}{serviceForm}{cancelForm}</section></>}</div>,
+    details: <div className="intake"><section className="panel">{head}{locked}
+      {lead.editable && <p><a className="button" href={`/leads/${leadId}/edit`} onClick={e => {if (onEdit) {e.preventDefault(); onEdit();}}}>Edit lead</a></p>}
+      <LeadSummary lead={lead} catalog={catalog} lookups={lookups}/></section>
+      {lead.editable && <section className="panel">{cancelForm}</section>}</div>,
     customers: <div className="intake"><section className="panel">{locked}{customers}{cases}
       {lead.editable && <>{editForms}{borrowerForm}{caseForm}</>}</section></div>,
     followUps: <div className="intake"><section className="panel">{followUps}{lead.editable && followUpForm}</section></div>,
@@ -213,7 +269,7 @@ export default function IntakeWorkspace({api}) {
   if(error) return <p role="alert" className="error">{error}</p>;
   if(!catalog) return <p>Loading intake options…</p>;
   if(leadId) return <><button onClick={() => {setLeadId(null);setKey(uuid());}}>Create another lead</button><IntakeLead api={api} leadId={leadId} catalog={catalog}/></>;
-  return <div className="intake"><p className="intro">Add or edit client offices and their lead givers. Record new leads on the New lead form, which finds a lead giver by mobile number.</p>
+  return <div className="intake"><p className="intro">Add or edit client offices and their orderers. Record new leads on the New lead form, which finds an orderer by mobile number.</p>
     <OfficePicker api={api} selected={office} onSelect={id => {setOffice(id);setContact('');}} catalog={catalog}/>
     <Contacts api={api} office={office} catalog={catalog} value={contact} onSelect={setContact}/>
   </div>;
