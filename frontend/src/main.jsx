@@ -10,7 +10,7 @@ import {Notifications} from '@mantine/notifications';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {lazy, Suspense} from 'react';
 import {createRoot} from 'react-dom/client';
-import {BrowserRouter, Route, Routes} from 'react-router';
+import {BrowserRouter, Navigate, Route, Routes} from 'react-router';
 
 import {theme} from './app/theme.js';
 import {SessionProvider} from './app/session.jsx';
@@ -18,7 +18,6 @@ import {Shell} from './app/Shell.jsx';
 import {Gate} from './screens/Gate.jsx';
 import {Home} from './screens/Home.jsx';
 import {LeadDetail, Leads} from './screens/Leads.jsx';
-import {Offices} from './screens/Offices.jsx';
 import {ImportHistory, MigrationStatus} from './screens/System.jsx';
 import {NotFound} from './screens/NotFound.jsx';
 import {ReportList, ReportView} from './screens/Reports.jsx';
@@ -29,7 +28,6 @@ import {LoadingState} from './components/States.jsx';
 // Each workflow screen is loaded when first opened, so a phone on weak signal
 // downloads only what the person uses.
 const screen = (loader, name) => lazy(() => loader().then(module => ({default: module[name]})));
-const IntakeWorkspace = screen(() => import('./intake.jsx'), 'default');
 const Valuations = screen(() => import('./valuations.jsx'), 'Valuations');
 const Verifications = screen(() => import('./verifications.jsx'), 'Verifications');
 const BankReports = screen(() => import('./bankreports.jsx'), 'BankReports');
@@ -39,6 +37,7 @@ const Receipts = screen(() => import('./receipts.jsx'), 'Receipts');
 const Dispatch = screen(() => import('./dispatch.jsx'), 'Dispatch');
 const ValuationForm = screen(() => import('./screens/ValuationForm.jsx'), 'ValuationForm');
 const NewLeadForm = screen(() => import('./screens/IntakeForms.jsx'), 'NewLeadForm');
+const Directory = screen(() => import('./screens/Directory.jsx'), 'Directory');
 
 // A failed request is shown to the person, not silently repeated: many of these
 // endpoints change money or state, and retrying them is the server's decision.
@@ -63,9 +62,9 @@ export function App() {
                   <Route path="leads" element={<Leads/>}/>
                   <Route path="leads/new" element={<Suspense fallback={<LoadingState label="Opening the lead form"/>}><NewLeadForm/></Suspense>}/>
                   <Route path="leads/:id/edit" element={<Suspense fallback={<LoadingState label="Opening the lead form"/>}><NewLeadForm key="edit"/></Suspense>}/>
-                  <Route path="leads/clients" element={legacy('Organisations and clients', 'Add or edit organisations and the clients at each.', IntakeWorkspace)}/>
+                  <Route path="leads/clients" element={<Suspense fallback={<LoadingState label="Opening organisations"/>}><Directory/></Suspense>}/>
                   <Route path="leads/:id" element={<LeadDetail/>}/>
-                  <Route path="offices" element={<Offices/>}/>
+                  <Route path="offices" element={<Navigate to="/leads/clients" replace/>}/>
                   <Route path="valuations" element={legacy('Valuations', 'Start a valuation, fill in its form, and submit it for verification.', Valuations)}/>
                   <Route path="valuations/:id/form" element={<Suspense fallback={<LoadingState label="Opening the form"/>}><ValuationForm/></Suspense>}/>
                   <Route path="verification" element={legacy('Verification', 'Legal, technical, social and general checks, each in its own queue.', Verifications)}/>

@@ -41,7 +41,7 @@ const typeName = (types, id) => (types || []).find(t => String(t.id) === String(
  * itself. Every organisation has a name, address, place and GST/PAN; only a Financial
  * Institution has an IFSC. Since client review 2026-11-25 the "client" is the person who
  * orders the work, and the body they work for is the "organisation". */
-function NewClientPanel({clientType, typeLabel, lookups, onCreated, onCancel}) {
+export function NewClientPanel({clientType, typeLabel, lookups, onCreated, onCancel}) {
   const blank = {name: '', branch_name: '', address: '', state: null, district: null, block: null, gstin: '', pan: '', ifsc: ''};
   const [f, setF] = useState(blank);
   const [error, setError] = useState('');
