@@ -35,11 +35,11 @@ function Queue({api, track, setTrack, onOpen}) {
   return <section className="panel">
     <div className="tabs">{TRACKS.map(([k, label]) => <button key={k} className={k === track ? 'active' : ''}
       onClick={() => {setTrack(k); setPage(1);}}>{label}{list && <span className="count"> {list.counts[k]}</span>}</button>)}</div>
-    <div className="toolbar"><label className="search">Search<input placeholder="Report, lead or borrower" value={q}
+    <div className="toolbar"><label className="search">Search<input placeholder="Report, lead or applicant" value={q}
       onChange={e => {setQ(e.target.value); setPage(1);}}/></label></div>
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
-      <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th>Tracks done</th><th></th></tr></thead>
+      <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Applicant</th><th>Service</th><th>Submitted</th><th>Tracks done</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.id}>
         <td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td>
         <td>{r.service}<small>{r.subtype}</small></td><td>{r.submitted_at ? dateTime(r.submitted_at) : (r.submitted_on || '—')}<small>{r.assessor}</small></td>

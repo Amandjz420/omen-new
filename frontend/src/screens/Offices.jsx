@@ -14,7 +14,7 @@ export function Offices() {
   const [page, setPage] = useState(1);
   const list = useQuery({queryKey: ['offices', q, page], queryFn: () => api(`offices/?q=${encodeURIComponent(q)}&page=${page}`), placeholderData: keepPreviousData});
   return <Stack>
-    <PageHeader title="Client offices" description="The bank branches and other clients that commission work."/>
+    <PageHeader title="Organisations" description="The bank branches and other organisations whose clients commission work."/>
     <TextInput label="Search" placeholder="Office, branch or source ID" value={typed} onChange={e => {setTyped(e.currentTarget.value); setPage(1);}} maw={480}/>
     {list.isError ? <ErrorState error={list.error} onRetry={list.refetch}/> : !list.data ? <LoadingState label="Loading offices"/> : <>
       <ResponsiveTable><Table>

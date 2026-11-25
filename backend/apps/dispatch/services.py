@@ -55,7 +55,7 @@ from apps.valuations.services import scoped_employee
 from apps.valuations.verification import actor
 
 MODES, STATUSES, COURIERS = dict(m.Dispatch.MODES), dict(m.Dispatch.STATUSES), dict(m.Dispatch.COURIERS)
-AT = {1: 'Addressee', 2: 'Extension Office', 3: 'Other', 4: 'Client Customer will pick up'}   # AddToBeDispatchedatEnum
+AT = {1: 'Addressee', 2: 'Extension Office', 3: 'Other', 4: 'Applicant will pick up'}   # AddToBeDispatchedatEnum
 BY = {1: 'Speed post', 2: 'Courier', 3: 'Deliver by hand'}                                     # ToBeDispatchedByEnum
 LYING, TRANSIT, DELIVERED = 1, 2, 3
 TRACKED = (1, 2, 6)                     # courier, speed post and normal post carry a consignment number

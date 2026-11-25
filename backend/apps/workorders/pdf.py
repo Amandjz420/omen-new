@@ -62,17 +62,17 @@ def money(value):
 
 def payment_terms(borrower, lead):
     """Client review 2026-11-05: the terms of payment, from the fee agreement recorded
-    with the client's customer: who pays, the fee, how, by whom and by when."""
+    with the applicant (the client's customer): who pays, the fee, how, by whom and by when."""
     if borrower.payer == 1:
-        payer = f'The client{": " + borrower.payer_name if borrower.payer_name else ""}'
+        payer = f'The organisation{": " + borrower.payer_name if borrower.payer_name else ""}'
     elif borrower.payer == 2:
-        payer = f"The client's customer (applicant): {borrower.name}"
+        payer = f"The applicant: {borrower.name}"
     else:
         payer = ''
     if borrower.fee_basis == 2:
         fee = f'Fixed amount of {money(borrower.agreed_fee)}, GST extra as applicable'
     elif borrower.fee_basis == 1:
-        fee = "As per the client's circular / approved fee schedule, GST extra as applicable"
+        fee = "As per the organisation's circular / approved fee schedule, GST extra as applicable"
     else:
         fee = ''
     responsible = ', '.join(x for x in (borrower.payment_reference_name, borrower.payment_reference_number) if x)
@@ -85,10 +85,10 @@ def payment_terms(borrower, lead):
 
 
 def signature_block(lead, width):
-    """A blank block for the client's authorised signatory, signed on paper."""
+    """A blank block for the organisation's authorised signatory, signed on paper."""
     office = lead.office
     client = ', '.join(x for x in (office.name, office.branch_name) if x) if office else ''
-    lines = [Paragraph(f'<b>For {text(client)}</b>' if client else '<b>For the client</b>', BODY), Spacer(1, 30),
+    lines = [Paragraph(f'<b>For {text(client)}</b>' if client else '<b>For the organisation</b>', BODY), Spacer(1, 30),
              Paragraph('Authorised Signatory', BODY), Spacer(1, 6),
              Paragraph('Name: ____________________________', BODY), Spacer(1, 4),
              Paragraph('Designation: _______________________', BODY), Spacer(1, 4),
@@ -117,11 +117,11 @@ def render(work_order):
               Paragraph(f'With reference to the {text(work_order.number)} cited above, we are pleased to place '
                         f'an order for the service mentioned below:', BODY)]
 
-    story += [Paragraph('(1). Orderer Information:', HEAD),
+    story += [Paragraph('(1). Client Information:', HEAD),
               grid(['Name', 'Mobile No'], [[contact.name if contact else '', contact.phone if contact else '']],
                    [full * .6, full * .4])]
-    story += [Paragraph('(2). Client Customer Detail:', HEAD),
-              grid(['Client Customer Name', 'Email Id', 'Contact No.', 'No. Of Cases'],
+    story += [Paragraph('(2). Applicant Details:', HEAD),
+              grid(['Applicant Name', 'Email Id', 'Contact No.', 'No. Of Cases'],
                    [[borrower.name, borrower.email, borrower.contact_number, borrower.property_count]],
                    [full * .35, full * .3, full * .2, full * .15])]
     story += [Paragraph('(3). Payment Responsibility:', HEAD),
@@ -131,7 +131,7 @@ def render(work_order):
                      borrower.get_customer_payment_method_display() if borrower.customer_payment_method else '']],
                    [full / 3] * 3)]
     story += [Paragraph('(4). Properties Information:', HEAD),
-              grid(['SNo.', "Client's Customer Name", 'Service Type', 'Service Sub Type', 'Usage of Report',
+              grid(['SNo.', 'Applicant Name', 'Service Type', 'Service Sub Type', 'Usage of Report',
                     'Scrutiny Document', 'Remarks'],
                    [[n, borrower.name, c.service.name, c.subtype.name if c.subtype else '',
                      resolve_names('usage_of_reports', m.ReportUsage, c.usage_of_report_code),

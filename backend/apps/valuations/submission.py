@@ -48,7 +48,7 @@ from apps.valuations.services import EDITABLE, LIVE, filled, form_questions, in_
 
 RENUMBER_ON_RESUBMIT = False
 DISPATCH_AT = [(1, 'Addressee'), (2, 'Extension Office'), (3, 'Other'),
-               (4, 'Client Customer will pick up')]                          # AddToBeDispatchedatEnum
+               (4, 'Applicant will pick up')]                          # AddToBeDispatchedatEnum
 DISPATCH_BY = [(1, 'Speed post'), (2, 'Courier'), (3, 'Deliver by hand')]    # ToBeDispatchedByEnum
 CATEGORIES = [(1, 'Safe'), (2, 'Risky')]                                     # ReportCategoryEnum
 

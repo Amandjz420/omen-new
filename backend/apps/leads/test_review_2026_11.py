@@ -61,30 +61,20 @@ class LeadEditTests(IntakeFixture, TestCase):
         self.assertEqual((lead.contact, lead.contacted_by_name, lead.contacted_by_phone), (self.contact, 'Ravi', '9826011111'))
         self.assertEqual(self.send('/api/intake/leads/', self.data(contacted_by_phone='123')).status_code, 400)
 
-    def test_the_lead_form_edits_every_field_and_its_services(self):
+    def test_the_lead_form_edits_every_field(self):
         lead = self.create()
-        flat = m.ServiceSubtype.objects.create(name='Flat', service=self.service)
         other_office = m.ClientOffice.objects.create(name='Other office')
         other = m.Contact.objects.create(name='Other orderer', office=other_office, phone='9826099999')
-        existing = lead.requestedservice_set.get()
         r = self.send(f'/api/intake/leads/{lead.pk}/', {
-            'enquiry_mode': 2, 'contact': str(other.pk), 'contacted_by_name': 'Ravi', 'party_count': 2,
-            'services': [{'id': str(existing.pk), 'service': str(self.service.pk), 'subtype': str(self.subtype.pk), 'case_count': 4},
-                         {'service': str(self.service.pk), 'subtype': str(flat.pk), 'case_count': 1}]}, 'patch')
+            'enquiry_mode': 2, 'contact': str(other.pk), 'contacted_by_name': 'Ravi', 'party_count': 2, 'case_count': 5}, 'patch')
         self.assertEqual(r.status_code, 200, r.content)
         lead.refresh_from_db()
         self.assertEqual((lead.enquiry_mode, lead.contact, lead.office, lead.contacted_by_name, lead.case_count, lead.party_count),
                          (2, other, other_office, 'Ravi', 5, 2))
         self.assertEqual(r.json()['orderer']['name'], 'Other orderer')
-        # Dropping a service removes it; one with cases cannot be dropped.
-        b = self.send(f'/api/intake/leads/{lead.pk}/borrowers/', self.borrower()).json()['id']
-        self.assertEqual(self.send(f'/api/intake/leads/{lead.pk}/cases/', self.case(b)).status_code, 201)
-        keep_flat = [{'service': str(self.service.pk), 'subtype': str(flat.pk), 'case_count': 1,
-                      'id': str(lead.requestedservice_set.get(subtype=flat).pk)}]
-        self.assertEqual(self.send(f'/api/intake/leads/{lead.pk}/', {'services': keep_flat}, 'patch').status_code, 409)
-        land = [{'id': str(existing.pk), 'service': str(self.service.pk), 'subtype': str(self.subtype.pk), 'case_count': 4}]
-        self.assertEqual(self.send(f'/api/intake/leads/{lead.pk}/', {'services': land}, 'patch').status_code, 200)
-        self.assertEqual(lead.requestedservice_set.count(), 1)
+        # Client review 2026-11-25: services are not on the lead, and who received it is not edited.
+        for refused in ({'services': []}, {'received_by': str(self.employee.pk)}, {'case_count': 0}):
+            self.assertEqual(self.send(f'/api/intake/leads/{lead.pk}/', refused, 'patch').status_code, 400, refused)
 
     def test_a_new_orderer_can_be_registered_on_edit(self):
         lead = self.create()
@@ -104,13 +94,14 @@ class WorkOrderTermsTests(TestCase):
         from pypdf import PdfReader
         from apps.workorders.pdf import render
         office = m.ClientOffice.objects.create(name='Acme Ltd', branch_name='Bhopal')
-        contact = m.Contact.objects.create(name='Mr. Orderer', office=office, phone='9826012345')
+        contact = m.Contact.objects.create(name='Mr. Sharma', office=office, phone='9826012345')
         lead = m.Lead.objects.create(office=office, contact=contact, received_date=datetime.date(2026, 11, 5))
         b = m.Borrower.objects.create(lead=lead, name='Asha Verma', payer=2, fee_basis=2, agreed_fee=15000,
                                       customer_payment_method=1, payment_reference_name='Asha Verma',
                                       payment_reference_number='9826054321', pay_by_date=datetime.date(2026, 11, 30))
         text = ''.join(p.extract_text() for p in PdfReader(io.BytesIO(render(m.WorkOrder(lead=lead, borrower=b, number='O-1')))).pages)
-        for expected in ['Orderer Information', 'Terms of Payment', "client's customer", 'Rs. 15,000.00', '30-11-2026',
+        for expected in ['Client Information', 'Applicant Details', 'Terms of Payment', 'The applicant: Asha Verma', 'Rs. 15,000.00', '30-11-2026',
                          '9826054321', 'Authorised Signatory', 'For Acme Ltd, Bhopal', 'Designation']:
             self.assertIn(expected, text)
-        self.assertNotIn('Lead Giver', text)
+        for gone in ('Lead Giver', 'Orderer', 'Client Customer'):
+            self.assertNotIn(gone, text)

@@ -30,16 +30,16 @@ function Queue({api, onIssue, onOpen}) {
   return <section className="panel">
     <div className="tabs">{BUCKETS.map(([k, l]) => <button key={k} className={k === state ? 'active' : ''} onClick={() => {setState(k); setPage(1);}}>
       {l}{list && <span className="count"> {list.counts[k].toLocaleString('en-IN')}</span>}</button>)}</div>
-    <div className="toolbar"><label className="search">Search<input placeholder={issuing ? 'Report, lead or borrower' : offline ? 'Invoice, client, customer or reference' : 'Invoice, report or borrower'} value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label>
+    <div className="toolbar"><label className="search">Search<input placeholder={issuing ? 'Report, lead or applicant' : offline ? 'Invoice, organisation, applicant or reference' : 'Invoice, report or applicant'} value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label>
       {offline && <label className="choice"><input type="checkbox" checked={due} onChange={e => {setDue(e.target.checked); setPage(1);}}/>Outstanding only{list && ` (${list.counts.offline_due.toLocaleString('en-IN')})`}</label>}</div>
     {offline && <p className="muted">Invoices raised outside the system in 2020–21 and recorded afterwards. They belong to no valuation; their lead and report numbers are kept as references.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
       <ResponsiveTable><table><thead><tr>{offline
-        ? <><th>Invoice</th><th>Date</th><th>Billed to</th><th>Customer</th><th>Reference</th><th>Total</th><th>Outstanding</th><th></th></>
+        ? <><th>Invoice</th><th>Date</th><th>Billed to</th><th>Applicant</th><th>Reference</th><th>Total</th><th>Outstanding</th><th></th></>
         : issuing
-        ? <><th>Report</th><th>Lead</th><th>Borrower</th><th>Billed</th><th></th></>
-        : <><th>Invoice</th><th>Date</th><th>Report</th><th>Borrower</th><th>Total</th><th>Outstanding</th><th></th></>}</tr></thead>
+        ? <><th>Report</th><th>Lead</th><th>Applicant</th><th>Billed</th><th></th></>
+        : <><th>Invoice</th><th>Date</th><th>Report</th><th>Applicant</th><th>Total</th><th>Outstanding</th><th></th></>}</tr></thead>
       <tbody>{list.results.map(r => offline
         ? <tr key={r.id}><td><strong>{r.number}</strong></td><td>{r.issued_on || '—'}</td><td>{r.billed_to}</td><td>{r.customer}</td>
             <td>{r.report_number || '—'}</td><td>{rs(r.total)}</td><td>{rs(r.remaining)}</td><td><button className="link" onClick={() => onOpen(r.id)}>Open →</button></td></tr>
@@ -94,7 +94,7 @@ function Issue({api, valuation, onBack, onIssued}) {
     {error && <p role="alert" className="error">{error}</p>}
     <div className="form-grid">
       <label>Bill GSTIN of<select value={form.party} disabled={blocked} onChange={e => set('party', Number(e.target.value))}>
-        <option value={1}>Client (bank)</option><option value={2}>Client customer (borrower)</option><option value={3}>Other party</option></select></label>
+        <option value={1}>Organisation (bank)</option><option value={2}>Applicant</option><option value={3}>Other party</option></select></label>
       {form.party === 3 && <label>Other GSTIN<input value={form.other_gstin} maxLength={15} onChange={e => set('other_gstin', e.target.value.toUpperCase())}/></label>}
       <label>Place of supply<select value={form.place} disabled={blocked} onChange={e => set('place', e.target.value)}>
         <option value="intra">Intra state (CGST + SGST)</option><option value="inter">Inter state (IGST)</option></select>
@@ -103,7 +103,7 @@ function Issue({api, valuation, onBack, onIssued}) {
         {draft.accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.ifsc}</option>)}</select></label>
       <label>Due date<input type="date" value={form.due_date} min={today()} disabled={blocked} onChange={e => set('due_date', e.target.value)}/><small className="muted">Defaults to 15 days</small></label>
       <label>Paid by<select value={form.payer} disabled={blocked} onChange={e => set('payer', e.target.value)}>
-        <option value="">—</option><option value="1">By Client</option><option value="2">By Client Customer</option></select></label>
+        <option value="">—</option><option value="1">By Client</option><option value="2">By Applicant</option></select></label>
       <label>Discount (₹)<input inputMode="decimal" value={form.discount ?? ''} disabled={blocked} placeholder="0.00"
         onChange={e => set('discount', e.target.value.replace(/[^0-9.]/g, ''))}/>
         <small className="muted">Taken off the charges before GST; also saved to the valuation's billing.</small></label>
@@ -155,7 +155,7 @@ export function Invoice({api, id, onBack}) {
     {inv.document && (inv.document.available ? <p><a href={`/api/invoices/${id}/document/`} target="_blank" rel="noopener">View the invoice (PDF)</a></p>
       : <p className="muted">The invoice's file could not be found in storage.</p>)}
     {inv.offline && <div className="notice">
-      <p>Offline invoice, recorded from outside the system. Billed to <strong>{inv.billed_to.name}</strong>{inv.billed_to.branch ? `, ${inv.billed_to.branch}` : ''}{inv.billed_to.customer ? ` · customer ${inv.billed_to.customer}` : ''}.</p>
+      <p>Offline invoice, recorded from outside the system. Billed to <strong>{inv.billed_to.name}</strong>{inv.billed_to.branch ? `, ${inv.billed_to.branch}` : ''}{inv.billed_to.customer ? ` · applicant ${inv.billed_to.customer}` : ''}.</p>
       <p className="muted">References (not linked to any record here): lead {inv.references.lead || '—'} · work order {inv.references.work_order || '—'} · report {inv.references.report || '—'}
         {inv.references.service ? ` · ${inv.references.service}${inv.references.subtype ? ' / ' + inv.references.subtype : ''}` : ''}{inv.references.liable ? ` · liable ${inv.references.liable}` : ''}</p>
       {inv.advance && Number(inv.advance) > 0 && <p className="muted">Advance received when raised: {rs(inv.advance)}</p>}

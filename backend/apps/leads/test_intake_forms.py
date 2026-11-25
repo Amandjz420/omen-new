@@ -11,23 +11,24 @@ from apps.leads.test_intake import IntakeFixture
 
 
 class LeadFormTests(IntakeFixture, TestCase):
-    def test_a_lead_needs_its_mode_who_received_it_and_a_service(self):
-        for missing in ('enquiry_mode', 'received_by', 'assigned_employee'):
+    def test_a_lead_needs_its_mode_who_received_it_and_how_many_applicants_and_cases(self):
+        for missing in ('enquiry_mode', 'received_by', 'party_count', 'case_count'):
             self.assertEqual(self.send('/api/intake/leads/', self.data(**{missing: None})).status_code, 400, missing)
+        for bad in ({'party_count': 0}, {'case_count': -1}, {'case_count': 'two'}, {'enquiry_mode': 9}):
+            self.assertEqual(self.send('/api/intake/leads/', self.data(**bad)).status_code, 400, bad)
+        # Client review 2026-11-25: assigned later, when picked up; no service on the lead.
+        self.assertEqual(self.send('/api/intake/leads/', self.data(assigned_employee=str(self.employee.pk))).status_code, 400)
         self.assertEqual(self.send('/api/intake/leads/', self.data(services=[])).status_code, 400)
-        self.assertEqual(self.send('/api/intake/leads/', self.data(enquiry_mode=9)).status_code, 400)
 
-    def test_the_client_type_and_total_cases_fill_in(self):
+    def test_the_client_type_and_the_counts_fill_in(self):
         self.office.client_type = m.ClientType.objects.create(name='Financial Institution'); self.office.save()
-        flat = m.ServiceSubtype.objects.create(name='Flat', service=self.service)
-        body = self.data(services=[{'service': str(self.service.pk), 'subtype': str(self.subtype.pk), 'case_count': 2},
-                                   {'service': str(self.service.pk), 'subtype': str(flat.pk), 'case_count': 3}])
+        body = self.data(party_count='2', case_count=5)
         del body['received_date']                                       # the live legacy form had no date field
         r = self.send('/api/intake/leads/', body)
         self.assertEqual(r.status_code, 201, r.content)
         lead = m.Lead.objects.get(pk=r.json()['id'])
-        self.assertEqual((lead.office, lead.client_type.name, lead.case_count), (self.office, 'Financial Institution', 5))
-        self.assertEqual(lead.legacy_status, '2')                     # in process once its services are saved, as before
+        self.assertEqual((lead.office, lead.client_type.name, lead.party_count, lead.case_count), (self.office, 'Financial Institution', 2, 5))
+        self.assertEqual((lead.legacy_status, lead.assigned_employee), ('1', None))   # new, until someone picks it up
         self.assertEqual(lead.received_date, date.today())              # the legacy form dated a lead today
 
     def test_a_new_lead_giver_is_registered_with_the_lead(self):
@@ -52,7 +53,7 @@ class LeadFormTests(IntakeFixture, TestCase):
     def test_an_imported_lead_without_a_mode_can_still_be_edited(self):
         lead = self.create()
         m.Lead.objects.filter(pk=lead.pk).update(enquiry_mode=None, received_by=None)
-        response = self.send(f'/api/intake/leads/{lead.pk}/', {'assigned_employee': str(self.employee.pk)}, 'patch')
+        response = self.send(f'/api/intake/leads/{lead.pk}/', {'case_count': 2}, 'patch')
         self.assertEqual(response.status_code, 200, response.content)
 
 
@@ -253,15 +254,22 @@ class BankFormTests(IntakeFixture, TestCase):
         self.canara = m.ServiceSubtype.objects.create(name='L & B ( CNRB)', service=self.service)
 
     def request(self, subtype, lead=None):
+        # Client review 2026-11-25: the form is chosen on each case, not on the lead.
         lead = lead or self.create()
-        return self.send(f'/api/intake/leads/{lead.pk}/services/', {'service': str(self.service.pk), 'subtype': str(subtype.pk), 'case_count': 1})
+        usage = m.ReportUsage.objects.create(name=f'Purpose {subtype.name}', service=self.service, subtype=subtype)
+        document = m.ScrutinyRequirement.objects.create(name='Deed', service=self.service, subtype=subtype, report_usage=usage)
+        batch = m.ImportBatch.objects.create()
+        for table, obj in (('usage_of_reports', usage), ('scrutiny_document', document)):
+            m.SourceIdentity.objects.create(batch=batch, environment='main', schema='lead_mngt', table=table,
+                                            key=json.dumps([['id', f'9{obj.pk.hex[:6]}']]), target_model=obj._meta.label, target_id=obj.pk)
+        borrower = self.send(f'/api/intake/leads/{lead.pk}/borrowers/', self.borrower()).json()['id']
+        return self.send(f'/api/intake/leads/{lead.pk}/cases/', self.case(borrower, subtype=str(subtype.pk), report_usages=[str(usage.pk)],
+                                                                          scrutiny_documents=[str(document.pk)]))
 
     def test_another_banks_form_is_refused(self):
         r = self.request(self.canara)
         self.assertEqual(r.status_code, 400)
         self.assertIn("L & B ( CNRB) is the form for CNRB; this lead's client is SBIN", r.json()['error'])
-        r = self.send('/api/intake/leads/', self.data(services=[{'service': str(self.service.pk), 'subtype': str(self.canara.pk), 'case_count': 1}]))
-        self.assertEqual(r.status_code, 400)                                      # at creation too
 
     def test_the_banks_own_form_or_the_general_one_may_be_used(self):
         self.assertEqual(self.request(self.sbi).status_code, 201)

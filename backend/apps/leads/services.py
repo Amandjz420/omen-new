@@ -57,7 +57,7 @@ def service_check(obj):
 
 def lead_check(lead):
     if lead.contact_id and lead.contact.office_id != lead.office_id:
-        raise IntakeError('Select a contact from the selected client office')
+        raise IntakeError('Select a client from the selected organisation')
     if lead.assigned_employee_id:
         # Existing employee records without accounts remain assignable. Explicitly
         # disabled linked accounts are not offered for new work.
@@ -69,8 +69,12 @@ def lead_check(lead):
 # The fields of the legacy intake forms (design/add_lead.jsp, add_client.jsp, add_case.jsp,
 # add_feedback.jsp), with their required ones required, as the legacy forms did.
 LEAD_FIELDS = ['office', 'contact', 'assigned_employee', 'received_date', 'enquiry_mode', 'received_by', 'party_count',
-               'contacted_by_name', 'contacted_by_phone', 'contacted_by_remark']
-SERVICE_FIELDS = ['service', 'subtype', 'party_count', 'case_count']
+               'case_count', 'contacted_by_name', 'contacted_by_phone', 'contacted_by_remark']
+# Client review 2026-11-25: who received the lead is the person recording it, and it
+# is assigned later (picked up, or reassigned by a manager: apps/leads/assignment.py),
+# so neither is entered on the lead form. No service is requested on the lead either:
+# each case names its own; the lead records how many applicants and cases to expect.
+FORM_FIELDS = [f for f in LEAD_FIELDS if f not in ('assigned_employee', 'received_by')]
 BORROWER_FIELDS = ['name', 'contact_number', 'email', 'gst_number', 'property_count', 'payer', 'fee_basis', 'agreed_fee',
                    'payment_reference_name', 'payment_reference_number', 'pay_by_date', 'customer_payment_method']
 CONTACT_REGISTRATION = ['name', 'phone', 'alternate_phone', 'office', 'designation', 'division', 'subdivision']
@@ -109,47 +113,20 @@ def contacted_by(data):
     return data
 
 
-def sync_services(lead, rows, user):
-    """The requested services as edited on the lead form: rows with an id are updated,
-    rows without one added, and services left out removed, unless cases were already
-    entered against them."""
-    if not isinstance(rows, list) or not rows or len(rows) > 100:
-        raise IntakeError('Add at least one requested service')
-    current = {str(s.pk): s for s in lead.requestedservice_set.all()}
-    kept = set()
-    for row in rows:
-        if not isinstance(row, dict) or set(row) - {'id', *SERVICE_FIELDS}:
-            raise IntakeError('Unexpected requested service fields')
-        if row.get('case_count') in (None, ''):
-            raise IntakeError('Enter the number of cases for each service')
-        fields = {k: v for k, v in row.items() if k != 'id'}
-        if row.get('id'):
-            existing = current.get(str(row['id']))
-            if existing is None:
-                raise IntakeError('A requested service does not belong to this lead', 404)
-            before = snapshot(existing)
-            old = (existing.service_id, existing.subtype_id)
-            obj = validated(m.RequestedService, SERVICE_FIELDS, fields, existing)
-            if old != (obj.service_id, obj.subtype_id):
-                if lead.case_set.exclude(legacy_status='1').filter(service_id=old[0], subtype_id=old[1]).exists():
-                    raise IntakeError('Cases are entered for a service being changed; delete those cases first', 409)
-            service_check(obj)
-            if lead.requestedservice_set.exclude(pk=obj.pk).filter(service=obj.service, subtype=obj.subtype).exists():
-                raise IntakeError('This service and subtype are already requested', 409)
-            obj.save()
-            record(user, obj, before, 'requestedservice.update')
-            kept.add(str(obj.pk))
-        else:
-            kept.add(str(add_child(lead, m.RequestedService, SERVICE_FIELDS, fields, user).pk))
-    for pk, obj in current.items():
-        if pk in kept:
+def counts(data, required):
+    """The number of applicants and of cases the lead expects: whole numbers of at least one."""
+    for field, label in (('party_count', 'applicants'), ('case_count', 'cases')):
+        if field not in data and not required:
             continue
-        if lead.case_set.exclude(legacy_status='1').filter(service=obj.service, subtype=obj.subtype).exists():
-            raise IntakeError(f'Cases are entered for {obj.service.name}; delete those cases before removing the service', 409)
-        before = snapshot(obj)
-        obj.delete()
-        record(user, lead, before, 'requestedservice.delete')
-    lead.case_count = sum(s.case_count or 0 for s in lead.requestedservice_set.all())
+        value = data.get(field)
+        try:
+            number = int(str(value).strip()) if not isinstance(value, bool) else 0
+        except (TypeError, ValueError):
+            number = 0
+        if number < 1:
+            raise IntakeError(f'Enter the number of {label} (at least 1)')
+        data[field] = number
+    return data
 
 
 def next_number():
@@ -166,19 +143,20 @@ def next_number():
 
 
 def register_contact(data, user):
-    """A new orderer, registered with the lead as the legacy form did: client,
-    name, mobile, division, sub-division and designation."""
+    """A new client (the person who orders the work; the "orderer" before client review
+    2026-11-25), registered with the lead as the legacy form did: organisation, name,
+    mobile, division, sub-division and designation."""
     if not isinstance(data, dict) or set(data) - set(CONTACT_REGISTRATION):
-        raise IntakeError('Unexpected orderer fields')
-    for field, label in (('name', 'the orderer\'s name'), ('office', 'the client'), ('designation', 'the designation'),
+        raise IntakeError('Unexpected client fields')
+    for field, label in (('name', 'the client\'s name'), ('office', 'the organisation'), ('designation', 'the designation'),
                          ('division', 'the division'), ('subdivision', 'the sub-division')):
         if not data.get(field):
             raise IntakeError(f'Choose or enter {label}')
-    data = {**data, 'phone': mobile(data.get('phone'), 'the orderer\'s mobile')}
+    data = {**data, 'phone': mobile(data.get('phone'), 'the client\'s mobile')}
     if data.get('alternate_phone'):
         data['alternate_phone'] = mobile(data['alternate_phone'], 'the alternate number')
     if m.Contact.objects.filter(phone__endswith=data['phone']).exists():
-        raise IntakeError('An orderer with this mobile number is already registered; find them by number', 409)
+        raise IntakeError('A client with this mobile number is already registered; find them by number', 409)
     contact = validated(m.Contact, CONTACT_REGISTRATION, data)
     if contact.subdivision.division_id != contact.division_id:
         raise IntakeError('The sub-division does not belong to the division')
@@ -189,7 +167,7 @@ def register_contact(data, user):
 
 @endpoint(['POST'])
 def create_lead(request):
-    data = payload(request, [*LEAD_FIELDS, 'request_id', 'services', 'borrowers', 'new_contact', 'alternate_phone'])
+    data = payload(request, [*FORM_FIELDS, 'received_by', 'request_id', 'borrowers', 'new_contact', 'alternate_phone'])
     try:
         key = uuid.UUID(str(data.get('request_id')))
     except ValueError:
@@ -200,23 +178,27 @@ def create_lead(request):
         if existing.intake_hash != digest:
             raise IntakeError('This request ID was already used for different lead data', 409)
         return JsonResponse({'id': existing.pk, 'number': existing.number, 'replayed': True})
-    services, borrowers = data.get('services', []), data.get('borrowers', [])
-    if any(not isinstance(rows, list) or len(rows) > 100 for rows in (services, borrowers)):
-        raise IntakeError('services and borrowers must be lists of at most 100 items')
-    if not services:
-        raise IntakeError('Add at least one requested service')
+    borrowers = data.get('borrowers', [])
+    if not isinstance(borrowers, list) or len(borrowers) > 100:
+        raise IntakeError('borrowers must be a list of at most 100 items')
     from apps.leads.lookups import MODES
     if data.get('enquiry_mode') not in [c for c, _ in MODES]:
         raise IntakeError('Choose how the lead came in')
-    for field, label in (('received_by', 'who received the lead'), ('assigned_employee', 'who the lead is assigned to')):
-        if not data.get(field):
-            raise IntakeError(f'Choose {label}')
-    # The orderer: found by mobile number, or registered with the lead. The client
-    # office is the orderer's, as on the legacy form.
+    counts(data, required=True)
+    # Received by the person recording it; one with no employee record (an
+    # administrator) names who received it.
+    from apps.leads.assignment import employee_of
+    me = employee_of(request.user)
+    if me is not None:
+        data['received_by'] = me.pk
+    elif not data.get('received_by'):
+        raise IntakeError('Choose who received the lead')
+    # The client: found by mobile number, or registered with the lead. The
+    # organisation is the client's, as on the legacy form.
     contact = register_contact(data['new_contact'], request.user) if data.get('new_contact') else (
         find(m.Contact, data['contact']) if data.get('contact') else None)
     if contact is None:
-        raise IntakeError('Find the orderer by mobile number, or register them')
+        raise IntakeError('Find the client by mobile number, or register them')
     if data.get('alternate_phone'):
         alternate = mobile(data['alternate_phone'], 'the alternate number')
         if alternate != contact.alternate_phone:
@@ -230,15 +212,10 @@ def create_lead(request):
     lead = validated(m.Lead, LEAD_FIELDS, fields)
     lead_check(lead)
     lead.client_type_id = lead.office.client_type_id
-    lead.case_count = sum(int(r.get('case_count') or 0) for r in services if isinstance(r, dict))
     lead.number, lead.local_sequence = next_number()
     lead.intake_key, lead.intake_hash = key, digest
     lead.legacy_status, lead.legacy_deleted, lead.date_basis = '1', '0', 'actual_intake'
     lead.save()
-    for row in services:
-        if not isinstance(row, dict) or row.get('case_count') in (None, ''):
-            raise IntakeError('Enter the number of cases for each service')
-        add_child(lead, m.RequestedService, SERVICE_FIELDS, row, request.user)
     for row in borrowers:
         add_borrower(lead, row, request.user)
     record(request.user, lead, action='lead.create')
@@ -246,17 +223,17 @@ def create_lead(request):
 
 
 def add_borrower(lead, data, user, instance=None):
-    """The client's customer with the fee agreement (design/add_client.jsp). Paid by
-    the client: the payer is the lead's client and orderer, filled in. A fixed fee
+    """The applicant (the client's customer) with the fee agreement (design/add_client.jsp).
+    Paid by the client: the payer is the lead's organisation and client, filled in. A fixed fee
     needs the work order amount; a circular rate takes none."""
     from apps.leads.lookups import FEE_BASES, PAYERS, PAYMENT_METHODS
     if not isinstance(data, dict) or set(data) - set(BORROWER_FIELDS):
         raise IntakeError('Unexpected borrower fields')
-    for field, label in (('name', "the client's customer name"), ('property_count', 'the number of cases'),
+    for field, label in (('name', "the applicant's name"), ('property_count', 'the number of cases'),
                          ('payment_reference_name', 'who is responsible for payment'), ('pay_by_date', 'the pay-by date')):
         if data.get(field) in (None, ''):
             raise IntakeError(f'Enter {label}')
-    data = {**data, 'contact_number': mobile(data.get('contact_number'), "the customer's contact number"),
+    data = {**data, 'contact_number': mobile(data.get('contact_number'), "the applicant's contact number"),
             'payment_reference_number': mobile(data.get('payment_reference_number'), "the payment responsible person's number")}
     for field, codes, label in (('payer', PAYERS, 'who pays'), ('fee_basis', FEE_BASES, 'whether the fee is by circular or fixed'),
                                 ('customer_payment_method', PAYMENT_METHODS, 'how payment is made')):
@@ -284,15 +261,6 @@ def add_child(lead, model, fields, data, user, save=True):
         raise IntakeError('Unexpected child record fields')
     obj = validated(model, fields, data)
     obj.lead = lead
-    if model is m.RequestedService:
-        service_check(obj)
-        if lead.requestedservice_set.filter(service=obj.service, subtype=obj.subtype).exists():
-            raise IntakeError('This service and subtype are already requested', 409)
-        if lead.legacy_status == '1':
-            before = snapshot(lead)
-            lead.legacy_status = '2'
-            lead.save(update_fields=['legacy_status', 'updated_at'])
-            record(user, lead, before, 'lead.services_started')
     if model is m.Borrower:
         obj.currency = 'INR'
     if save:
@@ -318,6 +286,8 @@ def lead_result(lead):
     from apps.leads.lookups import contact_json
     result['orderer'] = lead.contact_id and contact_json(lead.contact)     # the lead details tab and the edit form
     result['office_name'] = lead.office.name
+    result['received_by_name'] = lead.received_by.name if lead.received_by_id else ''
+    result['assigned_name'] = lead.assigned_employee.name if lead.assigned_employee_id else ''
     from apps.leads.lookups import office_json
     result['office_detail'] = office_json(lead.office)        # the case form's default place
     result['audit'] = list(m.IntakeAudit.objects.filter(target_model=lead._meta.label,target_id=lead.pk)
@@ -328,16 +298,18 @@ def lead_result(lead):
 @endpoint(['GET', 'PATCH'])
 def lead_detail(request, pk):
     """GET the lead for intake. PATCH changes it, as the lead form's edit does (client
-    review 2026-11-05): any of the form's fields, the orderer (found or registered, the
-    client office following them) and the requested services; or cancels it."""
+    review 2026-11-05): any of the form's fields, or the client (found or registered,
+    the organisation following them); or cancels it. Who received it is not changed
+    here, and the assignment changes by pick-up or reassignment (client review
+    2026-11-25)."""
     lead = require_lead(request.user, find(m.Lead, pk))
     if request.method == 'PATCH':
         editable(lead)
         before = snapshot(lead)
-        data = payload(request, [*LEAD_FIELDS, 'cancel_reason', 'new_contact', 'alternate_phone', 'services'])
+        data = payload(request, [*FORM_FIELDS, 'cancel_reason', 'new_contact', 'alternate_phone'])
         if not data:
             raise IntakeError('Provide fields to update')
-        data = contacted_by(data)
+        data = counts(contacted_by(data), required=False)
         if data.get('new_contact'):
             data['contact'] = register_contact(data['new_contact'], request.user).pk
         data.pop('new_contact', None)
@@ -345,14 +317,13 @@ def lead_detail(request, pk):
             from apps.leads.lookups import MODES
             if data['enquiry_mode'] not in [c for c, _ in MODES]:
                 raise IntakeError('Choose how the lead came in')
-        for field, label in (('received_by', 'who received the lead'), ('contact', 'the orderer')):
-            if field in data and not data[field]:
-                raise IntakeError(f'Choose {label}')
+        if 'contact' in data and not data['contact']:
+            raise IntakeError('Choose the client')
         if data.get('contact'):
             data['office'] = find(m.Contact, data['contact']).office_id
         # Only the fields sent are validated: an imported lead may lack fields the
         # intake form now requires, and an edit must not fail on those.
-        changed = [k for k in LEAD_FIELDS if k in data]
+        changed = [k for k in FORM_FIELDS if k in data]
         if changed:
             lead = validated(m.Lead, changed, {k: data[k] for k in changed}, lead)
         lead_check(lead)
@@ -368,10 +339,8 @@ def lead_detail(request, pk):
         if 'received_date' in data:
             lead.date_basis = 'actual_intake'
         lead.save()
-        if 'services' in data:
-            sync_services(lead, data['services'], request.user)
-        elif 'office' in changed:
-            # A new office may not allow a bank's own form already requested.
+        if 'office' in changed:
+            # A new office may not allow a bank's own form a legacy lead requested.
             for service in lead.requestedservice_set.all():
                 service_check(service)
         if 'cancel_reason' in data:
@@ -390,9 +359,7 @@ def lead_detail(request, pk):
 def lead_children(request, pk, kind):
     lead = require_lead(request.user, find(m.Lead, pk))
     editable(lead)
-    if kind == 'services':
-        obj = add_child(lead, m.RequestedService, SERVICE_FIELDS, payload(request, SERVICE_FIELDS), request.user)
-    elif kind == 'borrowers':
+    if kind == 'borrowers':
         obj = add_borrower(lead, payload(request, BORROWER_FIELDS), request.user)
     elif kind == 'cases':
         obj = add_case(lead, payload(request, CASE_FIELDS), request.user)
@@ -409,7 +376,7 @@ def add_case(lead, data, user, instance=None):
     and city, each within the one before. Stored as imported cases store them: legacy
     codes, comma-separated where several are chosen, and place names."""
     from apps.leads.lookups import legacy_codes
-    for field, label in (('borrower', "the client's customer"), ('service', 'the service'), ('subtype', 'the service sub type'),
+    for field, label in (('borrower', 'the applicant'), ('service', 'the service'), ('subtype', 'the service sub type'),
                          ('expected_report_date', 'the expected date of report'), ('asset_amount', 'the output amount'),
                          ('asset_address', 'the property address'), ('state', 'the state'), ('district', 'the district'),
                          ('block', 'the city')):
@@ -438,9 +405,8 @@ def add_case(lead, data, user, instance=None):
     obj = validated(m.Case, fields, {k: data.get(k) for k in fields if data.get(k) not in (None,)}, instance)
     if obj.borrower.lead_id != lead.pk:
         raise IntakeError('The borrower belongs to another lead')
+    obj.lead = lead                     # the bank's own form is checked against this lead's organisation
     service_check(obj)
-    if not lead.requestedservice_set.filter(service=obj.service, subtype=obj.subtype).exists():
-        raise IntakeError('Request this service/subtype on the lead before adding a case')
     if any(u.subtype_id != obj.subtype_id for u in usages):
         raise IntakeError('A usage of report does not belong to the service sub type')
     chosen = {u.pk for u in usages}
@@ -495,7 +461,7 @@ def add_follow_up(lead, data, user):
 
 @endpoint(['PATCH', 'DELETE'])
 def lead_child(request, pk, kind, cid):
-    """Edit or delete a client's customer or a case, as the legacy edit_client,
+    """Edit or delete an applicant (client's customer) or a case, as the legacy edit_client,
     client_delete, edit_case and case_delete did, while the lead is open to intake.
     An edit goes through the same checks as adding. A deletion sets the delete flag
     imported records carry; a customer with live cases keeps them until they are
@@ -505,10 +471,10 @@ def lead_child(request, pk, kind, cid):
     if kind == 'borrowers':
         obj = m.Borrower.objects.filter(pk=cid, lead=lead).exclude(legacy_deleted='1').first()
         if obj is None:
-            raise IntakeError("Client's customer not found", 404)
+            raise IntakeError('Applicant not found', 404)
         if request.method == 'DELETE':
             if m.Case.objects.filter(borrower=obj).exclude(legacy_status='1').exists():
-                raise IntakeError("Delete this customer's cases first", 409)
+                raise IntakeError("Delete this applicant's cases first", 409)
             before = snapshot(obj)
             obj.legacy_deleted = '1'
             obj.save(update_fields=['legacy_deleted', 'updated_at'])
@@ -527,7 +493,7 @@ def lead_child(request, pk, kind, cid):
         else:
             add_case(lead, payload(request, CASE_FIELDS), request.user, instance=obj)
     else:
-        raise IntakeError('Only customers and cases can be edited or deleted here', 404)
+        raise IntakeError('Only applicants and cases can be edited or deleted here', 404)
     lead.refresh_from_db()
     return JsonResponse(lead_result(lead))
 

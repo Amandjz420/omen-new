@@ -18,7 +18,7 @@ from apps.common.http import IntakeError, endpoint
 MODES = [(1, 'Phone'), (2, 'Email'), (3, 'Online'), (4, 'Walk in'), (5, 'Letter')]                   # ModeEnum
 FOLLOW_UP_STATUSES = [('1', 'Start entry'), ('3', 'Not picked call'), ('4', 'Call back'), ('5', 'Not connected'),
                       ('6', 'Meeting has been scheduled'), ('7', 'Incorrect number')]                    # ModeFollowUpEnum
-PAYERS = [(1, 'By client'), (2, 'By client customer')]                                                   # PaidByEnum
+PAYERS = [(1, 'By client'), (2, 'By applicant')]                                                   # PaidByEnum
 FEE_BASES = [(1, 'By circular'), (2, 'Fixed amount')]                                                     # PaymentByEnum
 PAYMENT_METHODS = [(1, 'By bank'), (2, 'By cash'), (3, 'By any other')]                                  # PaidByModeEnum
 
@@ -47,10 +47,11 @@ def lookups(request):
     usage_code, document_code, block_code = (legacy_codes('lead_mngt', 'usage_of_reports'), legacy_codes('lead_mngt', 'scrutiny_document'),
                                              legacy_codes('uam_user', 'block'))
     rows = lambda qs, *fields: list(qs.values('id', 'name', *fields))
-    account = getattr(request.user, 'legacy_account', None)
+    from apps.leads.assignment import employee_of
+    me = employee_of(request.user)
     return JsonResponse({
-        # The signed-in person's employee record: "Lead received by" defaults to them.
-        'me': {'employee_id': account.employee_id if account else None},
+        # The signed-in person's employee record: "Lead received by" is them.
+        'me': {'employee_id': me.pk if me else None, 'name': me.name if me else ''},
         'modes': [{'code': c, 'label': n} for c, n in MODES],
         'follow_up_statuses': [{'code': c, 'label': n} for c, n in FOLLOW_UP_STATUSES],
         'payers': [{'code': c, 'label': n} for c, n in PAYERS],
@@ -90,7 +91,7 @@ def contact_json(c):
 
 @endpoint(['GET'])
 def orderer(request):
-    """The lead giver by mobile number, with everything the lead form shows for them.
+    """The client (once "orderer", the lead giver) by mobile number, with everything the lead form shows for them.
     Several may share a number; the one most recently giving leads comes first."""
     mobile = re.sub(r'\D', '', request.GET.get('mobile', ''))[-10:]
     if len(mobile) != 10:
@@ -105,7 +106,7 @@ def orderer(request):
 
 @endpoint(['GET'])
 def offices(request):
-    """Client offices of a client type, for the new lead giver's client."""
+    """Organisations (client offices) of a type, for a new client's organisation."""
     qs = live(m.ClientOffice.objects).select_related('client_type', 'block', 'bank')
     if request.GET.get('client_type'):
         qs = qs.filter(client_type_id=request.GET['client_type'])

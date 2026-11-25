@@ -68,7 +68,7 @@ export function ReportView() {
                        onChange={([a, b]) => set({from: iso(a), to: iso(b), within: '', page: ''})} w={260}/>
       {r.groupings.length > 1 && <Select label="Group by" data={r.groupings.map(g => ({value: g.key, label: g.label}))} value={r.group}
                                          allowDeselect={false} onChange={v => set({group: v, within: '', page: ''})} w={220}/>}
-      <TextInput label="Search" placeholder="Lead number, client or client customer" value={typed}
+      <TextInput label="Search" placeholder="Lead number, organisation or applicant" value={typed}
                  onChange={e => setTyped(e.currentTarget.value)} style={{flex: 1, minWidth: 220}}/>
     </Group>
 

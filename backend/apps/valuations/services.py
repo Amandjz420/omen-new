@@ -99,8 +99,9 @@ def scope_cases(user, cases):
 
 
 def scope_leads(user, leads):
-    """Leads a user may see: all when unrestricted; otherwise those assigned to them.
-    The same rule as scope_cases, for endpoints that start from a lead. Lead list,
+    """Leads a user may see: all when unrestricted; otherwise those assigned to them or
+    received by them, and the unassigned ones when they may pick up leads.
+    For endpoints that start from a lead (scope_cases follows the assignment alone). Lead list,
     detail, notes, intake and work orders once skipped it, so a restricted assessor
     could read and annotate other assessors' leads (review BF1)."""
     who = scoped_employee(user)
@@ -108,7 +109,13 @@ def scope_leads(user, leads):
         return leads
     if who is NOBODY:
         return leads.none()
-    return leads.filter(assigned_employee=who)
+    # Client review 2026-11-25: the person who received a lead keeps seeing (and
+    # editing) it, and someone who may pick up leads sees the unassigned queue.
+    from apps.leads.assignment import can_pick_up
+    visible = Q(assigned_employee=who) | Q(received_by=who)
+    if can_pick_up(user):
+        visible |= Q(assigned_employee__isnull=True, legacy_status__in=['1', '2'])
+    return leads.filter(visible)
 
 
 def require_lead(user, lead):

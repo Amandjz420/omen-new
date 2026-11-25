@@ -34,18 +34,18 @@ function Lists({api, onSend, onOpen}) {
   return <section className="panel">
     <div className="tabs">{TABS.map(([k, l]) => <button key={k} className={k === tab ? 'active' : ''} onClick={() => {setTab(k); setPage(1);}}>
       {l}{counts && k !== 'awaiting' && <span className="count"> {counts[k].toLocaleString('en-IN')}</span>}</button>)}</div>
-    <div className="toolbar"><label className="search">Search<input placeholder={awaiting ? 'Report, lead, borrower or office' : 'Dispatch, report, consignment or client'} value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label>
+    <div className="toolbar"><label className="search">Search<input placeholder={awaiting ? 'Report, lead, applicant or organisation' : 'Dispatch, report, consignment or organisation'} value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label>
       {awaiting && <button disabled={!chosen.length} onClick={() => onSend(chosen)}>Dispatch {chosen.length || ''} selected</button>}</div>
     {awaiting && <p className="muted">Approved reports not yet in any dispatch, newest first. Dispatch tracking began in 2021, so older reports appear here without having been lost.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
       <ResponsiveTable><table>{awaiting
-        ? <><thead><tr><th></th><th>Report</th><th>Borrower</th><th>Office</th><th>Valued</th><th>Assessor's instruction</th></tr></thead>
+        ? <><thead><tr><th></th><th>Report</th><th>Applicant</th><th>Organisation</th><th>Valued</th><th>Assessor's instruction</th></tr></thead>
           <tbody>{list.results.map(r => <tr key={r.valuation}><td><input type="checkbox" checked={!!picked[r.valuation]}
             onChange={e => setPicked(p => {const n = {...p}; e.target.checked ? n[r.valuation] = r : delete n[r.valuation]; return n;})}/></td>
             <td><strong>{r.report_number}</strong></td><td>{r.borrower}</td><td>{r.office}</td><td>{r.valued_on || '—'}</td>
             <td>{[r.to_be_dispatched_at, r.to_be_dispatched_by].filter(Boolean).join(' · ') || '—'}</td></tr>)}</tbody></>
-        : <><thead><tr><th>Dispatch</th><th>Outward</th><th>Reports</th><th>Client</th><th>Mode</th><th>Consignment</th><th>Status</th><th></th></tr></thead>
+        : <><thead><tr><th>Dispatch</th><th>Outward</th><th>Reports</th><th>Organisation</th><th>Mode</th><th>Consignment</th><th>Status</th><th></th></tr></thead>
           <tbody>{list.results.map(d => <tr key={d.id}><td><strong>{d.number}</strong></td><td>{d.outward_date || '—'}</td><td>{d.reports || '—'}</td>
             <td>{d.client}</td><td>{d.mode}</td><td>{d.consignment || '—'}</td><td>{d.status}{d.delivered_date ? ` · ${d.delivered_date}` : ''}</td>
             <td><button className="link" onClick={() => onOpen(d.id)}>Open →</button></td></tr>)}</tbody></>}

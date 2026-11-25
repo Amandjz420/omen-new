@@ -46,7 +46,7 @@ function Queue({api, onOpen}) {
 
   return <section className="panel">
     <div className="toolbar">
-      <label className="search">Search<input placeholder="Lead, borrower, work order or report number" value={q}
+      <label className="search">Search<input placeholder="Lead, applicant, work order or report number" value={q}
         onChange={e => {setQ(e.target.value); setPage(1);}}/></label>
       <label>Show<select value={status} onChange={e => {setStatus(e.target.value); setPage(1);}}>
         {FILTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
@@ -54,7 +54,7 @@ function Queue({api, onOpen}) {
     {list?.scoped && <p className="notice">Showing only the leads assigned to you.</p>}
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading valuations…</p> : <>
-      <ResponsiveTable><table><thead><tr><th>Lead</th><th>Borrower</th><th>Work order</th><th>Service</th><th>District</th><th>Valuation</th><th></th></tr></thead>
+      <ResponsiveTable><table><thead><tr><th>Lead</th><th>Applicant</th><th>Work order</th><th>Service</th><th>District</th><th>Valuation</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.case}>
         <td><strong>{r.lead_number}</strong></td><td>{r.borrower}</td><td>{r.work_order || '—'}</td>
         <td>{r.service}<small>{r.subtype}</small></td><td>{r.district || '—'}</td>

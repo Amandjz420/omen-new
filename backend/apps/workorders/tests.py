@@ -81,7 +81,7 @@ class WorkOrderTests(TestCase):
     def test_the_letter_decodes_payment_responsibility(self):
         b = self.borrower(payer=2, fee_basis=1, customer_payment_method=3)
         self.assertEqual((b.get_payer_display(), b.get_fee_basis_display(), b.get_customer_payment_method_display()),
-                         ('By Client Customer', 'By Circular', 'By Any Other'))
+                         ('By Applicant', 'By Circular', 'By Any Other'))
 
     def test_markup_in_free_text_cannot_break_the_letter(self):
         response = self.issue(self.borrower(name='<b>Malicious & "quoted"</b>'))
@@ -251,7 +251,9 @@ class LeadLifecycleTests(IntakeFixture, TestCase):
         lead = self.post('intake/leads/', self.data(contact=contact['id'], borrowers=[
             self.borrower(name='Asha Verma'), self.borrower(name='Ravi Verma', contact_number='9826054322')]))
         detail = self.client.get(f"/api/intake/leads/{lead['id']}/").json()
-        self.assertEqual(detail['legacy_status'], '2')          # services recorded -> In process
+        self.assertEqual(detail['legacy_status'], '1')          # new, until someone takes it on
+        detail = self.post(f"intake/leads/{lead['id']}/reassign/", {'employee': str(self.employee.pk)}, expect=200)
+        self.assertEqual(detail['legacy_status'], '2')          # assigned -> In process
         borrowers = {b['name']: b['id'] for b in detail['borrowers']}
 
         # Nothing can be ordered until each borrower has a case.

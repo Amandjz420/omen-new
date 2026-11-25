@@ -8,8 +8,8 @@ import {api} from '../lib/api.js';
 import {BorrowerForm, CaseForm, FollowUpForm, NewLeadForm} from './IntakeForms.jsx';
 import {Leads} from './Leads.jsx';
 
-const LOOKUPS = {me: {employee_id: 'e2'}, modes: [], follow_up_statuses: [{code: '4', label: 'Call back'}],
-  payers: [{code: 1, label: 'By client'}, {code: 2, label: 'By client customer'}], fee_bases: [{code: 1, label: 'By circular'}, {code: 2, label: 'Fixed amount'}],
+const LOOKUPS = {me: {employee_id: 'e2', name: 'Vijay Galphate'}, modes: [], follow_up_statuses: [{code: '4', label: 'Call back'}],
+  payers: [{code: 1, label: 'By client'}, {code: 2, label: 'By applicant'}], fee_bases: [{code: 1, label: 'By circular'}, {code: 2, label: 'Fixed amount'}],
   payment_methods: [{code: 1, label: 'By bank'}, {code: 3, label: 'By any other'}], client_types: [], designations: [], divisions: [], subdivisions: [],
   states: [{id: 'mp', name: 'Madhya Pradesh'}], districts: [{id: 'bpl', name: 'Bhopal', state_id: 'mp'}], blocks: [{id: 'huzur', name: 'Huzur', district_id: 'bpl', code: '305'}],
   report_usages: [{id: 'loan', name: 'Loan purpose', subtype_id: 'lb', code: '148'}, {id: 'sale', name: 'Sale purpose', subtype_id: 'lb', code: '70'}],
@@ -42,24 +42,29 @@ const list = heading => screen.getByText(heading).nextElementSibling;
 const field = label => screen.getAllByLabelText(label, {exact: false}).find(el => el.tagName === 'INPUT' && el.type !== 'hidden');
 
 describe('the lead list', () => {
-  it('shows parties and cases entered against those declared, marked while short', async () => {
-    backend({'leads/': {count: 1, results: [{id: 'L1', number: 'L-1', status_label: 'In process', office: {name: 'SBI'},
-      lead_giver: {name: 'Poonam Salve', phone: '9826012345'}, parties: {recorded: 1, declared: 2}, cases: {recorded: 2, declared: 2}}]}});
+  it('shows applicants and cases entered against those declared, marked while short, and who has it', async () => {
+    backend({'leads/': {count: 2, results: [{id: 'L1', number: 'L-1', status_label: 'In process', office: {name: 'SBI'},
+      lead_giver: {name: 'Poonam Salve', phone: '9826012345'}, parties: {recorded: 1, declared: 2}, cases: {recorded: 2, declared: 2},
+      assigned_to: {id: 'e1', name: 'Rahul Patidar'}},
+      {id: 'L2', number: 'L-2', status_label: 'New lead', office: {name: 'SBI'}, lead_giver: null, parties: {recorded: 0, declared: 1},
+      cases: {recorded: 0, declared: 1}, assigned_to: null}]}});
     renderApp(<Routes><Route path="/leads" element={<Leads/>}/></Routes>, {route: '/leads'});
-    const parties = await screen.findByLabelText('1 of 2 parties entered');
+    const parties = await screen.findByLabelText('1 of 2 applicants entered');
     expect(parties.textContent).toBe('1/2');
     expect(screen.getByLabelText('2 of 2 cases entered').textContent).toBe('2/2');
     expect(screen.getByText('Poonam Salve')).toBeTruthy();
+    expect(screen.getByText('Rahul Patidar')).toBeTruthy();
+    expect(screen.getByText('Not picked up')).toBeTruthy();
   });
 });
 
 describe("the lead's page", () => {
-  it('edits a customer in a form filled with their current details', async () => {
+  it('edits an applicant in a form filled with their current details', async () => {
     const calls = backend();
     renderApp(<IntakeLead api={api} leadId="L1"/>);
-    await screen.findByText("Client's customers");
-    fireEvent.click(within(list("Client's customers")).getByRole('button', {name: 'Edit'}));
-    // The page also shows the empty form for a new customer; look only in the one being edited.
+    await screen.findByText('Applicants');
+    fireEvent.click(within(list('Applicants')).getByRole('button', {name: 'Edit'}));
+    // The page also shows the empty form for a new applicant; look only in the one being edited.
     const form = within((await screen.findByText('Edit Asha Verma')).closest('form'));
     expect(form.getByRole('textbox', {name: 'Work order amount'}).value).toBe('7500');              // fixed fee, kept
     expect(form.getByRole('radio', {name: 'By any other'}).checked).toBe(true);
@@ -102,13 +107,14 @@ describe('the new lead form', () => {
   it('puts the signed-in person as the one who received the lead', async () => {
     backend();
     renderApp(<Routes><Route path="/leads/new" element={<NewLeadForm/>}/></Routes>, {route: '/leads/new'});
-    await screen.findByText('Orderer information');
+    await screen.findByText('Client information');
     await waitFor(() => expect(field('Lead received by').value).toBe('Vijay Galphate'));
+    expect(field('Lead received by').readOnly).toBe(true);
   });
 });
 
 describe('the work order page', () => {
-  it("shows each customer's payment terms, as the legacy list did", async () => {
+  it("shows each applicant's payment terms, as the legacy list did", async () => {
     backend({'work-orders/leads/L1/': {ordered: 0, outstanding: 1, closed: false, borrowers: [{id: 'b1', name: 'Asha Verma', contact_number: '9826054321',
       email: 'asha@example.in', cases: 1, declared_cases: 2, payer: 1, fee_basis: 2, agreed_fee: '7500.000000', customer_payment_method: 1,
       eligible: true, reasons: [], work_order: null}]}});
@@ -120,23 +126,23 @@ describe('the work order page', () => {
 });
 
 describe('after saving', () => {
-  it("keeps a new customer's values, and saving again updates that customer", async () => {
+  it("keeps a new applicant's values, and saving again updates that applicant", async () => {
     backend();
     const save = vi.fn().mockResolvedValue({id: 'new-b'}), update = vi.fn().mockResolvedValue({});
     renderApp(<BorrowerForm lead={LEAD} onSave={save} onUpdate={update}/>);
-    fireEvent.change(await screen.findByRole('textbox', {name: "Name of client's customer"}), {target: {value: 'Ravi Verma'}});
+    fireEvent.change(await screen.findByRole('textbox', {name: 'Applicant name'}), {target: {value: 'Ravi Verma'}});
     fireEvent.change(screen.getByRole('textbox', {name: 'Contact no.'}), {target: {value: '9826054322'}});
     fireEvent.change(screen.getByLabelText(/Pay by date/), {target: {value: '2026-10-31'}});
-    fireEvent.click(screen.getByRole('button', {name: "Save client's customer"}));
+    fireEvent.click(screen.getByRole('button', {name: 'Save applicant'}));
     expect(await screen.findByText('Saved.')).toBeTruthy();
-    expect(screen.getByRole('textbox', {name: "Name of client's customer"}).value).toBe('Ravi Verma');   // previously cleared
+    expect(screen.getByRole('textbox', {name: 'Applicant name'}).value).toBe('Ravi Verma');   // previously cleared
     fireEvent.change(screen.getByRole('textbox', {name: 'Contact no.'}), {target: {value: '9826054399'}});
     fireEvent.click(screen.getByRole('button', {name: 'Save changes'}));
     await waitFor(() => expect(update).toHaveBeenCalled());
-    expect(update.mock.calls[0][0]).toBe('new-b');                                                  // the same customer, not a second one
+    expect(update.mock.calls[0][0]).toBe('new-b');                                                  // the same applicant, not a second one
     expect(save).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', {name: 'Add another customer'}));
-    expect(screen.getByRole('textbox', {name: "Name of client's customer"}).value).toBe('');
+    fireEvent.click(screen.getByRole('button', {name: 'Add another applicant'}));
+    expect(screen.getByRole('textbox', {name: 'Applicant name'}).value).toBe('');
   });
 
   it('keeps a follow-up on screen, and will not save the same one twice', async () => {

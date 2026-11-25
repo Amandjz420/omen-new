@@ -140,3 +140,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
+
+# Client review 2026-11-25: the roles that may pick up an unassigned lead (role names,
+# comma-separated). Not decided yet: until set, only unrestricted users can pick up.
+LEAD_PICKUP_ROLES = [r.strip() for r in os.environ.get('LEAD_PICKUP_ROLES', '').split(',') if r.strip()]

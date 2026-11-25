@@ -20,6 +20,8 @@ const TABS = ['details', 'customers', 'followups', 'orders'];
 const STATUSES = [{value: '', label: 'All statuses'}, {value: '1', label: 'New lead'}, {value: '2', label: 'In process'},
                   {value: '3', label: 'Cancelled'}, {value: '4', label: 'Closed (previous system)'}];
 const tone = s => ({'Cancelled': 'refused', 'New lead': 'active', 'In process': 'waiting'}[s] ?? 'neutral');
+// Client review 2026-11-25: a new lead waits unassigned until someone picks it up.
+const ASSIGNMENTS = [{value: '', label: 'Everyone'}, {value: 'unassigned', label: 'Unassigned (to pick up)'}, {value: 'mine', label: 'Assigned to me'}];
 
 // Recorded against declared, as the legacy list showed it ("1/3"), marked while
 // intake still has some to enter.
@@ -33,32 +35,35 @@ function Progress({recorded, declared, label}) {
 export function Leads() {
   // Search, status and page live in the address, so a filtered list can be shared or bookmarked.
   const [params, setParams] = useSearchParams();
-  const q = params.get('q') ?? '', status = params.get('status') ?? '', page = Number(params.get('page') ?? 1);
+  const q = params.get('q') ?? '', status = params.get('status') ?? '', assignment = params.get('assignment') ?? '', page = Number(params.get('page') ?? 1);
   const [typed, setTyped] = useState(q);
   const [search] = useDebouncedValue(typed, 250);
   const set = (next) => setParams(p => {Object.entries(next).forEach(([k, v]) => v ? p.set(k, v) : p.delete(k)); return p;}, {replace: true});
   useEffect(() => {if (search !== q) set({q: search, page: ''});}, [search]);      // eslint-disable-line react-hooks/exhaustive-deps
-  const list = useQuery({queryKey: ['leads', q, status, page], queryFn: () => api(`leads/?q=${encodeURIComponent(q)}&page=${page}&status=${status}`),
+  const list = useQuery({queryKey: ['leads', q, status, assignment, page],
+                         queryFn: () => api(`leads/?q=${encodeURIComponent(q)}&page=${page}&status=${status}&assignment=${assignment}`),
                          placeholderData: keepPreviousData});
   return <Stack>
     <PageHeader title="Leads" description="Every lead, imported or recorded here."
                 actions={<Button component={Link} to="/leads/new">New lead</Button>}/>
     <Group align="flex-end" wrap="wrap" className="responsive-filters">
-      <TextInput label="Search" placeholder="Lead number, source ID or office" value={typed} onChange={e => setTyped(e.currentTarget.value)} style={{flex: 1, minWidth: 240}}/>
+      <TextInput label="Search" placeholder="Lead number, source ID or organisation" value={typed} onChange={e => setTyped(e.currentTarget.value)} style={{flex: 1, minWidth: 240}}/>
       <Select label="Status" data={STATUSES} value={status} onChange={v => set({status: v, page: ''})} allowDeselect={false} w={220}/>
+      <Select label="Assigned to" data={ASSIGNMENTS} value={assignment} onChange={v => set({assignment: v, page: ''})} allowDeselect={false} w={220}/>
     </Group>
     {list.isError ? <ErrorState error={list.error} onRetry={list.refetch}/> : !list.data ? <LoadingState label="Loading leads"/> : <>
       <ResponsiveTable>
         <Table>
-          <Table.Thead><Table.Tr><Table.Th>Lead</Table.Th><Table.Th>Commissioning office</Table.Th><Table.Th>Orderer</Table.Th><Table.Th>Received</Table.Th><Table.Th>Parties</Table.Th><Table.Th>Cases</Table.Th><Table.Th>Status</Table.Th></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th>Lead</Table.Th><Table.Th>Organisation</Table.Th><Table.Th>Client</Table.Th><Table.Th>Received</Table.Th><Table.Th>Applicants</Table.Th><Table.Th>Cases</Table.Th><Table.Th>Assigned to</Table.Th><Table.Th>Status</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>{list.data.results.map(r => <Table.Tr key={r.id}>
             <Table.Td><Anchor component={Link} to={`/leads/${r.id}`} fw={600}>{r.number || 'No number'}</Anchor>
               <Text size="xs" c="dimmed">{r.source_id ? `Source ${r.source_id}` : 'Recorded here'}</Text></Table.Td>
-            <Table.Td>{r.office?.name || 'Office not resolved'}<Text size="xs" c="dimmed">{r.office?.branch}</Text></Table.Td>
+            <Table.Td>{r.office?.name || 'Organisation not resolved'}<Text size="xs" c="dimmed">{r.office?.branch}</Text></Table.Td>
             <Table.Td>{r.lead_giver?.name || '—'}<Text size="xs" c="dimmed">{r.lead_giver?.phone}</Text></Table.Td>
             <Table.Td>{date(r.received_date) || 'Unknown'}</Table.Td>
-            <Table.Td><Progress {...r.parties} label="parties"/></Table.Td>
+            <Table.Td><Progress {...r.parties} label="applicants"/></Table.Td>
             <Table.Td><Progress {...r.cases} label="cases"/></Table.Td>
+            <Table.Td>{r.assigned_to?.name || <Text size="sm" c="orange.8">Not picked up</Text>}</Table.Td>
             <Table.Td><StatusBadge tone={tone(r.status_label)}>{r.status_label}</StatusBadge></Table.Td>
           </Table.Tr>)}</Table.Tbody>
         </Table>
@@ -81,6 +86,19 @@ export function LeadDetail() {
   const lead = useQuery({queryKey: ['lead', id], queryFn: () => api(`leads/${id}/`)});
   const stages = useQuery({queryKey: ['lead', id, 'stages'], queryFn: () => api(`leads/${id}/stages/`)});
   const [note, setNote] = useState('');
+  const [assignee, setAssignee] = useState(null);
+  const employees = useQuery({queryKey: ['intake', 'catalog'], queryFn: () => api('intake/catalog/'), staleTime: 600_000,
+                              enabled: !!lead.data?.can_reassign});
+  const assign = useMutation({
+    mutationFn: ({path, body}) => post(`intake/leads/${id}/${path}/`, body),
+    onSuccess: (_, {path}) => {
+      for (const queryKey of [['lead', id], ['leads'], ['home'], ['intake', 'lead', id]]) client.invalidateQueries({queryKey});
+      setAssignee(null); setWorkspaceKey(k => k + 1);
+      notifications.show({message: path === 'pick-up' ? 'You have picked up this lead' : 'Lead reassigned'});
+    },
+    onError: e => notifications.show({color: 'red', title: 'The lead was not assigned', message: e.message}),
+  });
+  const [workspaceKey, setWorkspaceKey] = useState(0);
   const save = useMutation({
     mutationFn: body => post(`leads/${id}/`, {body}),
     onSuccess: data => {client.setQueryData(['lead', id], data); setNote(''); notifications.show({message: 'Note saved'});},
@@ -112,16 +130,29 @@ export function LeadDetail() {
                   description={[d.office?.name || 'Office not resolved', d.office?.branch].filter(Boolean).join(', ')}
                   actions={<StatusBadge tone={tone(d.status_label)}>{d.status_label}</StatusBadge>}/>
       <Text size="sm">{d.date_basis === 'actual_intake' ? 'Received' : 'Entered in the previous system'} {date(d.received_date) || 'on an unknown date'}.
-        {d.contact?.name && ` Orderer: ${d.contact.name}${d.contact.phone ? `, ${d.contact.phone}` : ''}.`}</Text>
+        {d.contact?.name && ` Client: ${d.contact.name}${d.contact.phone ? `, ${d.contact.phone}` : ''}.`}</Text>
+      <Paper withBorder p="sm" mt="sm" maw={900} aria-label="Assignment">
+        <Group justify="space-between" wrap="wrap" gap="sm">
+          <Text size="sm">Received by <strong>{d.received_by || 'not recorded'}</strong> · Assigned to <strong>{d.assigned_to?.name || 'nobody yet'}</strong></Text>
+          <Group gap="xs" wrap="wrap">
+            {d.can_pick_up && <Button size="xs" loading={assign.isPending} onClick={() => assign.mutate({path: 'pick-up', body: {}})}>Pick up this lead</Button>}
+            {d.can_reassign && <>
+              <Select size="xs" aria-label="Reassign to" placeholder={employees.data ? 'Reassign to…' : 'Loading employees…'} searchable w={220}
+                      data={(employees.data?.employees || []).map(e => ({value: String(e.id), label: e.name}))} value={assignee} onChange={setAssignee}/>
+              <Button size="xs" variant="light" disabled={!assignee} loading={assign.isPending}
+                      onClick={() => assign.mutate({path: 'reassign', body: {employee: assignee}})}>Reassign</Button></>}
+          </Group>
+        </Group>
+      </Paper>
       {d.issues.length > 0 && <Text size="sm" c="orange.8" mt="xs">{d.issues.join('; ')}</Text>}
     </div>
 
     <section>
       <Title order={2} mb="sm">Where each case stands</Title>
       {stages.isError ? <ErrorState error={stages.error} onRetry={stages.refetch}/> : !stages.data ? <LoadingState/>
-        : stages.data.cases.length === 0 ? <EmptyState title="No cases yet" description="Cases appear once a service is recorded against a borrower."/>
+        : stages.data.cases.length === 0 ? <EmptyState title="No cases yet" description="Cases appear once a case is entered for an applicant."/>
         : <Stack>{stages.data.cases.map(c => <Paper withBorder p="md" key={c.id}>
-            <Group justify="space-between" mb="md" wrap="wrap"><div><Text fw={600}>{c.borrower || 'Borrower not recorded'}</Text>
+            <Group justify="space-between" mb="md" wrap="wrap"><div><Text fw={600}>{c.borrower || 'Applicant not recorded'}</Text>
               <Text size="sm" c="dimmed">{[c.service, c.subtype].filter(Boolean).join(', ')}</Text></div>
               {c.report_number && <Text size="sm" className="num">{c.report_number}</Text>}</Group>
             <StageTrack stages={c.stages} compact label={`Stages for ${c.borrower || 'this case'}`}/>
@@ -129,10 +160,10 @@ export function LeadDetail() {
     </section>
 
     <Suspense fallback={<LoadingState label="Loading the lead workspace"/>}>
-      <LeadWorkspace key={d.id} api={api} leadId={d.id} onChanged={refreshLead} onEdit={() => navigate(`/leads/${d.id}/edit`)} layout={parts => <Tabs value={tab} onChange={openTab} keepMounted>
+      <LeadWorkspace key={`${d.id}-${workspaceKey}`} api={api} leadId={d.id} onChanged={refreshLead} onEdit={() => navigate(`/leads/${d.id}/edit`)} layout={parts => <Tabs value={tab} onChange={openTab} keepMounted>
         <Tabs.List>
           <Tabs.Tab value="details">Lead details</Tabs.Tab>
-          <Tabs.Tab value="customers" rightSection={parts.lead && <Badge size="sm" variant="light" title={`${parts.lead.borrowers.length} customers, ${parts.lead.cases.length} cases`}>{parts.lead.borrowers.length} · {parts.lead.cases.length}</Badge>}>Client's customers &amp; cases</Tabs.Tab>
+          <Tabs.Tab value="customers" rightSection={parts.lead && <Badge size="sm" variant="light" title={`${parts.lead.borrowers.length} applicants, ${parts.lead.cases.length} cases`}>{parts.lead.borrowers.length} · {parts.lead.cases.length}</Badge>}>Applicants &amp; cases</Tabs.Tab>
           <Tabs.Tab value="followups" rightSection={<Badge size="sm" variant="light" title="Follow-ups and notes">{d.notes.length + (parts.lead?.follow_ups.length || 0)}</Badge>}>Follow-ups &amp; notes</Tabs.Tab>
           <Tabs.Tab value="orders">Work orders &amp; history</Tabs.Tab>
         </Tabs.List>

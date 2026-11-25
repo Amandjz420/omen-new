@@ -38,8 +38,7 @@ class IntakeFixture:
 
     def data(self, **extra):
         return {'request_id':str(uuid.uuid4()),'contact':str(self.contact.pk),'enquiry_mode':1,
-                'received_by':str(self.employee.pk),'received_date':'2026-09-24','assigned_employee':str(self.employee.pk),
-                'services':[{'service':str(self.service.pk),'subtype':str(self.subtype.pk),'case_count':1}],**extra}
+                'received_by':str(self.employee.pk),'received_date':'2026-09-24','party_count':1,'case_count':1,**extra}
 
     def borrower(self, **extra):
         return {'name':'Asha Verma','contact_number':'9826054321','property_count':1,'payer':1,'fee_basis':1,
@@ -73,10 +72,10 @@ class IntakeTests(IntakeFixture, TestCase):
         follow=self.send(base+'follow-ups/',self.follow_up())
         self.assertEqual(follow.status_code,201,follow.content)
         detail=self.client.get(base).json()
-        self.assertEqual(detail['legacy_status'],'2')
+        self.assertEqual(detail['legacy_status'],'1')              # new until someone picks it up (client review 2026-11-25)
         self.assertEqual(len(detail['cases']),1)
         self.assertEqual(len(detail['follow_ups']),1)
-        self.assertEqual(m.IntakeAudit.objects.filter(actor=self.user).count(),6)
+        self.assertEqual(m.IntakeAudit.objects.filter(actor=self.user).count(),4)
 
     def test_number_continues_imported_global_sequence_without_year_reset(self):
         m.Lead.objects.create(office=self.office,number='L-03252012000')
@@ -96,9 +95,7 @@ class IntakeTests(IntakeFixture, TestCase):
         self.assertEqual(m.Lead.objects.count(),1)
 
     def test_bad_nested_data_rolls_back_lead_and_sequence(self):
-        other=m.ServiceType.objects.create(name='Other')
-        wrong=m.ServiceSubtype.objects.create(name='Wrong',service=other)
-        r=self.send('/api/intake/leads/',self.data(services=[{'service':self.service.pk,'subtype':wrong.pk}]))
+        r=self.send('/api/intake/leads/',self.data(borrowers=[self.borrower(contact_number='12345')]))
         self.assertEqual(r.status_code,400,r.content)
         self.assertEqual(m.Lead.objects.count(),0)
         self.assertEqual(m.LeadCounter.objects.count(),0)
@@ -116,10 +113,11 @@ class IntakeTests(IntakeFixture, TestCase):
     def test_assignment_edit_cancellation_and_lock(self):
         lead=self.create();base=f'/api/intake/leads/{lead.pk}/'
         second=m.Employee.objects.create(name='Second employee')
-        self.assertEqual(self.send(base,{'assigned_employee':second.pk},'patch').status_code,200)
+        self.assertEqual(self.send(base,{'assigned_employee':second.pk},'patch').status_code,400)   # reassigned, not edited
+        self.assertEqual(self.send(base+'reassign/',{'employee':second.pk}).status_code,200)
         lead.refresh_from_db();self.assertEqual(lead.assigned_employee,second)
         self.assertEqual(self.send(base,{'cancel_reason':'No longer required'},'patch').status_code,200)
-        self.assertEqual(self.send(base,{'assigned_employee':self.employee.pk},'patch').status_code,409)
+        self.assertEqual(self.send(base+'reassign/',{'employee':self.employee.pk}).status_code,409)
         self.assertEqual(self.send(base+'services/',{'service':self.service.pk}).status_code,409)
         self.assertEqual(lead.notes.count(),1)
 
@@ -129,20 +127,21 @@ class IntakeTests(IntakeFixture, TestCase):
         r=self.send(f'/api/intake/leads/{lead.pk}/',{'cancel_reason':'Not allowed'},'patch')
         self.assertEqual(r.status_code,409)
 
-    def test_case_requires_same_lead_borrower_and_requested_service(self):
+    def test_case_requires_same_lead_borrower_and_a_matching_subtype(self):
         lead=self.create();other=self.create()
         b=m.Borrower.objects.create(lead=other,name='Wrong borrower')
         base=f'/api/intake/leads/{lead.pk}/cases/'
         self.assertEqual(self.send(base,self.case(str(b.pk))).status_code,400)                 # another lead's borrower
         b.lead=lead;b.save()
-        unrequested=m.ServiceSubtype.objects.create(name='Flat',service=self.service)
-        self.assertEqual(self.send(base,self.case(str(b.pk),subtype=str(unrequested.pk))).status_code,400)   # not requested
+        # Client review 2026-11-25: a case names its own service; the subtype must be the service's.
+        elsewhere=m.ServiceSubtype.objects.create(name='Car',service=m.ServiceType.objects.create(name='Automobile'))
+        self.assertEqual(self.send(base,self.case(str(b.pk),subtype=str(elsewhere.pk))).status_code,400)
         self.assertEqual(self.send(base,self.case(str(b.pk))).status_code,201)
 
-    def test_service_duplicates_and_negative_fees_are_rejected(self):
+    def test_services_are_not_requested_on_the_lead_and_negative_fees_are_rejected(self):
         lead=self.create();base=f'/api/intake/leads/{lead.pk}/'
-        for status in [201,409]:
-            self.assertEqual(self.send(base+'services/',{'service':self.service.pk}).status_code,status)
+        self.assertEqual(self.send(base+'services/',{'service':self.service.pk}).status_code,404)
+        self.assertEqual(self.send('/api/intake/leads/',self.data(services=[{'service':str(self.service.pk)}])).status_code,400)
         self.assertEqual(self.send(base+'borrowers/',self.borrower(fee_basis=2,agreed_fee='-1')).status_code,400)
 
     def test_client_and_contact_create_edit(self):
@@ -173,7 +172,8 @@ class IntakeTests(IntakeFixture, TestCase):
         imported=m.Lead.objects.get(number='L-1')
         imported.legacy_status='1';imported.save()
         base=f'/api/intake/leads/{imported.pk}/'
-        self.assertEqual(self.send(base,{'assigned_employee':self.employee.pk,'received_date':'2026-09-24'},'patch').status_code,200)
+        self.assertEqual(self.send(base,{'received_date':'2026-09-24'},'patch').status_code,200)
+        self.assertEqual(self.send(base+'reassign/',{'employee':self.employee.pk}).status_code,200)
         self.assertEqual(self.send(f'/api/intake/offices/{imported.office_id}/',{'name':'Locally edited office'},'patch').status_code,200)
         local=self.create()
         self.assertEqual(self.send(base+'follow-ups/',self.follow_up(status='3')).status_code,201)
@@ -181,7 +181,7 @@ class IntakeTests(IntakeFixture, TestCase):
         source[('lead_mngt','client')][0]['name']='Changed in source'
         synchronize(FakeSource(source));synchronize(FakeSource(source))
         imported.refresh_from_db()
-        self.assertEqual(imported.legacy_status,'1')
+        self.assertEqual(imported.legacy_status,'2')                 # in process once assigned, kept over the source's
         self.assertEqual(imported.assigned_employee,self.employee)
         self.assertEqual(imported.office.name,'Locally edited office')
         self.assertTrue(m.Lead.objects.filter(pk=local.pk).exists())

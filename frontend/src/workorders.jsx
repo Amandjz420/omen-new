@@ -26,7 +26,7 @@ export function WorkOrders({api, leadId, onChange}) {
 
   async function issue(borrower) {
     const lastOne = state.outstanding === 1;
-    const warning = lastOne ? '\n\nThis is the last borrower without a work order, so the lead will be closed.' : '';
+    const warning = lastOne ? '\n\nThis is the last applicant without a work order, so the lead will be closed.' : '';
     if (!window.confirm(`Issue a work order for ${borrower.name}?${warning}`)) return;
     const key = pending.current[borrower.id] ||= uuid();
     setBusy(borrower.id); setError('');
@@ -42,13 +42,13 @@ export function WorkOrders({api, leadId, onChange}) {
   if (!state) return <section className="panel"><h3>Work orders</h3>{error ? <p role="alert" className="error">{error}</p> : <p>Loading work orders…</p>}</section>;
   const total = state.borrowers.length;
   return <section className="panel">
-    <div className="section-title"><h3>Work orders</h3><span>{state.ordered} of {total} borrower{total === 1 ? '' : 's'} ordered</span></div>
-    <p className="muted">A work order is issued per borrower. The lead closes once every active borrower has one.</p>
-    {state.closed && state.outstanding > 0 && <p className="notice">This lead was closed with {state.outstanding} borrower{state.outstanding === 1 ? '' : 's'} still unordered, a known effect of the previous system. Their work orders can still be issued here.</p>}
-    {state.closed && state.outstanding === 0 && <p className="notice">Every borrower is ordered and the lead is closed. Closure means the work has been ordered; it is not valuation approval or payment completion.</p>}
+    <div className="section-title"><h3>Work orders</h3><span>{state.ordered} of {total} applicant{total === 1 ? '' : 's'} ordered</span></div>
+    <p className="muted">A work order is issued per applicant. The lead closes once every active applicant has one.</p>
+    {state.closed && state.outstanding > 0 && <p className="notice">This lead was closed with {state.outstanding} applicant{state.outstanding === 1 ? '' : 's'} still unordered, a known effect of the previous system. Their work orders can still be issued here.</p>}
+    {state.closed && state.outstanding === 0 && <p className="notice">Every applicant is ordered and the lead is closed. Closure means the work has been ordered; it is not valuation approval or payment completion.</p>}
     {error && <p role="alert" className="error">{error}</p>}
-    {total === 0 ? <p>Add a borrower before issuing work orders.</p> :
-    <ResponsiveTable><table><thead><tr><th>Name of customer / owner</th><th>Cases entered</th><th>Paid by</th><th>Payment by mode</th><th>Payment mode</th><th>Work order</th><th></th></tr></thead><tbody>
+    {total === 0 ? <p>Add an applicant before issuing work orders.</p> :
+    <ResponsiveTable><table><thead><tr><th>Applicant name</th><th>Cases entered</th><th>Paid by</th><th>Payment by mode</th><th>Payment mode</th><th>Work order</th><th></th></tr></thead><tbody>
       {state.borrowers.map(b => <tr key={b.id}>
         <td>{b.name}{(b.contact_number || b.email) && <><br/><small>{[b.contact_number, b.email].filter(Boolean).join(' · ')}</small></>}</td>
         <td className="num">{b.cases}{b.declared_cases ? `/${b.declared_cases}` : ''}</td>

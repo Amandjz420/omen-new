@@ -21,7 +21,7 @@ export function MigrationStatus() {
   return <Stack gap="xl">
     <PageHeader title="Migration status" description="What was brought across from the previous system, and how it was handled."/>
     <Paper withBorder p="lg"><SimpleGrid cols={{base: 1, xs: 2, sm: 4}} spacing="lg">
-      <Figure label="Client offices" value={d.offices}/><Figure label="Leads" value={d.leads}/>
+      <Figure label="Organisations" value={d.offices}/><Figure label="Leads" value={d.leads}/>
       <Figure label="Cases" value={d.cases}/><Figure label="Contacts" value={d.contacts}/>
     </SimpleGrid></Paper>
     <Paper withBorder p="lg"><SimpleGrid cols={{base: 1, xs: 2, sm: 4}} spacing="lg">

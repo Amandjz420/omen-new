@@ -57,7 +57,7 @@ class Borrower(NamedEntity):
     email = models.CharField(max_length=100, blank=True)
     # Who is responsible for the fee, decoded from the legacy enums named beside
     # each set of choices. These print on the work order.
-    PAYERS = [(1, 'By Client'), (2, 'By Client Customer')]                  # PaidByEnum
+    PAYERS = [(1, 'By Client'), (2, 'By Applicant')]                  # PaidByEnum
     FEE_BASES = [(1, 'By Circular'), (2, 'By Fixed')]                        # PaymentByEnum
     CUSTOMER_METHODS = [(1, 'By Bank'), (2, 'By Cash'), (3, 'By Any Other')]  # PaidByModeEnum
     payer = models.IntegerField(null=True, choices=PAYERS)

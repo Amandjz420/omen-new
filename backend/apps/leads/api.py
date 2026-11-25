@@ -19,13 +19,16 @@ def lead_json(obj,references):
             # Progress against what intake declared, as the legacy list showed it ("1/3").
             'parties': {'recorded': getattr(obj, 'live_borrowers', None), 'declared': obj.party_count},
             'cases': {'recorded': getattr(obj, 'live_cases', None), 'declared': obj.case_count},
-            'lead_giver': {'name': obj.contact.name, 'phone': obj.contact.phone} if obj.contact_id else None}
+            'lead_giver': {'name': obj.contact.name, 'phone': obj.contact.phone} if obj.contact_id else None,
+            # Client review 2026-11-25: a lead waits unassigned until someone picks it up.
+            'assigned_to': {'id': obj.assigned_employee_id, 'name': obj.assigned_employee.name} if obj.assigned_employee_id else None,
+            'received_by': obj.received_by.name if obj.received_by_id else ''}
 
 
 @require_GET
 @staff_api
 def leads(request):
-    qs = (scope_leads(request.user, Lead.objects.select_related('office__bank', 'contact'))
+    qs = (scope_leads(request.user, Lead.objects.select_related('office__bank', 'contact', 'assigned_employee', 'received_by'))
           .annotate(live_borrowers=Count('borrower', filter=~Q(borrower__legacy_deleted='1'), distinct=True),
                     live_cases=Count('case', filter=~Q(case__legacy_status='1'), distinct=True))
           .order_by('-received_date', '-id'))
@@ -35,6 +38,13 @@ def leads(request):
         qs = qs.filter(Q(number__icontains=q) | Q(office__name__icontains=q) | Q(id__in=ids))
     if request.GET.get('status'):
         qs = qs.filter(legacy_status=request.GET['status'])
+    assignment = request.GET.get('assignment')
+    if assignment == 'unassigned':
+        qs = qs.filter(assigned_employee__isnull=True, legacy_status__in=['1', '2'])
+    elif assignment == 'mine':
+        from apps.leads.assignment import employee_of
+        me = employee_of(request.user)
+        qs = qs.filter(assigned_employee=me) if me else qs.none()
     return page(request, qs, lead_json)
 
 
@@ -42,7 +52,7 @@ def leads(request):
 @staff_api
 def lead_detail(request, pk):
     # Scoped before anything is read or written, including a note (review BF1).
-    obj = scope_leads(request.user, Lead.objects.select_related('office__bank', 'contact')).filter(pk=pk).first()
+    obj = scope_leads(request.user, Lead.objects.select_related('office__bank', 'contact', 'assigned_employee', 'received_by')).filter(pk=pk).first()
     if obj is None:
         return JsonResponse({'error': 'Lead not found'}, status=404)
     if request.method == 'POST':
@@ -58,6 +68,10 @@ def lead_detail(request, pk):
     result['cases'] = [{'id':c.id,'source_id':(references.get(c.id) or {}).get('source_id'),'service':c.service.name,
                        'subtype':c.subtype.name if c.subtype else None,'district':c.asset_district,
                        'issues':(references.get(c.id) or {}).get('issues',[])} for c in cases]
+    from apps.leads.assignment import can_pick_up, can_reassign
+    is_open = obj.legacy_status in ('1', '2') and obj.legacy_deleted in ('', '0')
+    result['can_pick_up'] = is_open and not obj.assigned_employee_id and can_pick_up(request.user)
+    result['can_reassign'] = is_open and can_reassign(request.user)
     result['notes'] = list(obj.notes.order_by('-created_at').values('id', 'body', 'created_at', 'author__username'))
     return JsonResponse(result, status=201 if request.method == 'POST' else 200)
 

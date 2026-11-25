@@ -64,7 +64,7 @@ function InvoicePicker({api, value, onPick}) {
     return () => clearTimeout(t);
   }, [q]);
   return <label>Invoice<span className="required"> *</span>
-    <input placeholder="Type 3+ characters of the invoice number or borrower" value={q} onChange={e => setQ(e.target.value)}/>
+    <input placeholder="Type 3+ characters of the invoice number or applicant" value={q} onChange={e => setQ(e.target.value)}/>
     {value?.number && <small>Chosen: {value.number}{value.remaining ? ` · ${rs(value.remaining)} outstanding` : ''}</small>}
     {found.length > 0 && <ul className="picker">{found.map(i => <li key={i.id}><button type="button" className="link"
       onClick={() => {onPick(i); setQ(''); setFound([]);}}>{i.number} · {i.borrower || i.billed_to || ''} · {rs(i.remaining)} outstanding</button></li>)}</ul>}

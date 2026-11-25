@@ -25,10 +25,10 @@ function Queue({api, onOpen}) {
     <div className="tabs">{[['pending', 'Ready for a report'], ['generated', 'Report generated']].map(([k, l]) =>
       <button key={k} className={k === state ? 'active' : ''} onClick={() => {setState(k); setPage(1);}}>{l}{list && <span className="count"> {list.counts[k]}</span>}</button>)}</div>
     <p className="muted">Only valuations with all four verifications appear here.</p>
-    <div className="toolbar"><label className="search">Search<input placeholder="Report, lead or borrower" value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label></div>
+    <div className="toolbar"><label className="search">Search<input placeholder="Report, lead or applicant" value={q} onChange={e => {setQ(e.target.value); setPage(1);}}/></label></div>
     {error && <p role="alert" className="error">{error}</p>}
     {!list ? <p>Loading…</p> : <>
-      <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Borrower</th><th>Service</th><th>Submitted</th><th></th></tr></thead>
+      <ResponsiveTable><table><thead><tr><th>Report</th><th>Lead</th><th>Applicant</th><th>Service</th><th>Submitted</th><th></th></tr></thead>
       <tbody>{list.results.map(r => <tr key={r.id}><td><strong>{r.report_number}</strong></td><td>{r.lead_number}</td><td>{r.borrower}</td>
         <td>{r.service}</td><td>{r.submitted_at ? dateTime(r.submitted_at) : (r.submitted_on || '—')}</td><td><button className="link" onClick={() => onOpen(r.id)}>{state === 'pending' ? 'Prepare →' : 'Open →'}</button></td></tr>)}</tbody></table></ResponsiveTable>
       {list.total === 0 && <p>Nothing here.</p>}

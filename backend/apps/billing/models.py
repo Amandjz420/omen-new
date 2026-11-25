@@ -22,10 +22,10 @@ class Invoice(Entity):
     # The Omen account the invoice directs payment to. Legacy invoice.bank_id, which
     # joins account_detail.bank_id; first imported wrongly as a bank.
     issuer_account = models.ForeignKey('IssuerAccount', null=True, blank=True, on_delete=models.PROTECT)
-    GSTIN_PARTIES = [(1, 'Client'), (2, 'Client Customer'), (3, 'Other')]          # GstEnum
+    GSTIN_PARTIES = [(1, 'Organisation'), (2, 'Applicant'), (3, 'Other')]          # GstEnum
     gstin_party = models.IntegerField(null=True, blank=True, choices=GSTIN_PARTIES)
     other_gstin = models.CharField(max_length=100, blank=True)
-    PAYERS = [(1, 'By Client'), (2, 'By Client Customer')]                        # PaidByEnum
+    PAYERS = [(1, 'By Client'), (2, 'By Applicant')]                        # PaidByEnum
     payer = models.IntegerField(null=True, blank=True, choices=PAYERS)
     PAYMENT_TYPES = [(1, 'Fully Payment'), (2, 'Partial Payment')]                 # InvoicePaymentTypeEnum
     payment_type = models.IntegerField(null=True, blank=True, choices=PAYMENT_TYPES)

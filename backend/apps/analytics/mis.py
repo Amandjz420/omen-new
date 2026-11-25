@@ -234,15 +234,15 @@ def by(field, label_field=None, blank='Not recorded'):
 INVOICE_GROUPS = OrderedDict([
     ('area', ('Area', lambda r: ((r['district'] or '').lower(), ', '.join(x for x in (r['district'], r['state']) if x) or 'Area not recorded'))),
     ('assessor', ('Field assessor', by('assessor_id', 'assessor', 'Not assigned'))),
-    ('customer', ('Client customer', lambda r: ((r['borrower'] or '').strip().lower(), (r['borrower'] or '').strip() or 'Not recorded'))),
-    ('client', ('Client', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
+    ('customer', ('Applicant', lambda r: ((r['borrower'] or '').strip().lower(), (r['borrower'] or '').strip() or 'Not recorded'))),
+    ('client', ('Organisation', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
     ('service', ('Service rendered', by('service_id', 'service'))),
     ('division', ('Division', by('division_id', 'division', 'No division'))),
 ])
 MONEY = [('invoices', 'Invoices', 'count'), ('billed', 'Invoiced', 'money'), ('paid', 'Received', 'money'),
          ('written_off', 'Written off', 'money'), ('outstanding', 'Outstanding', 'money')]
 INVOICE_COLUMNS = [('invoice', 'Invoice', 'text'), ('issued', 'Date', 'date'), ('report', 'Report', 'text'), ('lead', 'Lead', 'text'),
-                   ('office', 'Client', 'text'), ('borrower', 'Client customer', 'text'), ('service', 'Service', 'text'),
+                   ('office', 'Organisation', 'text'), ('borrower', 'Applicant', 'text'), ('service', 'Service', 'text'),
                    ('district', 'District', 'text'), ('assessor', 'Field assessor', 'text'),
                    ('billed', 'Invoiced', 'money'), ('paid', 'Received', 'money'), ('outstanding', 'Outstanding', 'money')]
 
@@ -272,8 +272,8 @@ report('total-amount', number='(total)', title='Total amount', section='Billing'
        groups=OrderedDict([('month', ('Month', lambda r: (r['issued'].strftime('%Y-%m') if r['issued'] else '', r['issued'].strftime('%B %Y') if r['issued'] else 'Date unknown'))),
                            ('all', ('All invoices', lambda r: ('all', 'All standing invoices')))]),
        default_group='all', measures=MONEY, columns=INVOICE_COLUMNS)
-report('billing-by-client', number='8', title='Billing by client', section='Billing',
-       description='What each client was invoiced.', date_label='Invoice date', rows=lambda u, f: invoices(u, f),
+report('billing-by-client', number='8', title='Billing by organisation', section='Billing',
+       description='What each organisation was invoiced.', date_label='Invoice date', rows=lambda u, f: invoices(u, f),
        groups=OrderedDict([('client', INVOICE_GROUPS['client'])]), default_group='client',
        measures=[('invoices', 'Invoices', 'count'), ('billed', 'Invoiced', 'money')], columns=INVOICE_COLUMNS)
 report('billing-by-assessor', number='7', title='Billing by liable field assessor', section='Billing',
@@ -281,31 +281,31 @@ report('billing-by-assessor', number='7', title='Billing by liable field assesso
        date_label='Invoice date', rows=bank_reports,
        groups=OrderedDict([('liable', ('Liable field assessor', by('liable_id', 'liable')))]), default_group='liable',
        measures=[('reports', 'Bank reports', 'count'), ('billed', 'Invoiced', 'money')],
-       columns=[('report', 'Report', 'text'), ('office', 'Client', 'text'), ('borrower', 'Client customer', 'text'),
+       columns=[('report', 'Report', 'text'), ('office', 'Organisation', 'text'), ('borrower', 'Applicant', 'text'),
                 ('invoice', 'Invoice', 'text'), ('issued', 'Invoice date', 'date'), ('billed', 'Invoiced', 'money')])
 
 
 LEAD_GROUPS = OrderedDict([
     ('status', ('Lead status', status_of(LEAD_STATUS))),
     ('month', ('Month received', month('received'))),
-    ('client', ('Client', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
+    ('client', ('Organisation', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
     ('assessor', ('Field assessor', by('assessor_id', 'assessor', 'Not assigned'))),
     ('division', ('Division', by('division_id', 'division', 'No division'))),
 ])
 LEAD_MEASURES = [('leads', 'Leads', 'count'), ('new', 'New', 'count', lambda r: r['status_code'] == '1'),
                  ('in_process', 'In process', 'count', lambda r: r['status_code'] == '2'),
                  ('cancelled', 'Cancelled', 'count', lambda r: r['status_code'] == '3'),
-                 ('closed', 'Closed', 'count', lambda r: r['status_code'] == '4'), ('borrowers', 'Borrowers', 'number')]
-LEAD_COLUMNS = [('lead', 'Lead', 'text'), ('received', 'Received', 'date'), ('status', 'Status', 'text'), ('office', 'Client', 'text'),
-                ('orderer', 'Orderer', 'text'), ('orderer_phone', 'Orderer phone', 'text'), ('assessor', 'Field assessor', 'text'),
-                ('borrowers', 'Borrowers', 'number')]
+                 ('closed', 'Closed', 'count', lambda r: r['status_code'] == '4'), ('borrowers', 'Applicants', 'number')]
+LEAD_COLUMNS = [('lead', 'Lead', 'text'), ('received', 'Received', 'date'), ('status', 'Status', 'text'), ('office', 'Organisation', 'text'),
+                ('orderer', 'Client', 'text'), ('orderer_phone', 'Client phone', 'text'), ('assessor', 'Field assessor', 'text'),
+                ('borrowers', 'Applicants', 'number')]
 
 VALUATION_GROUPS = OrderedDict([
     ('doer', ('Valued by', by('doer_id', 'doer', 'Not recorded'))),
     ('status', ('Valuation status', status_of(VALUATION_STATUS))),
     ('month', ('Month valued', month('valued'))),
     ('service', ('Service rendered', by('service_id', 'service'))),
-    ('client', ('Client', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
+    ('client', ('Organisation', lambda r: (str(r['office_id']), ', '.join(x for x in (r['office'], r['branch']) if x) or 'Not recorded'))),
     ('area', ('Area', lambda r: ((r['district'] or '').lower(), ', '.join(x for x in (r['district'], r['state']) if x) or 'Area not recorded'))),
 ])
 VALUATION_MEASURES = [('valuations', 'Valuations', 'count'),
@@ -315,14 +315,14 @@ VALUATION_MEASURES = [('valuations', 'Valuations', 'count'),
                       ('held', 'On hold', 'count', lambda r: r['status_code'] == 'Hold'),
                       ('cancelled', 'Cancelled', 'count', lambda r: r['status_code'] == 'Cancel')]
 VALUATION_COLUMNS = [('report', 'Report', 'text'), ('lead', 'Lead', 'text'), ('valued', 'Valued', 'date'), ('status', 'Status', 'text'),
-                     ('office', 'Client', 'text'), ('borrower', 'Client customer', 'text'), ('service', 'Service', 'text'),
+                     ('office', 'Organisation', 'text'), ('borrower', 'Applicant', 'text'), ('service', 'Service', 'text'),
                      ('doer', 'Valued by', 'text')]
 
 report('leads', number='1', title='Month-wise leads', section='Work',
        description='Leads received, by status. Deleted leads are not counted.', date_label='Received',
        rows=leads, groups=LEAD_GROUPS, default_group='status', measures=LEAD_MEASURES[:1] + LEAD_MEASURES[5:], columns=LEAD_COLUMNS)
-report('lead-mis', number='6', title='Lead MIS by client', section='Work',
-       description='Leads each client sent, and where they stand.', date_label='Received',
+report('lead-mis', number='6', title='Lead MIS by organisation', section='Work',
+       description='Leads each organisation sent, and where they stand.', date_label='Received',
        rows=leads, groups=OrderedDict([('client', LEAD_GROUPS['client']), *[(k, v) for k, v in LEAD_GROUPS.items() if k != 'client']]),
        default_group='client', measures=LEAD_MEASURES, columns=LEAD_COLUMNS)
 report('valuations', number='2', title='Month-wise valuations', section='Work',
@@ -345,8 +345,8 @@ report('cancelled-valuations', number='9', title='Cancelled valuations', section
        groups=OrderedDict([('client', VALUATION_GROUPS['client']), ('doer', VALUATION_GROUPS['doer']),
                            ('month', ('Month cancelled', month('cancelled_on'))), ('area', VALUATION_GROUPS['area'])]),
        default_group='client', measures=[('cancelled', 'Cancelled', 'count')],
-       columns=[('lead', 'Lead', 'text'), ('work_order', 'Work order', 'text'), ('report', 'Report', 'text'), ('office', 'Client', 'text'),
-                ('ifsc', 'IFSC', 'text'), ('borrower', 'Client customer', 'text'), ('doer', 'Valued by', 'text'),
+       columns=[('lead', 'Lead', 'text'), ('work_order', 'Work order', 'text'), ('report', 'Report', 'text'), ('office', 'Organisation', 'text'),
+                ('ifsc', 'IFSC', 'text'), ('borrower', 'Applicant', 'text'), ('doer', 'Valued by', 'text'),
                 ('cancelled_on', 'Cancelled on', 'date'), ('reason', 'Reason', 'text')])
 
 
@@ -428,13 +428,13 @@ report('offline-billing', number='10', title='Offline billing', section='Billing
        description='Invoices raised outside the system in 2020-21, with what is still owed.', date_label='Invoice date',
        rows=offline_invoices,
        groups=OrderedDict([('client', ('Billed to', lambda r: (r['client'].lower(), ', '.join(x for x in (r['client'], r['branch']) if x) or 'Not recorded'))),
-                           ('customer', ('Client customer', lambda r: ((r['borrower'] or '').strip().lower(), (r['borrower'] or '').strip() or 'Not recorded'))),
+                           ('customer', ('Applicant', lambda r: ((r['borrower'] or '').strip().lower(), (r['borrower'] or '').strip() or 'Not recorded'))),
                            ('liable', ('Liable field assessor', by('liable_id', 'liable', 'Not recorded'))),
                            ('doer', ('Valued by', by('doer_id', 'doer', 'Not recorded'))),
                            ('service', ('Service rendered', by('service_id', 'service'))),
                            ('month', ('Month', month('issued')))]),
        default_group='client', sort='outstanding', measures=MONEY,
-       columns=[('invoice', 'Invoice', 'text'), ('issued', 'Date', 'date'), ('client', 'Billed to', 'text'), ('borrower', 'Client customer', 'text'),
+       columns=[('invoice', 'Invoice', 'text'), ('issued', 'Date', 'date'), ('client', 'Billed to', 'text'), ('borrower', 'Applicant', 'text'),
                 ('report', 'Report reference', 'text'), ('liable', 'Liable field assessor', 'text'),
                 ('billed', 'Invoiced', 'money'), ('paid', 'Received', 'money'), ('outstanding', 'Outstanding', 'money')])
 report('fa-targets', number='11', title="Field assessors' financial targets", section='Billing',

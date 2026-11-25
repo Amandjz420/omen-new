@@ -64,3 +64,43 @@ describe('the lead page after a change inside it', () => {
     expect(calls.stages).toBeGreaterThan(1);
   });
 });
+
+// Client review 2026-11-25: a new lead waits unassigned until someone picks it up.
+describe('picking up a lead', () => {
+  it('assigns it to the person who picks it up, and a manager can reassign it', async () => {
+    let assigned = null;
+    const posts = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options = {}) => {
+      const path = String(url).replace('/api/', ''), method = options.method || 'GET';
+      if (method === 'POST') posts.push({path, body: JSON.parse(options.body || '{}')});
+      let body = {};
+      if (path === `intake/leads/${L}/pick-up/`) { assigned = {id: 'e2', name: 'Vijay Galphate'}; body = {}; }
+      else if (path === `intake/leads/${L}/reassign/`) { assigned = {id: 'e1', name: 'Rahul Patidar'}; body = {}; }
+      else if (path.startsWith(`leads/${L}/stages/`)) body = {cases: []};
+      else if (path.startsWith('work-orders/')) body = {ordered: 0, outstanding: 0, closed: false, borrowers: []};
+      else if (path.startsWith(`leads/${L}/`)) {
+        body = {id: L, number: 'L-1125261001', status_label: assigned ? 'In process' : 'New lead', date_basis: 'actual_intake', received_date: '2026-11-25',
+                office: {name: 'State Bank of India'}, contact: null, issues: [], notes: [], cases: [], received_by: 'Rahul Patidar',
+                assigned_to: assigned, can_pick_up: !assigned, can_reassign: true};
+      } else if (path.startsWith('intake/catalog')) {
+        body = {services: [], subtypes: [], employees: [{id: 'e1', name: 'Rahul Patidar'}, {id: 'e2', name: 'Vijay Galphate'}], banks: [], client_types: [], designations: []};
+      } else if (path.startsWith('intake/')) {
+        body = {id: L, number: 'L-1125261001', legacy_status: '1', editable: true, received_date: '2026-11-25', office: null, office_name: 'State Bank of India',
+                assigned_employee: null, contact: '', updated_at: '2026-11-25T10:00:00Z', borrowers: [], services: [], cases: [], follow_ups: [], audit: []};
+      }
+      return new Response(JSON.stringify(body), {status: 200, headers: {'Content-Type': 'application/json'}});
+    });
+    renderApp(<Routes><Route path="/leads/:id" element={<LeadDetail/>}/></Routes>, {route: `/leads/${L}`});
+    const box = await screen.findByLabelText('Assignment');
+    expect(box.textContent).toContain('Assigned to nobody yet');
+    fireEvent.click(within(box).getByRole('button', {name: 'Pick up this lead'}));
+    await waitFor(() => expect(screen.getByLabelText('Assignment').textContent).toContain('Assigned to Vijay Galphate'));
+    expect(posts[0].path).toBe(`intake/leads/${L}/pick-up/`);
+    expect(screen.queryByRole('button', {name: 'Pick up this lead'})).toBeNull();
+
+    fireEvent.click(screen.getAllByLabelText('Reassign to').find(el => el.tagName === 'INPUT' && el.type !== 'hidden'));
+    fireEvent.click(await screen.findByRole('option', {name: 'Rahul Patidar'}));
+    fireEvent.click(within(screen.getByLabelText('Assignment')).getByRole('button', {name: 'Reassign'}));
+    await waitFor(() => expect(posts.some(p => p.path === `intake/leads/${L}/reassign/` && p.body.employee === 'e1')).toBe(true));
+  });
+});
